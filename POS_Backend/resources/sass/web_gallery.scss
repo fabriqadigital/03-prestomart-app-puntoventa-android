@@ -1,0 +1,94 @@
+    /* Estilos para las diferentes vistas */
+    .view-grid1 .producto-item {
+      flex: 0 0 100%;
+      max-width: 100%;
+    }
+
+    .view-grid2 .producto-item {
+      flex: 0 0 50%;
+      max-width: 50%;
+    }
+
+    .view-grid3 .producto-item {
+      flex: 0 0 33.333%;
+      max-width: 33.333%;
+    }
+
+    .view-grid4 .producto-item {
+      flex: 0 0 25%;
+      max-width: 25%;
+    }
+
+    /* Estilos responsivos */
+    @media (max-width: 1200px) {
+      .view-grid4 .producto-item {
+        flex: 0 0 33.333%;
+        max-width: 33.333%;
+      }
+    }
+
+    @media (max-width: 992px) {
+
+      .view-grid3 .producto-item,
+      .view-grid4 .producto-item {
+        flex: 0 0 50%;
+        max-width: 50%;
+      }
+    }
+
+    @media (max-width: 768px) {
+
+      .view-grid2 .producto-item,
+      .view-grid3 .producto-item,
+      .view-grid4 .producto-item {
+        flex: 0 0 100%;
+        max-width: 100%;
+      }
+    }
+
+    /* Estilos para filtros */
+    .widget-active {
+      border-left: 3px solid #3490dc;
+      padding-left: 10px;
+    }
+
+    .filter-item-active {
+      background-color: #f8f9fa;
+      border-radius: 4px;
+      padding: 5px;
+    }
+
+    .item-count {
+      float: right;
+      color: #6c757d;
+      font-size: 0.85em;
+    }
+
+    /* Estilos para toolbar */
+    #orden {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background-color: #fff;
+      cursor: pointer;
+      margin-left: 10px;
+      width: 13rem;
+    }
+
+    .view-options {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .view-btn {
+      background: none;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 6px;
+      cursor: pointer;
+    }
+
+    .view-btn.active {
+      background-color: #e0e0e0;
+    }

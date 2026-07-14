@@ -1,0 +1,79 @@
+/*Estilos generales del boton whatsapp*/
+.whatsapp-btn {
+    position: fixed;
+    bottom: 20px; /* Cambiado de 50rem a 20px */
+    //    top: 50%; /* Centrado vertical */
+    left: 20px;
+     transform: translateY(-50%); /* Compensa la mitad de la altura del botón */
+    z-index: 9999;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background-color: #25D366;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    animation: breathe 2s ease-in-out infinite;
+}
+
+/*Estilos solo al icono whatsapp*/
+.whatsapp-btn i {
+    color: #fff;
+    font-size: 38px;
+    animation: beat 2s ease-in-out infinite;
+    text-decoration: none;
+}
+
+/*Estilos con animation contorno respirando*/
+@keyframes breathe {
+    0% {
+        box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.5);
+    }
+    70% {
+        box-shadow: 0 0 0 15px rgba(37, 211, 102, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+    }
+}
+
+/*Estilos de animacion del icono latiendo*/
+@keyframes beat {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.2);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Media queries para mejor adaptabilidad en diferentes dispositivos */
+@media (max-width: 768px) {
+    .whatsapp-btn {
+        width: 55px;
+        height: 55px;
+        bottom: 15px;
+        left: 15px;
+    }
+    
+    .whatsapp-btn i {
+        font-size: 32px;
+    }
+}
+
+@media (max-width: 480px) {
+    .whatsapp-btn {
+        width: 50px;
+        height: 50px;
+        bottom: 10px;
+        left: 10px;
+    }
+    
+    .whatsapp-btn i {
+        font-size: 28px;
+    }
+}

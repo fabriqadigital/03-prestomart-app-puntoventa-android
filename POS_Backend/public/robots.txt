@@ -1,0 +1,33 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /storage/
+Disallow: /vendor/
+Disallow: /node_modules/
+Disallow: /app/
+Disallow: /bootstrap/
+Disallow: /config/
+Disallow: /database/
+Disallow: /resources/
+Disallow: /routes/
+Disallow: /tests/
+Disallow: /env
+Disallow: /\.env$
+Disallow: /composer.lock
+Disallow: /package-lock.json
+Disallow: /yarn.lock
+Disallow: /*.json$
+Disallow: /*.lock$
+Disallow: /login
+Disallow: /registration
+Disallow: /web_checkout/
+Disallow: /*?*
+Disallow: /*?view=
+Disallow: /*?orden=
+Disallow: /*?filter=
+
+Allow: /public/storage/
+Allow: /uploads/
+Allow: /images/
+
+# Sitemap
+Sitemap: http://localhost:8000/sitemap.xml
