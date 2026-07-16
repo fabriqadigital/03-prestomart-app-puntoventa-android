@@ -1,8 +1,8 @@
-package com.ecommerce.ecommerceposapp.presentation
+package com.ecommerce.ecommerceposapp.presentation.sync
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ecommerce.ecommerceposapp.data.repository.SyncRepository
+import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository
 import com.ecommerce.ecommerceposapp.domain.SyncModuleStatus
 import com.ecommerce.ecommerceposapp.domain.UserSession
 import kotlinx.coroutines.Dispatchers

@@ -27,6 +27,7 @@ data class SupplierRow(
 data class ProductAdminRow(
     val id: Long,
     val categoryId: Long,
+    val subcategoryId: Long = 0,
     val name: String,
     val code: String,
     val imageUrl: String = "",
@@ -37,6 +38,13 @@ data class ProductAdminRow(
 
 data class CategoryAdminRow(
     val id: Long,
+    val name: String,
+    val active: Boolean,
+)
+
+data class SubcategoryAdminRow(
+    val id: Long,
+    val categoryId: Long,
     val name: String,
     val active: Boolean,
 )

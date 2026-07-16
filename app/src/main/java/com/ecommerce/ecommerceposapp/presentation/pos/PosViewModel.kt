@@ -1,13 +1,14 @@
-package com.ecommerce.ecommerceposapp.presentation
+package com.ecommerce.ecommerceposapp.presentation.pos
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ecommerce.ecommerceposapp.data.repository.CatalogRepository
+import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.domain.CartLine
 import com.ecommerce.ecommerceposapp.domain.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.CategoryItem
 import com.ecommerce.ecommerceposapp.domain.ProductItem
+import com.ecommerce.ecommerceposapp.domain.SubcategoryItem
 import kotlin.math.round
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,8 +19,10 @@ import kotlinx.coroutines.withContext
 
 data class PosUiState(
     val categories: List<CategoryItem> = emptyList(),
+    val subcategories: List<SubcategoryItem> = emptyList(),
     val products: List<ProductItem> = emptyList(),
     val selectedCategoryId: Long? = null,
+    val selectedSubcategoryId: Long? = null,
     val search: String = "",
     val cart: List<CartLine> = emptyList(),
 ) {
@@ -37,13 +40,15 @@ class PosViewModel(
     fun load() {
         viewModelScope.launch {
             val categories = withContext(Dispatchers.IO) { catalogRepository.categories() }
+            val subcategories = withContext(Dispatchers.IO) { catalogRepository.subcategories() }
             val products = withContext(Dispatchers.IO) { catalogRepository.products() }
-            _uiState.update { it.copy(categories = categories, products = products) }
+            _uiState.update { it.copy(categories = categories, subcategories = subcategories, products = products) }
         }
     }
 
     fun setSearch(search: String) = _uiState.update { it.copy(search = search) }
-    fun setCategory(categoryId: Long?) = _uiState.update { it.copy(selectedCategoryId = categoryId) }
+    fun setCategory(categoryId: Long?) = _uiState.update { it.copy(selectedCategoryId = categoryId, selectedSubcategoryId = null) }
+    fun setSubcategory(subcategoryId: Long?) = _uiState.update { it.copy(selectedSubcategoryId = subcategoryId) }
 
     fun addToCart(product: ProductItem) {
         val current = _uiState.value.cart.toMutableList()

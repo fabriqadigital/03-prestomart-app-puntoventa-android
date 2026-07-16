@@ -1,4 +1,4 @@
-package com.ecommerce.ecommerceposapp.presentation
+package com.ecommerce.ecommerceposapp.presentation.navigation
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -96,9 +96,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.ecommerce.ecommerceposapp.data.repository.AuthRepository
-import com.ecommerce.ecommerceposapp.data.repository.CatalogRepository
-import com.ecommerce.ecommerceposapp.data.repository.SyncRepository
+import com.ecommerce.ecommerceposapp.domain.repository.auth.AuthRepository
+import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
+import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository
 import com.ecommerce.ecommerceposapp.domain.CartLine
 import com.ecommerce.ecommerceposapp.domain.ClientRow
 import com.ecommerce.ecommerceposapp.domain.CompletedSaleReceipt
@@ -107,6 +107,26 @@ import com.ecommerce.ecommerceposapp.domain.ProductAdminRow
 import com.ecommerce.ecommerceposapp.domain.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.ProductItem
 import com.ecommerce.ecommerceposapp.domain.UserSession
+import com.ecommerce.ecommerceposapp.presentation.auth.LoginUiState
+import com.ecommerce.ecommerceposapp.presentation.auth.LoginViewModel
+import com.ecommerce.ecommerceposapp.presentation.categories.CategoriesCrudScreen
+import com.ecommerce.ecommerceposapp.presentation.categories.CategoriesViewModel
+import com.ecommerce.ecommerceposapp.presentation.clients.ClientsCrudScreen
+import com.ecommerce.ecommerceposapp.presentation.clients.ClientsViewModel
+import com.ecommerce.ecommerceposapp.presentation.products.ProductsCrudScreen
+import com.ecommerce.ecommerceposapp.presentation.products.ProductsViewModel
+import com.ecommerce.ecommerceposapp.presentation.profile.ProfileScreen
+import com.ecommerce.ecommerceposapp.presentation.suppliers.SuppliersCrudScreen
+import com.ecommerce.ecommerceposapp.presentation.suppliers.SuppliersViewModel
+import com.ecommerce.ecommerceposapp.presentation.users.UsersCrudScreen
+import com.ecommerce.ecommerceposapp.presentation.users.UsersViewModel
+import com.ecommerce.ecommerceposapp.presentation.pos.EmitirComprobanteDialog
+import com.ecommerce.ecommerceposapp.presentation.pos.PosUiState
+import com.ecommerce.ecommerceposapp.presentation.pos.PosViewModel
+import com.ecommerce.ecommerceposapp.presentation.pos.VistaPreviaReciboDialog
+import com.ecommerce.ecommerceposapp.presentation.sales.SalesHistoryScreen
+import com.ecommerce.ecommerceposapp.presentation.sync.SyncUiState
+import com.ecommerce.ecommerceposapp.presentation.sync.SyncViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -212,12 +232,20 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
                 }
                 return@composable
             }
-            val maestroVm: MaestroViewModel = koinViewModel()
+            val categoriesVm: CategoriesViewModel = koinViewModel()
+            val clientsVm: ClientsViewModel = koinViewModel()
+            val productsVm: ProductsViewModel = koinViewModel()
+            val suppliersVm: SuppliersViewModel = koinViewModel()
+            val usersVm: UsersViewModel = koinViewModel()
             val posVm: PosViewModel = koinViewModel()
             LaunchedEffect(Unit) { posVm.load() }
             PosScreen(
                 session = session,
-                maestroVm = maestroVm,
+                categoriesVm = categoriesVm,
+                clientsVm = clientsVm,
+                productsVm = productsVm,
+                suppliersVm = suppliersVm,
+                usersVm = usersVm,
                 posVm = posVm,
                 onLogout = {
                     auth.logout()
@@ -670,14 +698,18 @@ private fun PosNavigationDrawerContent(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun PosScreen(
     session: UserSession,
-    maestroVm: MaestroViewModel,
+    categoriesVm: CategoriesViewModel,
+    clientsVm: ClientsViewModel,
+    productsVm: ProductsViewModel,
+    suppliersVm: SuppliersViewModel,
+    usersVm: UsersViewModel,
     posVm: PosViewModel,
     onLogout: () -> Unit,
     onGoSync: () -> Unit,
 ) {
     val catalog: CatalogRepository = koinInject()
     val state by posVm.uiState.collectAsState()
-    val maestroState by maestroVm.uiState.collectAsState()
+    val clientsState by clientsVm.uiState.collectAsState()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var selectedModule by remember { mutableStateOf("Punto de venta") }
@@ -689,7 +721,7 @@ private fun PosScreen(
     LaunchedEffect(selectedModule) {
         if (selectedModule == "Punto de venta" || selectedModule == "Historial de ventas") {
             posVm.load()
-            maestroVm.loadAll()
+            clientsVm.load()
         }
     }
 
@@ -703,12 +735,13 @@ private fun PosScreen(
                             state,
                             posVm::setSearch,
                             posVm::setCategory,
+                            posVm::setSubcategory,
                             onAddToCart = posVm::addToCart,
                         )
                         CartPane(
                             Modifier.width(360.dp),
                             state,
-                            maestroState,
+                            clientsState.clients,
                             catalog,
                             posVm::increase,
                             posVm::decrease,
@@ -722,12 +755,13 @@ private fun PosScreen(
                             state,
                             posVm::setSearch,
                             posVm::setCategory,
+                            posVm::setSubcategory,
                             onAddToCart = posVm::addToCart,
                         )
                         CartPane(
                             Modifier.fillMaxWidth().height(320.dp),
                             state,
-                            maestroState,
+                            clientsState.clients,
                             catalog,
                             posVm::increase,
                             posVm::decrease,
@@ -736,12 +770,12 @@ private fun PosScreen(
                     }
                 }
             }
-            "Historial de ventas" -> Box(Modifier.fillMaxSize().padding(padding)) { SalesHistoryScreen(catalog, maestroState.clients) }
-            "Productos" -> Box(Modifier.fillMaxSize().padding(padding)) { ProductsCrudScreen(maestroVm) }
-            "Categorías" -> Box(Modifier.fillMaxSize().padding(padding)) { CategoriesCrudScreen(maestroVm) }
-            "Clientes" -> Box(Modifier.fillMaxSize().padding(padding)) { ClientsCrudScreen(maestroVm) }
-            "Proveedores" -> Box(Modifier.fillMaxSize().padding(padding)) { SuppliersCrudScreen(maestroVm) }
-            "Usuarios" -> Box(Modifier.fillMaxSize().padding(padding)) { UsersCrudScreen(maestroVm, session) }
+            "Historial de ventas" -> Box(Modifier.fillMaxSize().padding(padding)) { SalesHistoryScreen(catalog, clientsState.clients) }
+            "Productos" -> Box(Modifier.fillMaxSize().padding(padding)) { ProductsCrudScreen(productsVm) }
+            "Categorías" -> Box(Modifier.fillMaxSize().padding(padding)) { CategoriesCrudScreen(categoriesVm) }
+            "Clientes" -> Box(Modifier.fillMaxSize().padding(padding)) { ClientsCrudScreen(clientsVm) }
+            "Proveedores" -> Box(Modifier.fillMaxSize().padding(padding)) { SuppliersCrudScreen(suppliersVm) }
+            "Usuarios" -> Box(Modifier.fillMaxSize().padding(padding)) { UsersCrudScreen(usersVm, session) }
             "Mi perfil" -> Box(Modifier.fillMaxSize().padding(padding)) { ProfileScreen(session, onLogout) }
             else -> Box(Modifier.fillMaxSize().padding(padding)) { Text("Seleccione una opción del menú.") }
         }
@@ -936,13 +970,16 @@ private fun CatalogPane(
     state: PosUiState,
     onSearch: (String) -> Unit,
     onCategory: (Long?) -> Unit,
+    onSubcategory: (Long?) -> Unit,
     onAddToCart: (ProductItem) -> Unit,
 ) {
     val products = state.products.filter {
         (state.selectedCategoryId == null || it.categoryId == state.selectedCategoryId) &&
+            (state.selectedSubcategoryId == null || it.subcategoryId == state.selectedSubcategoryId) &&
             (state.search.isBlank() || it.name.contains(state.search, ignoreCase = true) ||
                 (it.code.isNotBlank() && it.code.contains(state.search, ignoreCase = true)))
     }
+    val visibleSubcategories = state.subcategories.filter { it.categoryId == state.selectedCategoryId }
     val gridMinWidth = when {
         LocalConfiguration.current.screenWidthDp >= 900 -> 200.dp
         LocalConfiguration.current.screenWidthDp >= 600 -> 176.dp
@@ -982,6 +1019,34 @@ private fun CatalogPane(
             }
         }
         Spacer(Modifier.height(12.dp))
+        if (visibleSubcategories.isNotEmpty()) {
+            LazyRow(contentPadding = PaddingValues(horizontal = 2.dp)) {
+                item {
+                    FilterChip(
+                        selected = state.selectedSubcategoryId == null,
+                        onClick = { onSubcategory(null) },
+                        label = { Text("Todas") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Brand,
+                            selectedLabelColor = Color.White,
+                        ),
+                    )
+                }
+                items(visibleSubcategories) { subcategory ->
+                    Spacer(Modifier.width(8.dp))
+                    FilterChip(
+                        selected = state.selectedSubcategoryId == subcategory.id,
+                        onClick = { onSubcategory(subcategory.id) },
+                        label = { Text(subcategory.name) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Brand,
+                            selectedLabelColor = Color.White,
+                        ),
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = gridMinWidth),
             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -1283,7 +1348,7 @@ private fun CobrarVentaDialog(
 private fun CartPane(
     modifier: Modifier,
     state: PosUiState,
-    maestroState: MaestroUiState,
+    clients: List<ClientRow>,
     catalog: CatalogRepository,
     onIncrease: (CartLine) -> Unit,
     onDecrease: (CartLine) -> Unit,
@@ -1480,7 +1545,7 @@ private fun CartPane(
                             .padding(vertical = 8.dp),
                         color = MaterialTheme.colorScheme.primary,
                     )
-                    maestroState.clients.filter { it.active }.forEach { c ->
+                    clients.filter { it.active }.forEach { c ->
                         Text(
                             "${c.name} — ${c.document.ifBlank { "—" }}",
                             modifier = Modifier
@@ -1536,7 +1601,7 @@ private fun CartPane(
             clienteNombre = cdisp?.first,
             clienteDoc = cdisp?.second,
             idClienteVenta = cid,
-            clients = maestroState.clients,
+            clients = clients,
             catalog = catalog,
             onDismiss = {
                 showPreview = false

@@ -20,7 +20,7 @@ class PosApplication : Application() {
         Realm.init(this)
         val config = RealmConfiguration.Builder()
             .name("ecommerce_pos.realm")
-            .schemaVersion(6)
+            .schemaVersion(7)
             .deleteRealmIfMigrationNeeded()
             .compactOnLaunch()
             .allowWritesOnUiThread(true)

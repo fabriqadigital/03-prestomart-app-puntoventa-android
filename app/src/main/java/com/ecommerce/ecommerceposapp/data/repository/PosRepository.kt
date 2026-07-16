@@ -1,8 +1,9 @@
 package com.ecommerce.ecommerceposapp.data.repository
 
 import android.content.Context
-import com.ecommerce.ecommerceposapp.data.local.CategoryRealm
-import com.ecommerce.ecommerceposapp.data.local.ClientRealm
+import com.ecommerce.ecommerceposapp.data.local.categories.CategoryRealm
+import com.ecommerce.ecommerceposapp.data.local.categories.SubcategoryRealm
+import com.ecommerce.ecommerceposapp.data.local.clients.ClientRealm
 import com.ecommerce.ecommerceposapp.data.local.FinanzaCajaRealm
 import com.ecommerce.ecommerceposapp.data.local.FinanzaComprobanteSerieRealm
 import com.ecommerce.ecommerceposapp.data.local.FinanzaEmisorConfigRealm
@@ -11,11 +12,11 @@ import com.ecommerce.ecommerceposapp.data.local.FinanzaComprobanteDetalleRealm
 import com.ecommerce.ecommerceposapp.data.local.FinanzaComprobanteRealm
 import com.ecommerce.ecommerceposapp.data.local.FinanzaVentaDetalleRealm
 import com.ecommerce.ecommerceposapp.data.local.FinanzaVentaRealm
-import com.ecommerce.ecommerceposapp.data.local.ProductRealm
-import com.ecommerce.ecommerceposapp.data.local.SupplierRealm
-import com.ecommerce.ecommerceposapp.data.local.SyncModuleStateRealm
-import com.ecommerce.ecommerceposapp.data.local.SyncStateRealm
-import com.ecommerce.ecommerceposapp.data.local.UserRealm
+import com.ecommerce.ecommerceposapp.data.local.products.ProductRealm
+import com.ecommerce.ecommerceposapp.data.local.suppliers.SupplierRealm
+import com.ecommerce.ecommerceposapp.data.local.sync.SyncModuleStateRealm
+import com.ecommerce.ecommerceposapp.data.local.sync.SyncStateRealm
+import com.ecommerce.ecommerceposapp.data.local.users.UserRealm
 import com.ecommerce.ecommerceposapp.domain.CartLine
 import com.ecommerce.ecommerceposapp.domain.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.CompletedSaleReceipt
@@ -28,9 +29,20 @@ import com.ecommerce.ecommerceposapp.domain.CategoryItem
 import com.ecommerce.ecommerceposapp.domain.ClientRow
 import com.ecommerce.ecommerceposapp.domain.ProductAdminRow
 import com.ecommerce.ecommerceposapp.domain.ProductItem
+import com.ecommerce.ecommerceposapp.domain.SubcategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.SubcategoryItem
 import com.ecommerce.ecommerceposapp.domain.SupplierRow
 import com.ecommerce.ecommerceposapp.domain.UserRow
 import com.ecommerce.ecommerceposapp.domain.UserSession
+import com.ecommerce.ecommerceposapp.domain.repository.categories.CategoryRepository
+import com.ecommerce.ecommerceposapp.domain.repository.clients.ClientRepository
+import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
+import com.ecommerce.ecommerceposapp.domain.repository.suppliers.SupplierRepository
+import com.ecommerce.ecommerceposapp.domain.repository.users.UserRepository
+import com.ecommerce.ecommerceposapp.domain.repository.auth.AuthRepository as DomainAuthRepository
+import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository as DomainCatalogRepository
+import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository as DomainSyncRepository
+import com.ecommerce.ecommerceposapp.domain.repository.auth.LoginMode as DomainLoginMode
 import io.realm.Realm
 import io.realm.RealmObject
 import java.net.HttpURLConnection
@@ -60,9 +72,10 @@ interface AuthRepository {
 
 interface CatalogRepository {
     fun categories(): List<CategoryItem>
+    fun subcategories(): List<SubcategoryItem>
     fun products(): List<ProductItem>
-    fun registerSale(lines: List<CartLine>, payment: SalePaymentInfo, idCliente: Long = 0L): Result<CompletedSaleReceipt>
-    fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long = 0L): Result<ComprobanteEmitidoResult>
+    fun registerSale(lines: List<CartLine>, payment: SalePaymentInfo, idCliente: Long): Result<CompletedSaleReceipt>
+    fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long): Result<ComprobanteEmitidoResult>
     /** Nombre y número de documento del cliente, si existe en maestros. */
     fun getClienteDisplay(idCliente: Long): Pair<String, String>?
     /** Teléfono del cliente en maestros (vacío si no hay). */
@@ -80,42 +93,23 @@ interface SyncRepository {
     fun syncModules(user: UserSession, modules: Set<String>): Result<Unit>
 }
 
-interface MaestroRepository {
-    fun listUsers(): List<UserRow>
-    fun upsertUser(row: UserRow, plainPassword: String?): Result<Unit>
-    fun deleteUser(id: Long, currentUserId: Long): Result<Unit>
-
-    fun listClients(): List<ClientRow>
-    fun upsertClient(row: ClientRow): Result<Unit>
-    fun deleteClient(id: Long): Result<Unit>
-
-    fun listSuppliers(): List<SupplierRow>
-    fun upsertSupplier(row: SupplierRow): Result<Unit>
-    fun deleteSupplier(id: Long): Result<Unit>
-
-    fun listCategoriesAdmin(): List<CategoryAdminRow>
-    fun upsertCategory(row: CategoryAdminRow): Result<Unit>
-    fun deleteCategory(id: Long): Result<Unit>
-
-    fun listProductsAdmin(): List<ProductAdminRow>
-    fun upsertProduct(row: ProductAdminRow): Result<Unit>
-    fun deleteProduct(id: Long): Result<Unit>
-}
-
 class PosRepositoryImpl(private val context: Context) :
-    AuthRepository,
-    CatalogRepository,
-    SyncRepository,
-    MaestroRepository {
+    DomainAuthRepository,
+    DomainCatalogRepository,
+    DomainSyncRepository {
+
+    override fun login(email: String, password: String, mode: DomainLoginMode): Result<UserSession> =
+        login(email, password, when (mode) {
+            DomainLoginMode.OfflineOnly -> LoginMode.OfflineOnly
+            DomainLoginMode.OnlineOnly -> LoginMode.OnlineOnly
+        })
 
     private val prefs = context.getSharedPreferences("pos_prefs", Context.MODE_PRIVATE)
     private data class ApiBaseCandidate(val baseUrl: String, val hostHeader: String? = null)
     private val remoteApiBaseCandidates = listOf(
-        ApiBaseCandidate("http://10.0.3.2:81", "prestomart.localhost:81"),
-        ApiBaseCandidate("http://10.0.2.2:81", "prestomart.localhost:81"),
-        ApiBaseCandidate("http://prestomart.localhost:81"),
+        ApiBaseCandidate("https://prestomartperu.com"),
     )
-    private val allSyncModules = listOf("productos", "imagenes_productos", "categorias", "clientes", "proveedores", "usuarios", "ventas")
+    private val allSyncModules = listOf("productos", "imagenes_productos", "categorias", "subcategorias", "clientes", "proveedores", "usuarios", "ventas")
 
     /**
      * Si Realm aún no tiene usuario + sync inicial, rellena el mismo demo que tras sincronizar.
@@ -147,7 +141,7 @@ class PosRepositoryImpl(private val context: Context) :
         }
     }
 
-    override fun login(email: String, password: String, mode: LoginMode): Result<UserSession> {
+    fun login(email: String, password: String, mode: LoginMode): Result<UserSession> {
         if (email.isBlank() || password.isBlank()) return Result.failure(Exception("Completa usuario y contraseña."))
         if (mode == LoginMode.OfflineOnly && !canUseOfflineLogin()) {
             return Result.failure(Exception("Primera vez o sin sincronización: use modo en línea y sincronice el catálogo."))
@@ -185,8 +179,20 @@ class PosRepositoryImpl(private val context: Context) :
             .map { c -> CategoryItem(c.id, c.name, c.active) }
     }
 
+    override fun subcategories(): List<SubcategoryItem> = realmQuery {
+        it.where(SubcategoryRealm::class.java).equalTo("active", true).findAll()
+            .filter { s ->
+                it.where(CategoryRealm::class.java)
+                    .equalTo("id", s.categoryId)
+                    .equalTo("active", true)
+                    .findFirst() != null
+            }
+            .map { s -> SubcategoryItem(s.id, s.categoryId, s.name, s.active) }
+    }
+
     override fun products(): List<ProductItem> = realmQuery {
         it.where(ProductRealm::class.java).equalTo("active", true).findAll()
+            .filter { p -> productHasActiveCategoryPath(it, p) }
             .map { p ->
                 val rawUrl = normalizedProductImageUrl(p.id, p.imageUrl)
                 // Si es file://, verifica que el archivo exista (p.ej. tras reinstalación)
@@ -198,6 +204,7 @@ class PosRepositoryImpl(private val context: Context) :
                 ProductItem(
                     id = p.id,
                     categoryId = p.categoryId,
+                    subcategoryId = p.subcategoryId,
                     name = p.name,
                     price = p.price,
                     stock = p.stock,
@@ -566,64 +573,79 @@ class PosRepositoryImpl(private val context: Context) :
         val selected = modules.intersect(allSyncModules.toSet())
         if (selected.isEmpty()) return Result.failure(Exception("Seleccione al menos un módulo para sincronizar."))
         val includeImageSync = "imagenes_productos" in selected
-        val remote = fetchRemoteProductsBestEffort()
+        val remote = fetchRemoteCatalogBestEffort()
         val now = System.currentTimeMillis()
+        if ("categorias" in selected && remote.categories.isEmpty()) {
+            return Result.failure(Exception("No se recibieron categorias desde https://prestomartperu.com."))
+        }
+        if ("productos" in selected && remote.products.isEmpty()) {
+            return Result.failure(Exception("No se recibieron productos desde https://prestomartperu.com."))
+        }
 
         // Fase 1: escribir datos en Realm (sin I/O de red dentro de la transacción)
         realmWrite { realm ->
-            if ("categorias" in selected && realm.where(CategoryRealm::class.java).count() == 0L) {
-                listOf(
-                    "Abarrotes", "Automotriz", "Bebidas", "Belleza y cuidado personal", "Carteras / Bolsos",
-                ).forEachIndexed { index, name ->
+            if ("categorias" in selected) {
+                realm.where(CategoryRealm::class.java).findAll().deleteAllFromRealm()
+                remote.categories.forEach { rc ->
                     realm.insertOrUpdate(CategoryRealm().apply {
-                        id = index + 1L
-                        this.name = name
-                        active = true
+                        id = rc.id
+                        name = rc.name
+                        active = rc.active
                     })
                 }
             }
-            if ("productos" in selected && remote.isNotEmpty()) {
-                remote.mapNotNull { it.categoryName?.trim().takeUnless { n -> n.isNullOrBlank() } }
-                    .distinct()
-                    .forEach { catName ->
-                        val existing = realm.where(CategoryRealm::class.java).equalTo("name", catName, io.realm.Case.INSENSITIVE).findFirst()
+            if ("subcategorias" in selected && remote.subcategories.isNotEmpty()) {
+                realm.where(SubcategoryRealm::class.java).findAll().deleteAllFromRealm()
+                remote.subcategories.forEach { rs ->
+                    val category = realm.where(CategoryRealm::class.java).equalTo("id", rs.categoryId).findFirst()
+                    if (category != null) {
+                        realm.insertOrUpdate(SubcategoryRealm().apply {
+                            id = rs.id
+                            categoryId = rs.categoryId
+                            name = rs.name
+                            active = rs.active && category.active
+                        })
+                    }
+                }
+            }
+            if ("productos" in selected) {
+                realm.where(ProductRealm::class.java).findAll().deleteAllFromRealm()
+                remote.products.mapNotNull { rp ->
+                    if (rp.subcategoryId <= 0L) rp.subcategoryName?.trim().takeUnless { n -> n.isNullOrBlank() }?.let { rp.categoryId to it } else null
+                }.distinct().forEach { (categoryId, subcatName) ->
+                    if (categoryId > 0L && realm.where(CategoryRealm::class.java).equalTo("id", categoryId).findFirst() != null) {
+                        val existing = realm.where(SubcategoryRealm::class.java)
+                            .equalTo("categoryId", categoryId)
+                            .equalTo("name", subcatName, io.realm.Case.INSENSITIVE)
+                            .findFirst()
                         if (existing == null) {
-                            realm.insertOrUpdate(CategoryRealm().apply {
-                                id = nextId(realm, CategoryRealm::class.java)
-                                name = catName
+                            realm.insertOrUpdate(SubcategoryRealm().apply {
+                                id = nextId(realm, SubcategoryRealm::class.java)
+                                this.categoryId = categoryId
+                                name = subcatName
                                 active = true
                             })
                         }
                     }
-                remote.forEach { rp ->
+                }
+                remote.products.forEach { rp ->
                     val remoteCatName = rp.categoryName?.trim().orEmpty()
                     val catId = if (remoteCatName.isNotBlank()) {
                         realm.where(CategoryRealm::class.java).equalTo("name", remoteCatName, io.realm.Case.INSENSITIVE).findFirst()?.id
                     } else {
                         null
-                    } ?: rp.categoryId.takeIf { it > 0L } ?: 1L
+                    } ?: rp.categoryId.takeIf { it > 0L } ?: return@forEach
+                    val subcatId = resolveSubcategoryId(realm, catId, rp.subcategoryId, rp.subcategoryName)
                     realm.insertOrUpdate(ProductRealm().apply {
                         id = if (rp.id > 0L) rp.id else nextId(realm, ProductRealm::class.java)
                         categoryId = catId
-                        name = rp.name.ifBlank { "PRODUCTO $id" }
+                        subcategoryId = subcatId
+                        name = rp.name
                         codigo = rp.code
                         imageUrl = normalizedProductImageUrl(id, rp.imageUrl)
                         price = rp.price
                         stock = rp.stock
-                        active = true
-                    })
-                }
-            } else if ("productos" in selected && realm.where(ProductRealm::class.java).count() == 0L) {
-                repeat(12) { i ->
-                    realm.insertOrUpdate(ProductRealm().apply {
-                        id = i + 1L
-                        categoryId = (i % 5) + 1L
-                        name = "PRODUCTO ${i + 1}"
-                        codigo = "SKU-${i + 1}"
-                        imageUrl = ""
-                        price = (i + 1) * 3.2
-                        stock = 120.0
-                        active = true
+                        active = rp.active
                     })
                 }
             }
@@ -759,13 +781,7 @@ class PosRepositoryImpl(private val context: Context) :
         return newId
     }
 
-    override fun listUsers(): List<UserRow> = realmQuery { realm ->
-        realm.where(UserRealm::class.java).equalTo("active", true).findAll().map { u ->
-            UserRow(u.id, u.email, u.name, u.role, u.active)
-        }
-    }
-
-    override fun upsertUser(row: UserRow, plainPassword: String?): Result<Unit> {
+    private fun upsertUser(row: UserRow, plainPassword: String?): Result<Unit> {
         if (row.email.isBlank() || row.name.isBlank()) return Result.failure(Exception("Nombre y correo son obligatorios."))
         val emailTaken = realmQuery { realm ->
             val u = realm.where(UserRealm::class.java)
@@ -796,7 +812,7 @@ class PosRepositoryImpl(private val context: Context) :
         return Result.success(Unit)
     }
 
-    override fun deleteUser(id: Long, currentUserId: Long): Result<Unit> {
+    private fun deleteUser(id: Long, currentUserId: Long): Result<Unit> {
         if (id == currentUserId) return Result.failure(Exception("No puede eliminar el usuario de la sesión actual."))
         realmWrite { realm ->
             val u = realm.where(UserRealm::class.java).equalTo("id", id).findFirst() ?: return@realmWrite
@@ -805,42 +821,13 @@ class PosRepositoryImpl(private val context: Context) :
         return Result.success(Unit)
     }
 
-    override fun listClients(): List<ClientRow> = realmQuery { realm ->
-        realm.where(ClientRealm::class.java).equalTo("active", true).findAll().map { c ->
-            ClientRow(c.id, c.name, c.document, c.phone, c.active)
-        }
-    }
-
-    override fun upsertClient(row: ClientRow): Result<Unit> {
-        if (row.name.isBlank()) return Result.failure(Exception("Nombre obligatorio."))
-        realmWrite { realm ->
-            val id = if (row.id == 0L) nextId(realm, ClientRealm::class.java) else row.id
-            realm.insertOrUpdate(ClientRealm().apply {
-                this.id = id
-                name = row.name.trim()
-                document = row.document.trim()
-                phone = row.phone.trim()
-                active = row.active
-            })
-        }
-        return Result.success(Unit)
-    }
-
-    override fun deleteClient(id: Long): Result<Unit> {
-        realmWrite { realm ->
-            val c = realm.where(ClientRealm::class.java).equalTo("id", id).findFirst() ?: return@realmWrite
-            c.active = false
-        }
-        return Result.success(Unit)
-    }
-
-    override fun listSuppliers(): List<SupplierRow> = realmQuery { realm ->
+    private fun listSuppliers(): List<SupplierRow> = realmQuery { realm ->
         realm.where(SupplierRealm::class.java).equalTo("active", true).findAll().map { s ->
             SupplierRow(s.id, s.businessName, s.ruc, s.phone, s.active)
         }
     }
 
-    override fun upsertSupplier(row: SupplierRow): Result<Unit> {
+    private fun upsertSupplier(row: SupplierRow): Result<Unit> {
         if (row.businessName.isBlank()) return Result.failure(Exception("Razón social obligatoria."))
         realmWrite { realm ->
             val id = if (row.id == 0L) nextId(realm, SupplierRealm::class.java) else row.id
@@ -855,78 +842,10 @@ class PosRepositoryImpl(private val context: Context) :
         return Result.success(Unit)
     }
 
-    override fun deleteSupplier(id: Long): Result<Unit> {
+    private fun deleteSupplier(id: Long): Result<Unit> {
         realmWrite { realm ->
             val s = realm.where(SupplierRealm::class.java).equalTo("id", id).findFirst() ?: return@realmWrite
             s.active = false
-        }
-        return Result.success(Unit)
-    }
-
-    override fun listCategoriesAdmin(): List<CategoryAdminRow> = realmQuery { realm ->
-        realm.where(CategoryRealm::class.java).equalTo("active", true).findAll().map { c ->
-            CategoryAdminRow(c.id, c.name, c.active)
-        }
-    }
-
-    override fun upsertCategory(row: CategoryAdminRow): Result<Unit> {
-        if (row.name.isBlank()) return Result.failure(Exception("Nombre obligatorio."))
-        realmWrite { realm ->
-            val id = if (row.id == 0L) nextId(realm, CategoryRealm::class.java) else row.id
-            realm.insertOrUpdate(CategoryRealm().apply {
-                this.id = id
-                name = row.name.trim()
-                active = row.active
-            })
-        }
-        return Result.success(Unit)
-    }
-
-    override fun deleteCategory(id: Long): Result<Unit> {
-        realmWrite { realm ->
-            val c = realm.where(CategoryRealm::class.java).equalTo("id", id).findFirst() ?: return@realmWrite
-            c.active = false
-        }
-        return Result.success(Unit)
-    }
-
-    override fun listProductsAdmin(): List<ProductAdminRow> = realmQuery { realm ->
-        realm.where(ProductRealm::class.java).equalTo("active", true).findAll().map { p ->
-            ProductAdminRow(
-                id = p.id,
-                categoryId = p.categoryId,
-                name = p.name,
-                code = p.codigo,
-                imageUrl = normalizedProductImageUrl(p.id, p.imageUrl),
-                price = p.price,
-                stock = p.stock,
-                active = p.active,
-            )
-        }
-    }
-
-    override fun upsertProduct(row: ProductAdminRow): Result<Unit> {
-        if (row.name.isBlank()) return Result.failure(Exception("Nombre obligatorio."))
-        realmWrite { realm ->
-            val id = if (row.id == 0L) nextId(realm, ProductRealm::class.java) else row.id
-            realm.insertOrUpdate(ProductRealm().apply {
-                this.id = id
-                categoryId = row.categoryId
-                name = row.name.trim()
-                codigo = row.code.trim()
-                imageUrl = normalizedProductImageUrl(id, row.imageUrl)
-                price = row.price
-                stock = row.stock
-                active = row.active
-            })
-        }
-        return Result.success(Unit)
-    }
-
-    override fun deleteProduct(id: Long): Result<Unit> {
-        realmWrite { realm ->
-            val p = realm.where(ProductRealm::class.java).equalTo("id", id).findFirst() ?: return@realmWrite
-            p.active = false
         }
         return Result.success(Unit)
     }
@@ -1122,6 +1041,39 @@ class PosRepositoryImpl(private val context: Context) :
         return (max?.toLong() ?: 0L) + 1L
     }
 
+    private fun resolveSubcategoryId(realm: Realm, categoryId: Long, remoteSubcategoryId: Long, remoteSubcategoryName: String?): Long {
+        val byId = if (remoteSubcategoryId > 0L) {
+            realm.where(SubcategoryRealm::class.java)
+                .equalTo("id", remoteSubcategoryId)
+                .equalTo("categoryId", categoryId)
+                .findFirst()
+        } else {
+            null
+        }
+        if (byId != null) return byId.id
+        val name = remoteSubcategoryName?.trim().orEmpty()
+        if (name.isBlank()) return 0L
+        return realm.where(SubcategoryRealm::class.java)
+            .equalTo("categoryId", categoryId)
+            .equalTo("name", name, io.realm.Case.INSENSITIVE)
+            .findFirst()
+            ?.id ?: 0L
+    }
+
+    private fun productHasActiveCategoryPath(realm: Realm, product: ProductRealm): Boolean {
+        val category = realm.where(CategoryRealm::class.java)
+            .equalTo("id", product.categoryId)
+            .equalTo("active", true)
+            .findFirst() ?: return false
+        if (!category.active) return false
+        if (product.subcategoryId <= 0L) return true
+        return realm.where(SubcategoryRealm::class.java)
+            .equalTo("id", product.subcategoryId)
+            .equalTo("categoryId", product.categoryId)
+            .equalTo("active", true)
+            .findFirst() != null
+    }
+
     private fun hash(value: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
@@ -1159,48 +1111,69 @@ class PosRepositoryImpl(private val context: Context) :
     private data class RemoteProductSeed(
         val id: Long,
         val categoryId: Long,
+        val subcategoryId: Long,
         val categoryName: String?,
+        val subcategoryName: String?,
         val name: String,
         val code: String,
         val imageUrl: String,
         val price: Double,
         val stock: Double,
+        val active: Boolean,
     )
 
-    private fun fetchRemoteProductsBestEffort(): List<RemoteProductSeed> {
+    private data class RemoteCategorySeed(
+        val id: Long,
+        val name: String,
+        val active: Boolean,
+    )
+
+    private data class RemoteSubcategorySeed(
+        val id: Long,
+        val categoryId: Long,
+        val name: String,
+        val active: Boolean,
+    )
+
+    private data class RemoteCatalogSeed(
+        val categories: List<RemoteCategorySeed> = emptyList(),
+        val subcategories: List<RemoteSubcategorySeed> = emptyList(),
+        val products: List<RemoteProductSeed> = emptyList(),
+    )
+
+    private fun fetchRemoteCatalogBestEffort(): RemoteCatalogSeed {
         val preferredBase = prefs.getString("api_base_url", null)
         val preferredHost = prefs.getString("api_host_header", null)?.takeIf { it.isNotBlank() }
         val preferred = preferredBase?.let { ApiBaseCandidate(it, preferredHost) }
         val bases = listOfNotNull(preferred) + remoteApiBaseCandidates.filter { it.baseUrl != preferredBase }
-        val paths = listOf(
-            // Endpoint específico del backend prestomart (máxima prioridad)
-            "/api/app/finanza/sync/catalog",
-            // Rutas genéricas de fallback
-            "/api/products",
-            "/api/productos",
-            "/api/product",
-            "/api/producto",
-            "/api/v1/products",
-            "/api/v1/productos",
-            "/api/pos/products",
-            "/api/pos/productos",
-            "/api/catalog/products",
-            "/api/catalog/productos",
-            "/api/sync/products",
-            "/api/sync/productos",
-            "/api/sincronizacion/productos",
-            "/api/sincronizar/productos",
-            "/api/inventario/productos",
-            "/api/items",
-            "/api/articulos",
-        )
         for (base in bases) {
-            for (path in paths) {
-                val list = runCatching { fetchProductsFromEndpoint("${base.baseUrl}$path", base) }.getOrNull().orEmpty()
-                if (list.isNotEmpty()) return list
+            val catalog = runCatching {
+                fetchCatalogFromEndpoint("${base.baseUrl}/api/app/finanza/sync/catalog", base)
+            }.getOrNull()
+            if (catalog != null && (catalog.categories.isNotEmpty() || catalog.products.isNotEmpty())) {
+                val categories = catalog.categories.ifEmpty {
+                    runCatching {
+                        fetchCategoriesFromEndpoint("${base.baseUrl}/api/producto_categoria/listar", base)
+                    }.getOrDefault(emptyList())
+                }
+                val subcategories = catalog.subcategories.ifEmpty {
+                    runCatching {
+                        fetchSubcategoriesFromEndpoint("${base.baseUrl}/api/producto_categoria_sub/listar", base)
+                    }.getOrDefault(emptyList())
+                }
+                return catalog.copy(categories = categories, subcategories = subcategories)
+            }
+            val categories = runCatching {
+                fetchCategoriesFromEndpoint("${base.baseUrl}/api/producto_categoria/listar", base)
+            }.getOrDefault(emptyList())
+            if (categories.isNotEmpty()) {
+                val subcategories = runCatching {
+                    fetchSubcategoriesFromEndpoint("${base.baseUrl}/api/producto_categoria_sub/listar", base)
+                }.getOrDefault(emptyList())
+                return RemoteCatalogSeed(categories = categories, subcategories = subcategories)
             }
         }
-        return emptyList()
+        return RemoteCatalogSeed()
     }
 
     private fun cacheProductImages() {
@@ -1266,6 +1239,48 @@ class PosRepositoryImpl(private val context: Context) :
         }
     }
 
+    private fun fetchCatalogFromEndpoint(url: String, base: ApiBaseCandidate): RemoteCatalogSeed {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 6000
+            readTimeout = 6000
+            setRequestProperty("Accept", "application/json")
+            base.hostHeader?.let { setRequestProperty("Host", it) }
+            addAuthHeaderIfAvailable(this)
+        }
+        conn.inputStream.bufferedReader().use { reader ->
+            return parseRemoteCatalog(reader.readText().trim(), base.baseUrl)
+        }
+    }
+
+    private fun fetchCategoriesFromEndpoint(url: String, base: ApiBaseCandidate): List<RemoteCategorySeed> {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 6000
+            readTimeout = 6000
+            setRequestProperty("Accept", "application/json")
+            base.hostHeader?.let { setRequestProperty("Host", it) }
+            addAuthHeaderIfAvailable(this)
+        }
+        conn.inputStream.bufferedReader().use { reader ->
+            return parseRemoteCategories(reader.readText().trim())
+        }
+    }
+
+    private fun fetchSubcategoriesFromEndpoint(url: String, base: ApiBaseCandidate): List<RemoteSubcategorySeed> {
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 6000
+            readTimeout = 6000
+            setRequestProperty("Accept", "application/json")
+            base.hostHeader?.let { setRequestProperty("Host", it) }
+            addAuthHeaderIfAvailable(this)
+        }
+        conn.inputStream.bufferedReader().use { reader ->
+            return parseRemoteSubcategories(reader.readText().trim())
+        }
+    }
+
     private fun fetchProductsFromEndpoint(url: String, base: ApiBaseCandidate): List<RemoteProductSeed> {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -1281,14 +1296,122 @@ class PosRepositoryImpl(private val context: Context) :
         }
     }
 
+    private fun parseRemoteCatalog(payload: String, base: String): RemoteCatalogSeed {
+        val root: Any = if (payload.trim().startsWith("[")) JSONArray(payload) else JSONObject(payload)
+        val rootObj = root as? JSONObject
+        val categoriesArray = rootObj?.optArrayAny("categories", "categorias", "categorias_producto", "producto_categoria")
+        val subcategoriesArray = rootObj?.optArrayAny("subcategories", "subcategorias", "producto_categoria_sub", "categoria_sub")
+        val productsArray = rootObj?.optArrayAny("products", "productos", "items", "articulos", "result")
+            ?: (root as? JSONArray)
+        return RemoteCatalogSeed(
+            categories = categoriesArray?.let { parseRemoteCategories(it) }.orEmpty(),
+            subcategories = subcategoriesArray?.let { parseRemoteSubcategories(it) }.orEmpty(),
+            products = productsArray?.let { parseRemoteProducts(it, base) }.orEmpty(),
+        )
+    }
+
+    private fun parseRemoteCategories(payload: String): List<RemoteCategorySeed> {
+        val root: Any = if (payload.trim().startsWith("[")) JSONArray(payload) else JSONObject(payload)
+        val array = (root as? JSONObject)?.optArrayAny("result", "categories", "categorias", "data")
+            ?: (root as? JSONArray)
+            ?: return emptyList()
+        return parseRemoteCategories(array)
+    }
+
+    private fun parseRemoteCategories(array: JSONArray): List<RemoteCategorySeed> {
+        return (0 until array.length()).mapNotNull { index ->
+            val obj = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = obj.optAnyLong("id_producto_categoria", "category_id", "id_categoria", "id")
+            val name = obj.optAnyString("nombre", "name", "category_name", "categoria")
+            if (id <= 0L || name.isBlank()) null else RemoteCategorySeed(id, name, obj.optActive())
+        }.distinctBy { it.id }
+    }
+
+    private fun parseRemoteSubcategories(payload: String): List<RemoteSubcategorySeed> {
+        val root: Any = if (payload.trim().startsWith("[")) JSONArray(payload) else JSONObject(payload)
+        val array = (root as? JSONObject)?.optArrayAny("result", "subcategories", "subcategorias", "data")
+            ?: (root as? JSONArray)
+            ?: return emptyList()
+        return parseRemoteSubcategories(array)
+    }
+
+    private fun parseRemoteSubcategories(array: JSONArray): List<RemoteSubcategorySeed> {
+        return (0 until array.length()).mapNotNull { index ->
+            val obj = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = obj.optAnyLong("id_producto_categoria_sub", "subcategory_id", "id_subcategoria", "subcategoria_id", "id")
+            val categoryId = obj.optAnyLong("id_producto_categoria", "category_id", "id_categoria", "categoria_id")
+            val name = obj.optAnyString("nombre", "name", "subcategory_name", "subcategoria", "nombre_subcategoria")
+            if (id <= 0L || categoryId <= 0L || name.isBlank()) null else RemoteSubcategorySeed(id, categoryId, name, obj.optActive())
+        }.distinctBy { it.id }
+    }
+
+    private fun JSONObject.optArrayAny(vararg keys: String): JSONArray? {
+        keys.forEach { key ->
+            val value = opt(key)
+            if (value is JSONArray) return value
+        }
+        return null
+    }
+
+    private fun JSONObject.optAnyString(vararg keys: String): String {
+        keys.forEach { key ->
+            val raw = opt(key)
+            val value = when (raw) {
+                is String -> raw
+                is Number -> raw.toString()
+                is Boolean -> raw.toString()
+                else -> ""
+            }.trim()
+            if (value.isNotBlank() && !value.equals("null", ignoreCase = true)) return value
+        }
+        return ""
+    }
+
+    private fun JSONObject.optAnyLong(vararg keys: String): Long {
+        keys.forEach { key ->
+            when (val raw = opt(key)) {
+                is Number -> return raw.toLong()
+                is String -> raw.trim().toLongOrNull()?.let { return it }
+            }
+        }
+        return 0L
+    }
+
+    private fun JSONObject.optActive(default: Boolean = true): Boolean {
+        val raw = opt("Activo").takeUnless { it == null }
+            ?: opt("Active").takeUnless { it == null }
+            ?: opt("active").takeUnless { it == null }
+            ?: opt("activo").takeUnless { it == null }
+            ?: return default
+        return when (raw) {
+            is Boolean -> raw
+            is Number -> raw.toInt() != 0
+            is String -> raw.trim().let { value ->
+                value.equals("S", true) ||
+                    value.equals("SI", true) ||
+                    value.equals("TRUE", true) ||
+                    value == "1" ||
+                    value.equals("A", true)
+            }
+            else -> default
+        }
+    }
+
     private fun parseRemoteProducts(payload: String, base: String): List<RemoteProductSeed> {
+        val root: Any = if (payload.trim().startsWith("[")) JSONArray(payload) else JSONObject(payload)
+        return parseRemoteProducts(root, base)
+    }
+
+    private fun parseRemoteProducts(root: Any, base: String): List<RemoteProductSeed> {
         val imageFields = listOf("url_imagen", "image_url", "image", "imagen", "foto", "thumbnail", "thumb", "imagen_url", "img", "photo")
         val nameFields = listOf("nombre", "name", "title", "producto", "descripcion")
         val priceFields = listOf("precio", "price", "pvp", "sale_price", "precio_venta")
         val stockFields = listOf("stock", "cantidad", "existencia", "stock_actual")
         val codeFields = listOf("codigo_producto", "code", "codigo", "sku", "barcode", "codigo_barras")
         val categoryIdFields = listOf("id_producto_categoria", "category_id", "id_categoria", "categoria_id", "id_categoria_producto")
-        val categoryNameFields = listOf("category_name", "categoria", "category", "nombre_categoria", "nombre")
+        val subcategoryIdFields = listOf("id_producto_categoria_sub", "subcategory_id", "id_subcategoria", "subcategoria_id")
+        val categoryNameFields = listOf("category_name", "categoria", "category", "nombre_categoria")
+        val subcategoryNameFields = listOf("subcategory_name", "subcategoria", "subcategory", "nombre_subcategoria", "nombre_sub_categoria")
 
         fun optAnyString(obj: JSONObject, keys: List<String>): String {
             keys.forEach { k ->
@@ -1337,19 +1460,24 @@ class PosRepositoryImpl(private val context: Context) :
             // Soporta id_producto (prestomart), id, product_id
             val id = obj.optLong("id_producto", obj.optLong("id", obj.optLong("product_id", 0L)))
             val categoryId = optAnyLong(obj, categoryIdFields).takeIf { it > 0L } ?: 1L
+            val subcategoryId = optAnyLong(obj, subcategoryIdFields)
             val categoryName = optAnyString(obj, categoryNameFields).ifBlank { null }
+            val subcategoryName = optAnyString(obj, subcategoryNameFields).ifBlank { null }
             val code = optAnyString(obj, codeFields)
             val imageUrl = normalizeImage(optAnyString(obj, imageFields))
             val stock = optAnyDouble(obj, stockFields)
             return RemoteProductSeed(
                 id = id,
                 categoryId = categoryId,
+                subcategoryId = subcategoryId,
                 categoryName = categoryName,
+                subcategoryName = subcategoryName,
                 name = name,
                 code = code,
                 imageUrl = imageUrl,
                 price = price,
                 stock = stock,
+                active = obj.optActive(),
             )
         }
 
@@ -1369,7 +1497,6 @@ class PosRepositoryImpl(private val context: Context) :
             }
         }
 
-        val root: Any = if (payload.trim().startsWith("[")) JSONArray(payload) else JSONObject(payload)
         val allObjects = mutableListOf<JSONObject>()
         collectObjects(root, allObjects)
         return allObjects.mapNotNull { mapObj(it) }.distinctBy { "${it.id}-${it.code}-${it.name}" }

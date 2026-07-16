@@ -1,4 +1,4 @@
-package com.ecommerce.ecommerceposapp.presentation
+package com.ecommerce.ecommerceposapp.presentation.sales
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,12 +30,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.ecommerce.ecommerceposapp.data.repository.CatalogRepository
+import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.domain.ClientRow
 import com.ecommerce.ecommerceposapp.domain.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.SalesHistoryRow
 import com.ecommerce.ecommerceposapp.domain.TipoComprobanteEmision
+import com.ecommerce.ecommerceposapp.presentation.pos.VistaPreviaReciboDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale

@@ -1,9 +1,9 @@
-package com.ecommerce.ecommerceposapp.presentation
+package com.ecommerce.ecommerceposapp.presentation.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ecommerce.ecommerceposapp.data.repository.AuthRepository
-import com.ecommerce.ecommerceposapp.data.repository.LoginMode
+import com.ecommerce.ecommerceposapp.domain.repository.auth.AuthRepository
+import com.ecommerce.ecommerceposapp.domain.repository.auth.LoginMode
 import com.ecommerce.ecommerceposapp.domain.UserSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow

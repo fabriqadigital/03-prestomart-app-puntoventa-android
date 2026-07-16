@@ -1,4 +1,4 @@
-package com.ecommerce.ecommerceposapp.presentation
+package com.ecommerce.ecommerceposapp.presentation.pos
 
 import android.content.Intent
 import android.graphics.Bitmap
@@ -22,10 +22,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,7 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.ecommerce.ecommerceposapp.data.repository.CatalogRepository
+import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.domain.ClientRow
 import com.ecommerce.ecommerceposapp.domain.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.CompletedSaleReceipt
@@ -498,7 +498,7 @@ fun VistaPreviaReciboDialog(
                             .clickable { intentarWhatsappRegistrado() },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Filled.Chat, "Enviar por WhatsApp", tint = Color.White, modifier = Modifier.size(22.dp))
+                        Icon(Icons.AutoMirrored.Filled.Chat, "Enviar por WhatsApp", tint = Color.White, modifier = Modifier.size(22.dp))
                     }
                     OutlinedButton(onClick = onDismiss) { Text("Cancelar") }
                     Button(
