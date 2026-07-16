@@ -1,14 +1,14 @@
 package com.ecommerce.ecommerceposapp.domain.repository.catalog
 
-import com.ecommerce.ecommerceposapp.domain.CartLine
-import com.ecommerce.ecommerceposapp.domain.CategoryItem
-import com.ecommerce.ecommerceposapp.domain.ComprobanteEmitidoResult
-import com.ecommerce.ecommerceposapp.domain.CompletedSaleReceipt
-import com.ecommerce.ecommerceposapp.domain.ProductItem
-import com.ecommerce.ecommerceposapp.domain.SalePaymentInfo
-import com.ecommerce.ecommerceposapp.domain.SalesHistoryRow
-import com.ecommerce.ecommerceposapp.domain.SubcategoryItem
-import com.ecommerce.ecommerceposapp.domain.TipoComprobanteEmision
+import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
+import com.ecommerce.ecommerceposapp.domain.model.catalog.CategoryItem
+import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
+import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
+import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
+import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
+import com.ecommerce.ecommerceposapp.domain.model.catalog.SubcategoryItem
+import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 
 interface CatalogRepository {
     fun categories(): List<CategoryItem>

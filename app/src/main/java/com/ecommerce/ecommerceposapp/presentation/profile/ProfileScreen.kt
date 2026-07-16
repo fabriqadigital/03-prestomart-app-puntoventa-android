@@ -16,7 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.ecommerce.ecommerceposapp.domain.UserSession
+import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
 
 @Composable
 fun ProfileScreen(session: UserSession, onLogout: () -> Unit) {

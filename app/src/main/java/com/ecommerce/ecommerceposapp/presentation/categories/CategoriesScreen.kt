@@ -38,8 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.ecommerce.ecommerceposapp.domain.CategoryAdminRow
-import com.ecommerce.ecommerceposapp.domain.SubcategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.CrudEditDeactivateIcons
 import com.ecommerce.ecommerceposapp.presentation.common.FieldBorderColor

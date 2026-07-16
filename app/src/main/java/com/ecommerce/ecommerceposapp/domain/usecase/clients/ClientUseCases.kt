@@ -1,6 +1,6 @@
 package com.ecommerce.ecommerceposapp.domain.usecase.clients
 
-import com.ecommerce.ecommerceposapp.domain.ClientRow
+import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.repository.clients.ClientRepository
 
 class GetClientsUseCase(private val repository: ClientRepository) { operator fun invoke() = repository.listClients() }

@@ -17,23 +17,27 @@ import com.ecommerce.ecommerceposapp.data.local.suppliers.SupplierRealm
 import com.ecommerce.ecommerceposapp.data.local.sync.SyncModuleStateRealm
 import com.ecommerce.ecommerceposapp.data.local.sync.SyncStateRealm
 import com.ecommerce.ecommerceposapp.data.local.users.UserRealm
-import com.ecommerce.ecommerceposapp.domain.CartLine
-import com.ecommerce.ecommerceposapp.domain.ComprobanteEmitidoResult
-import com.ecommerce.ecommerceposapp.domain.CompletedSaleReceipt
-import com.ecommerce.ecommerceposapp.domain.SalePaymentInfo
-import com.ecommerce.ecommerceposapp.domain.SalesHistoryRow
-import com.ecommerce.ecommerceposapp.domain.SyncModuleStatus
-import com.ecommerce.ecommerceposapp.domain.TipoComprobanteEmision
-import com.ecommerce.ecommerceposapp.domain.CategoryAdminRow
-import com.ecommerce.ecommerceposapp.domain.CategoryItem
-import com.ecommerce.ecommerceposapp.domain.ClientRow
-import com.ecommerce.ecommerceposapp.domain.ProductAdminRow
-import com.ecommerce.ecommerceposapp.domain.ProductItem
-import com.ecommerce.ecommerceposapp.domain.SubcategoryAdminRow
-import com.ecommerce.ecommerceposapp.domain.SubcategoryItem
-import com.ecommerce.ecommerceposapp.domain.SupplierRow
-import com.ecommerce.ecommerceposapp.domain.UserRow
-import com.ecommerce.ecommerceposapp.domain.UserSession
+import com.ecommerce.ecommerceposapp.data.remote.api.AuthApiDataSource
+import com.ecommerce.ecommerceposapp.data.remote.api.ProductImageApiDataSource
+import com.ecommerce.ecommerceposapp.data.remote.api.RemoteCatalogDataSource
+import com.ecommerce.ecommerceposapp.data.repository.pos.AmountInWordsFormatter
+import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
+import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
+import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
+import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
+import com.ecommerce.ecommerceposapp.domain.model.sync.SyncModuleStatus
+import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
+import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.catalog.CategoryItem
+import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
+import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
+import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.catalog.SubcategoryItem
+import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
+import com.ecommerce.ecommerceposapp.domain.model.users.UserRow
+import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
 import com.ecommerce.ecommerceposapp.domain.repository.categories.CategoryRepository
 import com.ecommerce.ecommerceposapp.domain.repository.clients.ClientRepository
 import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
@@ -45,70 +49,25 @@ import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository as Do
 import com.ecommerce.ecommerceposapp.domain.repository.auth.LoginMode as DomainLoginMode
 import io.realm.Realm
 import io.realm.RealmObject
-import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.io.File
-import java.io.OutputStreamWriter
 import kotlin.math.round
-import kotlin.math.roundToInt
-import org.json.JSONArray
 import org.json.JSONObject
-
-enum class LoginMode { OfflineOnly, OnlineOnly }
-
-interface AuthRepository {
-    fun login(email: String, password: String, mode: LoginMode): Result<UserSession>
-    fun getSession(): UserSession?
-    fun logout()
-    /** True si ya hay usuario local y catálogo sincronizado al menos una vez (permite modo offline). */
-    fun canUseOfflineLogin(): Boolean
-}
-
-interface CatalogRepository {
-    fun categories(): List<CategoryItem>
-    fun subcategories(): List<SubcategoryItem>
-    fun products(): List<ProductItem>
-    fun registerSale(lines: List<CartLine>, payment: SalePaymentInfo, idCliente: Long): Result<CompletedSaleReceipt>
-    fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long): Result<ComprobanteEmitidoResult>
-    /** Nombre y número de documento del cliente, si existe en maestros. */
-    fun getClienteDisplay(idCliente: Long): Pair<String, String>?
-    /** Teléfono del cliente en maestros (vacío si no hay). */
-    fun getClienteTelefono(idCliente: Long): String?
-    /** Asocia un cliente ya existente a la venta (p. ej. tras buscarlo al enviar WhatsApp). */
-    fun actualizarClienteEnVenta(ventaId: Long, idCliente: Long): Result<Unit>
-    fun listSalesHistory(): List<SalesHistoryRow>
-    fun getSaleReceipt(ventaId: Long): Result<CompletedSaleReceipt>
-}
-
-interface SyncRepository {
-    fun hasInitialSync(userId: Long): Boolean
-    fun syncInitialData(user: UserSession): Result<Unit>
-    fun listSyncModuleStatus(): List<SyncModuleStatus>
-    fun syncModules(user: UserSession, modules: Set<String>): Result<Unit>
-}
 
 class PosRepositoryImpl(private val context: Context) :
     DomainAuthRepository,
     DomainCatalogRepository,
     DomainSyncRepository {
 
-    override fun login(email: String, password: String, mode: DomainLoginMode): Result<UserSession> =
-        login(email, password, when (mode) {
-            DomainLoginMode.OfflineOnly -> LoginMode.OfflineOnly
-            DomainLoginMode.OnlineOnly -> LoginMode.OnlineOnly
-        })
-
     private val prefs = context.getSharedPreferences("pos_prefs", Context.MODE_PRIVATE)
-    private data class ApiBaseCandidate(val baseUrl: String, val hostHeader: String? = null)
-    private val remoteApiBaseCandidates = listOf(
-        ApiBaseCandidate("https://prestomartperu.com"),
-    )
+    private val authApi = AuthApiDataSource(context)
+    private val remoteCatalog = RemoteCatalogDataSource(context)
+    private val productImagesApi = ProductImageApiDataSource(context)
     private val allSyncModules = listOf("productos", "imagenes_productos", "categorias", "subcategorias", "clientes", "proveedores", "usuarios", "ventas")
 
     /**
@@ -141,14 +100,14 @@ class PosRepositoryImpl(private val context: Context) :
         }
     }
 
-    fun login(email: String, password: String, mode: LoginMode): Result<UserSession> {
+    override fun login(email: String, password: String, mode: DomainLoginMode): Result<UserSession> {
         if (email.isBlank() || password.isBlank()) return Result.failure(Exception("Completa usuario y contraseña."))
-        if (mode == LoginMode.OfflineOnly && !canUseOfflineLogin()) {
+        if (mode == DomainLoginMode.OfflineOnly && !canUseOfflineLogin()) {
             return Result.failure(Exception("Primera vez o sin sincronización: use modo en línea y sincronice el catálogo."))
         }
         return when (mode) {
-            LoginMode.OfflineOnly -> offlineLogin(email, password)
-            LoginMode.OnlineOnly -> onlineLogin(email, password)
+            DomainLoginMode.OfflineOnly -> offlineLogin(email, password)
+            DomainLoginMode.OnlineOnly -> onlineLogin(email, password)
         }
     }
 
@@ -296,7 +255,7 @@ class PosRepositoryImpl(private val context: Context) :
                 val ruc = emisor?.ruc ?: ""
                 val rs = emisor?.razonSocial ?: ""
                 val dir = emisor?.direccion ?: ""
-                val letras = montoEnLetrasSoles(venta.total)
+                val letras = AmountInWordsFormatter.soles(venta.total)
                 val qr = buildQrPayload(
                     ruc = ruc,
                     tipoDoc = "TICK",
@@ -356,7 +315,7 @@ class PosRepositoryImpl(private val context: Context) :
             val serie = serieRow.serie
             val numeroCompleto = "$serie-${String.format(Locale.US, "%08d", corr)}"
             val fechaSunat = formatFechaSunat(venta.fechaVenta)
-            val letras = montoEnLetrasSoles(venta.total)
+            val letras = AmountInWordsFormatter.soles(venta.total)
             val (receptorTipo, receptorNum, receptorNombre) = when {
                 client == null -> Triple("0", "", "CLIENTE VARIOS")
                 client.document.trim().length == 11 -> Triple("6", client.document.trim(), client.name.ifBlank { "CLIENTE" })
@@ -573,7 +532,7 @@ class PosRepositoryImpl(private val context: Context) :
         val selected = modules.intersect(allSyncModules.toSet())
         if (selected.isEmpty()) return Result.failure(Exception("Seleccione al menos un módulo para sincronizar."))
         val includeImageSync = "imagenes_productos" in selected
-        val remote = fetchRemoteCatalogBestEffort()
+        val remote = remoteCatalog.fetchBestEffort()
         val now = System.currentTimeMillis()
         if ("categorias" in selected && remote.categories.isEmpty()) {
             return Result.failure(Exception("No se recibieron categorias desde https://prestomartperu.com."))
@@ -851,7 +810,7 @@ class PosRepositoryImpl(private val context: Context) :
     }
 
     private fun onlineLogin(email: String, password: String): Result<UserSession> {
-        val apiSession = fetchApiSession(email, password)
+        val apiSession = authApi.login(email, password)
         if (apiSession != null) {
             val user = UserSession(
                 id = if (apiSession.userId > 0L) apiSession.userId else 1L,
@@ -959,83 +918,6 @@ class PosRepositoryImpl(private val context: Context) :
         "",
     ).joinToString("|")
 
-    private fun montoEnLetrasSoles(monto: Double): String {
-        val entero = monto.toLong().coerceAtLeast(0L)
-        val centavos = ((monto - entero) * 100).roundToInt().coerceIn(0, 99)
-        val letras = enteroEnLetrasEsp(entero).uppercase(Locale("es", "PE"))
-        return "Son: $letras CON ${String.format(Locale.US, "%02d", centavos)}/100 SOLES"
-    }
-
-    private fun enteroEnLetrasEsp(n: Long): String {
-        if (n == 0L) return "cero"
-        if (n < 0L) return "menos ${enteroEnLetrasEsp(-n)}"
-        if (n >= 1_000_000) return n.toString()
-        val parts = mutableListOf<String>()
-        var rest = n
-        if (rest >= 1000) {
-            val miles = rest / 1000
-            rest %= 1000
-            parts += when {
-                miles == 1L -> "mil"
-                else -> "${letrasMenorMil(miles)} mil"
-            }
-        }
-        if (rest > 0L) parts += letrasMenorMil(rest)
-        return parts.joinToString(" ").trim()
-    }
-
-    private fun letrasMenorMil(n: Long): String {
-        require(n in 0..999)
-        if (n == 0L) return ""
-        if (n < 16) return unidadesCortas(n.toInt())
-        if (n < 20) return when (n.toInt()) {
-            16 -> "dieciséis"
-            17 -> "diecisiete"
-            18 -> "dieciocho"
-            19 -> "diecinueve"
-            else -> ""
-        }
-        if (n < 100) {
-            val u = (n % 10).toInt()
-            val d = (n / 10).toInt()
-            if (d == 2 && u > 0) return "veinti${unidadesCortas(u)}"
-            val dec = decenas[d]
-            return if (u == 0) dec else "$dec y ${unidadesCortas(u)}"
-        }
-        val c = (n / 100).toInt()
-        val rest = n % 100
-        val ciento = when {
-            c == 1 && rest == 0L -> "cien"
-            c == 1 -> "ciento"
-            else -> centenas[c]
-        }
-        if (rest == 0L) return ciento
-        return "$ciento ${letrasMenorMil(rest)}".trim()
-    }
-
-    private fun unidadesCortas(i: Int): String = when (i) {
-        0 -> "cero"
-        1 -> "uno"
-        2 -> "dos"
-        3 -> "tres"
-        4 -> "cuatro"
-        5 -> "cinco"
-        6 -> "seis"
-        7 -> "siete"
-        8 -> "ocho"
-        9 -> "nueve"
-        10 -> "diez"
-        11 -> "once"
-        12 -> "doce"
-        13 -> "trece"
-        14 -> "catorce"
-        15 -> "quince"
-        else -> ""
-    }
-
-    private val decenas = arrayOf("", "", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa")
-    private val centenas = arrayOf("", "cien", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos")
-
     private fun nextId(realm: Realm, clazz: Class<out RealmObject>): Long {
         val max = realm.where(clazz).max("id") as Number?
         return (max?.toLong() ?: 0L) + 1L
@@ -1085,7 +967,7 @@ class PosRepositoryImpl(private val context: Context) :
         if (input.startsWith("file://")) return input
 
         val preferredBase = prefs.getString("api_base_url", null)
-            ?: remoteApiBaseCandidates.first().baseUrl
+            ?: "https://prestomartperu.com"
 
         // Construir URL completa si es ruta relativa
         val fullUrl = when {
@@ -1106,74 +988,6 @@ class PosRepositoryImpl(private val context: Context) :
                 fullUrl
             }
         }.getOrDefault(fullUrl)
-    }
-
-    private data class RemoteProductSeed(
-        val id: Long,
-        val categoryId: Long,
-        val subcategoryId: Long,
-        val categoryName: String?,
-        val subcategoryName: String?,
-        val name: String,
-        val code: String,
-        val imageUrl: String,
-        val price: Double,
-        val stock: Double,
-        val active: Boolean,
-    )
-
-    private data class RemoteCategorySeed(
-        val id: Long,
-        val name: String,
-        val active: Boolean,
-    )
-
-    private data class RemoteSubcategorySeed(
-        val id: Long,
-        val categoryId: Long,
-        val name: String,
-        val active: Boolean,
-    )
-
-    private data class RemoteCatalogSeed(
-        val categories: List<RemoteCategorySeed> = emptyList(),
-        val subcategories: List<RemoteSubcategorySeed> = emptyList(),
-        val products: List<RemoteProductSeed> = emptyList(),
-    )
-
-    private fun fetchRemoteCatalogBestEffort(): RemoteCatalogSeed {
-        val preferredBase = prefs.getString("api_base_url", null)
-        val preferredHost = prefs.getString("api_host_header", null)?.takeIf { it.isNotBlank() }
-        val preferred = preferredBase?.let { ApiBaseCandidate(it, preferredHost) }
-        val bases = listOfNotNull(preferred) + remoteApiBaseCandidates.filter { it.baseUrl != preferredBase }
-        for (base in bases) {
-            val catalog = runCatching {
-                fetchCatalogFromEndpoint("${base.baseUrl}/api/app/finanza/sync/catalog", base)
-            }.getOrNull()
-            if (catalog != null && (catalog.categories.isNotEmpty() || catalog.products.isNotEmpty())) {
-                val categories = catalog.categories.ifEmpty {
-                    runCatching {
-                        fetchCategoriesFromEndpoint("${base.baseUrl}/api/producto_categoria/listar", base)
-                    }.getOrDefault(emptyList())
-                }
-                val subcategories = catalog.subcategories.ifEmpty {
-                    runCatching {
-                        fetchSubcategoriesFromEndpoint("${base.baseUrl}/api/producto_categoria_sub/listar", base)
-                    }.getOrDefault(emptyList())
-                }
-                return catalog.copy(categories = categories, subcategories = subcategories)
-            }
-            val categories = runCatching {
-                fetchCategoriesFromEndpoint("${base.baseUrl}/api/producto_categoria/listar", base)
-            }.getOrDefault(emptyList())
-            if (categories.isNotEmpty()) {
-                val subcategories = runCatching {
-                    fetchSubcategoriesFromEndpoint("${base.baseUrl}/api/producto_categoria_sub/listar", base)
-                }.getOrDefault(emptyList())
-                return RemoteCatalogSeed(categories = categories, subcategories = subcategories)
-            }
-        }
-        return RemoteCatalogSeed()
     }
 
     private fun cacheProductImages() {
@@ -1202,30 +1016,8 @@ class PosRepositoryImpl(private val context: Context) :
         val updates = mutableMapOf<Long, String>()
         tasks.forEach { task ->
             val target = File(dir, "p_${task.id}.${task.ext}")
-            runCatching {
-                val conn = (URL(task.sourceUrl).openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 8000
-                    readTimeout = 12000
-                    requestMethod = "GET"
-                    addAuthHeaderIfAvailable(this)
-                    // Agregar Host header: usa prefs si hay, sino deduce desde candidatos hardcodeados
-                    val savedHost = prefs.getString("api_host_header", "")?.trim().orEmpty()
-                    if (savedHost.isNotBlank()) {
-                        setRequestProperty("Host", savedHost)
-                    } else {
-                        val urlHost = runCatching { URL(task.sourceUrl).host }.getOrNull()
-                        remoteApiBaseCandidates
-                            .firstOrNull { runCatching { URL(it.baseUrl).host == urlHost }.getOrNull() == true }
-                            ?.hostHeader
-                            ?.let { setRequestProperty("Host", it) }
-                    }
-                }
-                conn.inputStream.use { input ->
-                    target.outputStream().use { output -> input.copyTo(output) }
-                }
-                if (target.length() > 0) {
-                    updates[task.id] = "file://${target.absolutePath}"
-                }
+            if (productImagesApi.download(task.sourceUrl, target)) {
+                updates[task.id] = "file://${target.absolutePath}"
             }
         }
 
@@ -1237,344 +1029,6 @@ class PosRepositoryImpl(private val context: Context) :
                 }
             }
         }
-    }
-
-    private fun fetchCatalogFromEndpoint(url: String, base: ApiBaseCandidate): RemoteCatalogSeed {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 6000
-            readTimeout = 6000
-            setRequestProperty("Accept", "application/json")
-            base.hostHeader?.let { setRequestProperty("Host", it) }
-            addAuthHeaderIfAvailable(this)
-        }
-        conn.inputStream.bufferedReader().use { reader ->
-            return parseRemoteCatalog(reader.readText().trim(), base.baseUrl)
-        }
-    }
-
-    private fun fetchCategoriesFromEndpoint(url: String, base: ApiBaseCandidate): List<RemoteCategorySeed> {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 6000
-            readTimeout = 6000
-            setRequestProperty("Accept", "application/json")
-            base.hostHeader?.let { setRequestProperty("Host", it) }
-            addAuthHeaderIfAvailable(this)
-        }
-        conn.inputStream.bufferedReader().use { reader ->
-            return parseRemoteCategories(reader.readText().trim())
-        }
-    }
-
-    private fun fetchSubcategoriesFromEndpoint(url: String, base: ApiBaseCandidate): List<RemoteSubcategorySeed> {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 6000
-            readTimeout = 6000
-            setRequestProperty("Accept", "application/json")
-            base.hostHeader?.let { setRequestProperty("Host", it) }
-            addAuthHeaderIfAvailable(this)
-        }
-        conn.inputStream.bufferedReader().use { reader ->
-            return parseRemoteSubcategories(reader.readText().trim())
-        }
-    }
-
-    private fun fetchProductsFromEndpoint(url: String, base: ApiBaseCandidate): List<RemoteProductSeed> {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 6000
-            readTimeout = 6000
-            setRequestProperty("Accept", "application/json")
-            base.hostHeader?.let { setRequestProperty("Host", it) }
-            addAuthHeaderIfAvailable(this)
-        }
-        conn.inputStream.bufferedReader().use { reader ->
-            val payload = reader.readText().trim()
-            return parseRemoteProducts(payload, base.baseUrl)
-        }
-    }
-
-    private fun parseRemoteCatalog(payload: String, base: String): RemoteCatalogSeed {
-        val root: Any = if (payload.trim().startsWith("[")) JSONArray(payload) else JSONObject(payload)
-        val rootObj = root as? JSONObject
-        val categoriesArray = rootObj?.optArrayAny("categories", "categorias", "categorias_producto", "producto_categoria")
-        val subcategoriesArray = rootObj?.optArrayAny("subcategories", "subcategorias", "producto_categoria_sub", "categoria_sub")
-        val productsArray = rootObj?.optArrayAny("products", "productos", "items", "articulos", "result")
-            ?: (root as? JSONArray)
-        return RemoteCatalogSeed(
-            categories = categoriesArray?.let { parseRemoteCategories(it) }.orEmpty(),
-            subcategories = subcategoriesArray?.let { parseRemoteSubcategories(it) }.orEmpty(),
-            products = productsArray?.let { parseRemoteProducts(it, base) }.orEmpty(),
-        )
-    }
-
-    private fun parseRemoteCategories(payload: String): List<RemoteCategorySeed> {
-        val root: Any = if (payload.trim().startsWith("[")) JSONArray(payload) else JSONObject(payload)
-        val array = (root as? JSONObject)?.optArrayAny("result", "categories", "categorias", "data")
-            ?: (root as? JSONArray)
-            ?: return emptyList()
-        return parseRemoteCategories(array)
-    }
-
-    private fun parseRemoteCategories(array: JSONArray): List<RemoteCategorySeed> {
-        return (0 until array.length()).mapNotNull { index ->
-            val obj = array.optJSONObject(index) ?: return@mapNotNull null
-            val id = obj.optAnyLong("id_producto_categoria", "category_id", "id_categoria", "id")
-            val name = obj.optAnyString("nombre", "name", "category_name", "categoria")
-            if (id <= 0L || name.isBlank()) null else RemoteCategorySeed(id, name, obj.optActive())
-        }.distinctBy { it.id }
-    }
-
-    private fun parseRemoteSubcategories(payload: String): List<RemoteSubcategorySeed> {
-        val root: Any = if (payload.trim().startsWith("[")) JSONArray(payload) else JSONObject(payload)
-        val array = (root as? JSONObject)?.optArrayAny("result", "subcategories", "subcategorias", "data")
-            ?: (root as? JSONArray)
-            ?: return emptyList()
-        return parseRemoteSubcategories(array)
-    }
-
-    private fun parseRemoteSubcategories(array: JSONArray): List<RemoteSubcategorySeed> {
-        return (0 until array.length()).mapNotNull { index ->
-            val obj = array.optJSONObject(index) ?: return@mapNotNull null
-            val id = obj.optAnyLong("id_producto_categoria_sub", "subcategory_id", "id_subcategoria", "subcategoria_id", "id")
-            val categoryId = obj.optAnyLong("id_producto_categoria", "category_id", "id_categoria", "categoria_id")
-            val name = obj.optAnyString("nombre", "name", "subcategory_name", "subcategoria", "nombre_subcategoria")
-            if (id <= 0L || categoryId <= 0L || name.isBlank()) null else RemoteSubcategorySeed(id, categoryId, name, obj.optActive())
-        }.distinctBy { it.id }
-    }
-
-    private fun JSONObject.optArrayAny(vararg keys: String): JSONArray? {
-        keys.forEach { key ->
-            val value = opt(key)
-            if (value is JSONArray) return value
-        }
-        return null
-    }
-
-    private fun JSONObject.optAnyString(vararg keys: String): String {
-        keys.forEach { key ->
-            val raw = opt(key)
-            val value = when (raw) {
-                is String -> raw
-                is Number -> raw.toString()
-                is Boolean -> raw.toString()
-                else -> ""
-            }.trim()
-            if (value.isNotBlank() && !value.equals("null", ignoreCase = true)) return value
-        }
-        return ""
-    }
-
-    private fun JSONObject.optAnyLong(vararg keys: String): Long {
-        keys.forEach { key ->
-            when (val raw = opt(key)) {
-                is Number -> return raw.toLong()
-                is String -> raw.trim().toLongOrNull()?.let { return it }
-            }
-        }
-        return 0L
-    }
-
-    private fun JSONObject.optActive(default: Boolean = true): Boolean {
-        val raw = opt("Activo").takeUnless { it == null }
-            ?: opt("Active").takeUnless { it == null }
-            ?: opt("active").takeUnless { it == null }
-            ?: opt("activo").takeUnless { it == null }
-            ?: return default
-        return when (raw) {
-            is Boolean -> raw
-            is Number -> raw.toInt() != 0
-            is String -> raw.trim().let { value ->
-                value.equals("S", true) ||
-                    value.equals("SI", true) ||
-                    value.equals("TRUE", true) ||
-                    value == "1" ||
-                    value.equals("A", true)
-            }
-            else -> default
-        }
-    }
-
-    private fun parseRemoteProducts(payload: String, base: String): List<RemoteProductSeed> {
-        val root: Any = if (payload.trim().startsWith("[")) JSONArray(payload) else JSONObject(payload)
-        return parseRemoteProducts(root, base)
-    }
-
-    private fun parseRemoteProducts(root: Any, base: String): List<RemoteProductSeed> {
-        val imageFields = listOf("url_imagen", "image_url", "image", "imagen", "foto", "thumbnail", "thumb", "imagen_url", "img", "photo")
-        val nameFields = listOf("nombre", "name", "title", "producto", "descripcion")
-        val priceFields = listOf("precio", "price", "pvp", "sale_price", "precio_venta")
-        val stockFields = listOf("stock", "cantidad", "existencia", "stock_actual")
-        val codeFields = listOf("codigo_producto", "code", "codigo", "sku", "barcode", "codigo_barras")
-        val categoryIdFields = listOf("id_producto_categoria", "category_id", "id_categoria", "categoria_id", "id_categoria_producto")
-        val subcategoryIdFields = listOf("id_producto_categoria_sub", "subcategory_id", "id_subcategoria", "subcategoria_id")
-        val categoryNameFields = listOf("category_name", "categoria", "category", "nombre_categoria")
-        val subcategoryNameFields = listOf("subcategory_name", "subcategoria", "subcategory", "nombre_subcategoria", "nombre_sub_categoria")
-
-        fun optAnyString(obj: JSONObject, keys: List<String>): String {
-            keys.forEach { k ->
-                val v = obj.optString(k, "").trim()
-                if (v.isNotBlank() && !v.equals("null", ignoreCase = true)) return v
-            }
-            return ""
-        }
-
-        fun optAnyDouble(obj: JSONObject, keys: List<String>): Double {
-            keys.forEach { k ->
-                val raw = obj.opt(k)
-                when (raw) {
-                    is Number -> return raw.toDouble()
-                    is String -> raw.replace(",", ".").toDoubleOrNull()?.let { return it }
-                }
-            }
-            return 0.0
-        }
-
-        fun optAnyLong(obj: JSONObject, keys: List<String>): Long {
-            keys.forEach { k ->
-                val raw = obj.opt(k)
-                when (raw) {
-                    is Number -> return raw.toLong()
-                    is String -> raw.toLongOrNull()?.let { return it }
-                }
-            }
-            return 0L
-        }
-
-        fun normalizeImage(rawImage: String): String {
-            val raw = rawImage.trim()
-            return when {
-                raw.isBlank() -> ""
-                raw.startsWith("http://") || raw.startsWith("https://") -> raw
-                raw.startsWith("/") -> "$base$raw"
-                else -> "$base/$raw"
-            }
-        }
-
-        fun mapObj(obj: JSONObject): RemoteProductSeed? {
-            val name = optAnyString(obj, nameFields)
-            val price = optAnyDouble(obj, priceFields)
-            if (name.isBlank() || price <= 0.0) return null
-            // Soporta id_producto (prestomart), id, product_id
-            val id = obj.optLong("id_producto", obj.optLong("id", obj.optLong("product_id", 0L)))
-            val categoryId = optAnyLong(obj, categoryIdFields).takeIf { it > 0L } ?: 1L
-            val subcategoryId = optAnyLong(obj, subcategoryIdFields)
-            val categoryName = optAnyString(obj, categoryNameFields).ifBlank { null }
-            val subcategoryName = optAnyString(obj, subcategoryNameFields).ifBlank { null }
-            val code = optAnyString(obj, codeFields)
-            val imageUrl = normalizeImage(optAnyString(obj, imageFields))
-            val stock = optAnyDouble(obj, stockFields)
-            return RemoteProductSeed(
-                id = id,
-                categoryId = categoryId,
-                subcategoryId = subcategoryId,
-                categoryName = categoryName,
-                subcategoryName = subcategoryName,
-                name = name,
-                code = code,
-                imageUrl = imageUrl,
-                price = price,
-                stock = stock,
-                active = obj.optActive(),
-            )
-        }
-
-        fun collectObjects(node: Any?, out: MutableList<JSONObject>) {
-            when (node) {
-                is JSONObject -> {
-                    out += node
-                    val it = node.keys()
-                    while (it.hasNext()) {
-                        val k = it.next()
-                        collectObjects(node.opt(k), out)
-                    }
-                }
-                is JSONArray -> {
-                    for (i in 0 until node.length()) collectObjects(node.opt(i), out)
-                }
-            }
-        }
-
-        val allObjects = mutableListOf<JSONObject>()
-        collectObjects(root, allObjects)
-        return allObjects.mapNotNull { mapObj(it) }.distinctBy { "${it.id}-${it.code}-${it.name}" }
-    }
-
-    private data class ApiSession(val baseUrl: String, val hostHeader: String?, val token: String, val userId: Long, val name: String)
-
-    private fun fetchApiSession(email: String, password: String): ApiSession? {
-        val candidates = remoteApiBaseCandidates
-        for (base in candidates) {
-            val loginUrl = "${base.baseUrl}/api/login"
-            val fromJson = runCatching { tryLoginJson(loginUrl, base, email, password) }.getOrNull()
-            if (fromJson != null) return fromJson
-            val fromForm = runCatching { tryLoginForm(loginUrl, base, email, password) }.getOrNull()
-            if (fromForm != null) return fromForm
-        }
-        return null
-    }
-
-    private fun tryLoginJson(url: String, base: ApiBaseCandidate, email: String, password: String): ApiSession? {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 7000
-            readTimeout = 7000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "application/json")
-            base.hostHeader?.let { setRequestProperty("Host", it) }
-        }
-        val body = JSONObject().apply {
-            put("email", email)
-            put("password", password)
-        }.toString()
-        OutputStreamWriter(conn.outputStream).use { it.write(body) }
-        if (conn.responseCode !in 200..299) return null
-        val payload = conn.inputStream.bufferedReader().use { it.readText() }
-        return parseLoginPayload(base, payload)
-    }
-
-    private fun tryLoginForm(url: String, base: ApiBaseCandidate, email: String, password: String): ApiSession? {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 7000
-            readTimeout = 7000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-            setRequestProperty("Accept", "application/json")
-            base.hostHeader?.let { setRequestProperty("Host", it) }
-        }
-        val body = "email=${URLEncoder.encode(email, "UTF-8")}&password=${URLEncoder.encode(password, "UTF-8")}"
-        OutputStreamWriter(conn.outputStream).use { it.write(body) }
-        if (conn.responseCode !in 200..299) return null
-        val payload = conn.inputStream.bufferedReader().use { it.readText() }
-        return parseLoginPayload(base, payload)
-    }
-
-    private fun parseLoginPayload(base: ApiBaseCandidate, payload: String): ApiSession? {
-        val obj = runCatching { JSONObject(payload) }.getOrNull() ?: return null
-        val token = obj.optString("token", obj.optString("access_token", obj.optString("jwt", ""))).trim()
-        if (token.isBlank()) return null
-        val userObj = obj.optJSONObject("user") ?: obj.optJSONObject("usuario")
-        val userId = userObj?.optLong("id", 1L) ?: 1L
-        val name = if (userObj != null) {
-            userObj.optString("name", userObj.optString("nombre", "admin"))
-        } else {
-            "admin"
-        }
-        return ApiSession(baseUrl = base.baseUrl, hostHeader = base.hostHeader, token = token, userId = userId, name = name)
-    }
-
-    private fun addAuthHeaderIfAvailable(conn: HttpURLConnection) {
-        val token = prefs.getString("api_token", "")?.trim().orEmpty()
-        if (token.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $token")
-    }
-
-    private fun addHostHeaderIfAvailable(conn: HttpURLConnection) {
-        val host = prefs.getString("api_host_header", "")?.trim().orEmpty()
-        if (host.isNotBlank()) conn.setRequestProperty("Host", host)
     }
 
     private fun <T> realmQuery(block: (Realm) -> T): T = Realm.getDefaultInstance().use(block)

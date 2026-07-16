@@ -56,9 +56,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.ecommerce.ecommerceposapp.domain.CategoryAdminRow
-import com.ecommerce.ecommerceposapp.domain.ProductAdminRow
-import com.ecommerce.ecommerceposapp.domain.SubcategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.CrudEditDeleteIcons
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm

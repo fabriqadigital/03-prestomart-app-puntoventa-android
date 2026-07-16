@@ -2,7 +2,7 @@ package com.ecommerce.ecommerceposapp.presentation.users
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ecommerce.ecommerceposapp.domain.UserRow
+import com.ecommerce.ecommerceposapp.domain.model.users.UserRow
 import com.ecommerce.ecommerceposapp.domain.usecase.users.DeleteUserUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.users.GetUsersUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.users.SaveUserUseCase

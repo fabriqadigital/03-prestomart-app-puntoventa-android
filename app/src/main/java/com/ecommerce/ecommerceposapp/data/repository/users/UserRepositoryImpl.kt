@@ -3,7 +3,7 @@ package com.ecommerce.ecommerceposapp.data.repository.users
 import android.content.Context
 import com.ecommerce.ecommerceposapp.data.local.users.UserRealm
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
-import com.ecommerce.ecommerceposapp.domain.UserRow
+import com.ecommerce.ecommerceposapp.domain.model.users.UserRow
 import com.ecommerce.ecommerceposapp.domain.repository.users.UserRepository
 import java.security.MessageDigest
 import io.realm.Case

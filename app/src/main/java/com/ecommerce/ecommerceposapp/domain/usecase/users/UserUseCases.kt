@@ -1,6 +1,6 @@
 package com.ecommerce.ecommerceposapp.domain.usecase.users
 
-import com.ecommerce.ecommerceposapp.domain.UserRow
+import com.ecommerce.ecommerceposapp.domain.model.users.UserRow
 import com.ecommerce.ecommerceposapp.domain.repository.users.UserRepository
 
 class GetUsersUseCase(private val repository: UserRepository) { operator fun invoke() = repository.listUsers() }

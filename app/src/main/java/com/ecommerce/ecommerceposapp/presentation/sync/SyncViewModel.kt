@@ -3,8 +3,8 @@ package com.ecommerce.ecommerceposapp.presentation.sync
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository
-import com.ecommerce.ecommerceposapp.domain.SyncModuleStatus
-import com.ecommerce.ecommerceposapp.domain.UserSession
+import com.ecommerce.ecommerceposapp.domain.model.sync.SyncModuleStatus
+import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

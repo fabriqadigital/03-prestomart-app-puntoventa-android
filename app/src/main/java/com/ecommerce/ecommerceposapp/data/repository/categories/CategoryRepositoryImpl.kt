@@ -5,8 +5,8 @@ import com.ecommerce.ecommerceposapp.data.local.categories.CategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.categories.SubcategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.products.ProductRealm
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
-import com.ecommerce.ecommerceposapp.domain.CategoryAdminRow
-import com.ecommerce.ecommerceposapp.domain.SubcategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.repository.categories.CategoryRepository
 import io.realm.Case
 

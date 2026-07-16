@@ -1,6 +1,6 @@
 package com.ecommerce.ecommerceposapp.domain.repository.auth
 
-import com.ecommerce.ecommerceposapp.domain.UserSession
+import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
 
 enum class LoginMode { OfflineOnly, OnlineOnly }
 

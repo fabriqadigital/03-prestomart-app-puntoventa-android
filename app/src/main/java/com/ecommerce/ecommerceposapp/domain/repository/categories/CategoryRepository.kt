@@ -1,7 +1,7 @@
 package com.ecommerce.ecommerceposapp.domain.repository.categories
 
-import com.ecommerce.ecommerceposapp.domain.CategoryAdminRow
-import com.ecommerce.ecommerceposapp.domain.SubcategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 
 interface CategoryRepository {
     fun listCategoriesAdmin(): List<CategoryAdminRow>

@@ -1,6 +1,6 @@
 package com.ecommerce.ecommerceposapp.domain.repository.suppliers
 
-import com.ecommerce.ecommerceposapp.domain.SupplierRow
+import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
 
 interface SupplierRepository {
     fun listSuppliers(): List<SupplierRow>

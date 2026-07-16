@@ -2,8 +2,8 @@ package com.ecommerce.ecommerceposapp.presentation.categories
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ecommerce.ecommerceposapp.domain.CategoryAdminRow
-import com.ecommerce.ecommerceposapp.domain.SubcategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.DeactivateCategoryUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.DeactivateSubcategoryUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetCategoriesUseCase

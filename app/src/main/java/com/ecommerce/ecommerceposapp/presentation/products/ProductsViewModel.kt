@@ -2,9 +2,9 @@ package com.ecommerce.ecommerceposapp.presentation.products
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ecommerce.ecommerceposapp.domain.ProductAdminRow
-import com.ecommerce.ecommerceposapp.domain.CategoryAdminRow
-import com.ecommerce.ecommerceposapp.domain.SubcategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetCategoriesUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetSubcategoriesUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.products.DeactivateProductUseCase

@@ -1,6 +1,6 @@
 package com.ecommerce.ecommerceposapp.domain.repository.products
 
-import com.ecommerce.ecommerceposapp.domain.ProductAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
 
 interface ProductRepository {
     fun listProductsAdmin(): List<ProductAdminRow>

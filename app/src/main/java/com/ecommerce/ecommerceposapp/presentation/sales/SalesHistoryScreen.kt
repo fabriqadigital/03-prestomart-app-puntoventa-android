@@ -31,11 +31,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
-import com.ecommerce.ecommerceposapp.domain.ClientRow
-import com.ecommerce.ecommerceposapp.domain.ComprobanteEmitidoResult
-import com.ecommerce.ecommerceposapp.domain.CompletedSaleReceipt
-import com.ecommerce.ecommerceposapp.domain.SalesHistoryRow
-import com.ecommerce.ecommerceposapp.domain.TipoComprobanteEmision
+import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
+import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
+import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
+import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.presentation.pos.VistaPreviaReciboDialog
 import java.text.SimpleDateFormat
 import java.util.Date

@@ -1,7 +1,7 @@
 package com.ecommerce.ecommerceposapp.domain.repository.sync
 
-import com.ecommerce.ecommerceposapp.domain.SyncModuleStatus
-import com.ecommerce.ecommerceposapp.domain.UserSession
+import com.ecommerce.ecommerceposapp.domain.model.sync.SyncModuleStatus
+import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
 
 interface SyncRepository {
     fun hasInitialSync(userId: Long): Boolean

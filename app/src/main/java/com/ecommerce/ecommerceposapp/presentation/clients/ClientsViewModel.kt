@@ -2,7 +2,7 @@ package com.ecommerce.ecommerceposapp.presentation.clients
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ecommerce.ecommerceposapp.domain.ClientRow
+import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.usecase.clients.DeleteClientUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.clients.GetClientsUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.clients.SaveClientUseCase

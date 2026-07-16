@@ -2,7 +2,7 @@ package com.ecommerce.ecommerceposapp.presentation.suppliers
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ecommerce.ecommerceposapp.domain.SupplierRow
+import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
 import com.ecommerce.ecommerceposapp.domain.usecase.suppliers.DeleteSupplierUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.suppliers.GetSuppliersUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.suppliers.SaveSupplierUseCase

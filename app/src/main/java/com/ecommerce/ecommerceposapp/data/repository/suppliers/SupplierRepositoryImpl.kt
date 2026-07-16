@@ -3,7 +3,7 @@ package com.ecommerce.ecommerceposapp.data.repository.suppliers
 import android.content.Context
 import com.ecommerce.ecommerceposapp.data.local.suppliers.SupplierRealm
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
-import com.ecommerce.ecommerceposapp.domain.SupplierRow
+import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
 import com.ecommerce.ecommerceposapp.domain.repository.suppliers.SupplierRepository
 
 class SupplierRepositoryImpl(context: Context) : SupplierRepository {

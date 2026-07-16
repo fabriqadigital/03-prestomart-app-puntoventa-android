@@ -4,13 +4,14 @@ import android.content.Context
 import com.ecommerce.ecommerceposapp.data.local.categories.CategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.categories.SubcategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.products.ProductRealm
+import com.ecommerce.ecommerceposapp.data.remote.api.ProductApiDataSource
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
-import com.ecommerce.ecommerceposapp.domain.ProductAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
 import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
 
 class ProductRepositoryImpl(context: Context) : ProductRepository {
     private val db = RealmDataSource(context)
-    private val remote = ProductRemoteDataSource(context)
+    private val remote = ProductApiDataSource(context)
 
     override fun listProductsAdmin() = db.query { realm ->
         realm.where(ProductRealm::class.java).equalTo("active", true).findAll().map { product ->

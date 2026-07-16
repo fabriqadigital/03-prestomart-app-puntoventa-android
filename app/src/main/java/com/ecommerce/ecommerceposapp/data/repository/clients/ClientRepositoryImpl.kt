@@ -3,7 +3,7 @@ package com.ecommerce.ecommerceposapp.data.repository.clients
 import android.content.Context
 import com.ecommerce.ecommerceposapp.data.local.clients.ClientRealm
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
-import com.ecommerce.ecommerceposapp.domain.ClientRow
+import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.repository.clients.ClientRepository
 
 class ClientRepositoryImpl(context: Context) : ClientRepository {

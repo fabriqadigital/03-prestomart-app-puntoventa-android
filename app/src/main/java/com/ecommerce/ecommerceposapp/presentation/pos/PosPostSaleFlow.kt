@@ -56,10 +56,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
-import com.ecommerce.ecommerceposapp.domain.ClientRow
-import com.ecommerce.ecommerceposapp.domain.ComprobanteEmitidoResult
-import com.ecommerce.ecommerceposapp.domain.CompletedSaleReceipt
-import com.ecommerce.ecommerceposapp.domain.TipoComprobanteEmision
+import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
+import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
+import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import java.net.URLEncoder
