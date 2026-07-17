@@ -16,24 +16,35 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
 import com.ecommerce.ecommerceposapp.presentation.sync.SyncUiState
 import java.text.SimpleDateFormat
@@ -46,6 +57,7 @@ private val SurfaceWhite = Color(0xFFFFFFFF)
 private val SurfaceAlt = Color(0xFFEEF0F5)
 private val TextPrimary = Color(0xFF111827)
 private val TextSecondary = Color(0xFF6B7280)
+
 @Composable
 internal fun SyncScreen(
     user: UserSession,
@@ -59,6 +71,13 @@ internal fun SyncScreen(
     fun formatLastSync(millis: Long): String {
         if (millis <= 0L) return "Nunca"
         return SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("es", "PE")).format(Date(millis))
+    }
+
+    // El diálogo aparece apenas empieza a sincronizar y se mantiene abierto
+    // en el estado "completado" hasta que el usuario continúe o lo cierre.
+    var showSyncDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(state.syncing) {
+        if (state.syncing) showSyncDialog = true
     }
 
     Box(
@@ -177,21 +196,106 @@ internal fun SyncScreen(
                     }
                 }
             }
-
-            if (state.syncing || state.message.isNotBlank()) {
-                Spacer(Modifier.height(16.dp))
-                Text(state.message, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            }
-            if (state.completed) {
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = onContinue,
-                    colors = ButtonDefaults.buttonColors(containerColor = Brand),
-                    shape = RoundedCornerShape(12.dp),
-                ) { Text("Continuar al POS", fontWeight = FontWeight.Bold, color = Color.White) }
-            }
             Spacer(Modifier.height(24.dp))
         }
     }
+
+    if (showSyncDialog) {
+        SyncProgressDialog(
+            state = state,
+            onDismiss = { showSyncDialog = false },
+            onContinue = {
+                showSyncDialog = false
+                onContinue()
+            },
+        )
+    }
 }
 
+@Composable
+private fun SyncProgressDialog(
+    state: SyncUiState,
+    onDismiss: () -> Unit,
+    onContinue: () -> Unit,
+) {
+    Dialog(onDismissRequest = { if (!state.syncing) onDismiss() }) {
+        Surface(
+            modifier = Modifier
+                .widthIn(max = 380.dp)
+                .fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = SurfaceWhite,
+            shadowElevation = 12.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (state.completed) {
+                    Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF16A34A),
+                        modifier = Modifier.size(72.dp),
+                    )
+                } else {
+                    Icon(
+                        Icons.Filled.Sync,
+                        contentDescription = null,
+                        tint = Brand,
+                        modifier = Modifier.size(64.dp),
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    if (state.completed) "Sincronización completa" else "Sincronizando catálogo",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                )
+                Spacer(Modifier.height(16.dp))
+
+                if (!state.completed) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = Brand,
+                        trackColor = SurfaceAlt,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+
+                if (state.message.isNotBlank()) {
+                    Text(
+                        state.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(20.dp))
+                }
+
+                if (state.completed) {
+                    Button(
+                        onClick = onContinue,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Brand),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text("Continuar al POS", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                        Text("Cerrar", color = TextSecondary)
+                    }
+                }
+            }
+        }
+    }
+}
