@@ -210,6 +210,7 @@ internal fun CatalogPane(
                 (it.barcode.isNotBlank() && it.barcode.contains(state.search, ignoreCase = true)))
     }
     val visibleSubcategories = state.subcategories.filter { it.categoryId == state.selectedCategoryId }
+    val compact = LocalConfiguration.current.screenWidthDp < 600
     val gridMinWidth = when {
         LocalConfiguration.current.screenWidthDp >= 900 -> 178.dp
         LocalConfiguration.current.screenWidthDp >= 600 -> 164.dp
@@ -217,7 +218,7 @@ internal fun CatalogPane(
     }
 
     Column(modifier = modifier.fillMaxSize().background(PosBg).padding(12.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        val searchField: @Composable (Modifier) -> Unit = { fieldModifier ->
             OutlinedTextField(
                 value = state.search,
                 onValueChange = onSearch,
@@ -235,8 +236,7 @@ internal fun CatalogPane(
                         }
                     }
                 } else null,
-                modifier = Modifier
-                    .weight(1f)
+                modifier = fieldModifier
                     .focusRequester(scanFocusRequester)
                     .onPreviewKeyEvent { event ->
                         if (scanMode && event.key == Key.Enter && event.type == KeyEventType.KeyUp) {
@@ -249,7 +249,10 @@ internal fun CatalogPane(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { if (scanMode) submitBarcode() }),
             )
+        }
+        val scanButton: @Composable (Modifier) -> Unit = { buttonModifier ->
             Surface(
+                modifier = buttonModifier,
                 shape = RoundedCornerShape(14.dp),
                 color = Color.White,
                 shadowElevation = 1.dp,
@@ -268,16 +271,33 @@ internal fun CatalogPane(
                     )
                 }
             }
+        }
+        val newProductButton: @Composable (Modifier) -> Unit = { buttonModifier ->
             OutlinedButton(
                 onClick = onNewProduct,
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = PosTextPrimary),
                 border = BorderStroke(1.dp, Color(0xFFD7DCE3)),
-                modifier = Modifier.height(56.dp),
+                modifier = buttonModifier.height(56.dp),
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Nuevo producto")
+            }
+        }
+        if (compact) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                searchField(Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    scanButton(Modifier)
+                    newProductButton(Modifier.weight(1f))
+                }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                searchField(Modifier.weight(1f))
+                scanButton(Modifier)
+                newProductButton(Modifier)
             }
         }
         Spacer(Modifier.height(8.dp))

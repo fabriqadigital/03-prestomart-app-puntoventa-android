@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
@@ -60,9 +61,10 @@ fun CategoriesCrudScreen(vm: CategoriesViewModel) {
     var creatingCategory by remember { mutableStateOf(false) }
     var creatingSubcategoryCategoryId by remember { mutableStateOf<Long?>(null) }
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
+    val compact = LocalConfiguration.current.screenWidthDp < 600
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        if (compact) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Column {
                 Text("Categorias", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
@@ -71,19 +73,30 @@ fun CategoriesCrudScreen(vm: CategoriesViewModel) {
                     color = Color(0xFF475569),
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
                         creatingSubcategoryCategoryId = state.categories.firstOrNull { it.active }?.id
                     },
                     enabled = state.categories.any { it.active },
                     shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 ) { Text("+ Subcategoria") }
                 Button(
                     onClick = { creatingCategory = true },
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFD0505), contentColor = Color.White),
+                    modifier = Modifier.fillMaxWidth(),
                 ) { Text("+ Nueva categoria") }
+            }
+        } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text("Categorias", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Organiza las categorias y despliega sus subcategorias.", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF475569))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { creatingSubcategoryCategoryId = state.categories.firstOrNull { it.active }?.id }, enabled = state.categories.any { it.active }, shape = RoundedCornerShape(8.dp)) { Text("+ Subcategoria") }
+                Button(onClick = { creatingCategory = true }, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFD0505), contentColor = Color.White)) { Text("+ Nueva categoria") }
             }
         }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

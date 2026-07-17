@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class NetworkSyncCoordinator(
@@ -33,8 +34,10 @@ class NetworkSyncCoordinator(
         if (!syncing.compareAndSet(false, true)) return
         scope.launch {
             try {
-                products.syncPendingProducts().getOrThrow()
-                catalog.refreshCatalog()
+                // Permite que Android complete el arranque antes de abrir o migrar Realm.
+                delay(6_000)
+                val productsResult = products.syncPendingProducts()
+                if (productsResult.isSuccess) catalog.refreshCatalog()
             } finally {
                 syncing.set(false)
             }

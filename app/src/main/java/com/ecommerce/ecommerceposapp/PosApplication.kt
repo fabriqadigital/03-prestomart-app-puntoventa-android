@@ -118,7 +118,6 @@ class PosApplication : Application() {
                     }
                 }
             })
-            .compactOnLaunch()
             .allowWritesOnUiThread(true)
             .allowQueriesOnUiThread(true)
             .build()

@@ -165,6 +165,7 @@ internal fun CategoriesTable(
                 }
             }
             CategoryPagination(
+                compact = compact,
                 page = currentPage,
                 totalPages = totalPages,
                 itemCount = filteredCategories.size,
@@ -270,6 +271,7 @@ private fun SubcategoryRow(
 
 @Composable
 private fun CategoryPagination(
+    compact: Boolean,
     page: Int,
     totalPages: Int,
     itemCount: Int,
@@ -281,11 +283,8 @@ private fun CategoryPagination(
     var sizeMenuExpanded by remember { mutableStateOf(false) }
     val from = if (itemCount == 0) 0 else page * pageSize + 1
     val to = minOf(itemCount, (page + 1) * pageSize)
-    Row(
-        Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Registros por pagina:", color = TableMuted)
+    val pageSizeSelector: @Composable () -> Unit = {
+        Text(if (compact) "Filas:" else "Registros por pagina:", color = TableMuted)
         Box {
             TextButton(onClick = { sizeMenuExpanded = true }) { Text("$pageSize", color = TableText) }
             MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
@@ -299,13 +298,30 @@ private fun CategoryPagination(
                 }
             }
         }
-        Text("$from-$to de $itemCount", color = TableMuted, modifier = Modifier.weight(1f))
-        Text("Pagina ${page + 1} de $totalPages", color = TableMuted)
+        Text("$from-$to de $itemCount", color = TableMuted)
+    }
+    val navigation: @Composable () -> Unit = {
         IconButton(onClick = onPrevious, enabled = page > 0) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Pagina anterior")
         }
         IconButton(onClick = onNext, enabled = page < totalPages - 1) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Pagina siguiente")
+        }
+    }
+    if (compact) {
+        Column(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { pageSizeSelector() }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                Text("Pagina ${page + 1} de $totalPages", color = TableMuted)
+                navigation()
+            }
+        }
+    } else {
+        Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            pageSizeSelector()
+            Spacer(Modifier.weight(1f))
+            Text("Pagina ${page + 1} de $totalPages", color = TableMuted)
+            navigation()
         }
     }
 }

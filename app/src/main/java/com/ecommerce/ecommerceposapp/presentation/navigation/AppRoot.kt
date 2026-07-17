@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.Button
@@ -79,6 +81,7 @@ import androidx.compose.ui.layout.ContentScale
 import java.io.File
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -278,6 +281,7 @@ private fun ModernLoginScreen(
     onOfflineModeChange: (Boolean) -> Unit,
     onSubmit: () -> Unit,
 ) {
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.White)) {
         val wide = maxWidth >= 760.dp
         val compactHeight = maxHeight < 650.dp
@@ -327,7 +331,24 @@ private fun ModernLoginScreen(
                 Spacer(Modifier.height(if (compactHeight) 18.dp else 28.dp))
                 OutlinedTextField(state.email, onEmailChange, placeholder = { Text("Correo electrónico") }, leadingIcon = { Icon(Icons.Filled.Email, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
                 Spacer(Modifier.height(14.dp))
-                OutlinedTextField(state.password, onPasswordChange, placeholder = { Text("Contraseña") }, leadingIcon = { Icon(Icons.Filled.Lock, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(10.dp))
+                OutlinedTextField(
+                    value = state.password,
+                    onValueChange = onPasswordChange,
+                    placeholder = { Text("Contraseña") },
+                    leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = if (passwordVisible) "Ocultar contraseña" else "Mostrar contraseña",
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    shape = RoundedCornerShape(10.dp),
+                )
                 state.error?.let { Spacer(Modifier.height(10.dp)); Text(it, color = Brand, modifier = Modifier.fillMaxWidth()) }
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = onSubmit, enabled = !state.busy && state.email.isNotBlank() && state.password.isNotBlank(), modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(Brand)) {

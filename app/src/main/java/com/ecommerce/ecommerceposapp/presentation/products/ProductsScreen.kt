@@ -104,6 +104,7 @@ fun ProductsCrudScreen(
                 it.name.contains(search, ignoreCase = true) ||
                 it.code.contains(search, ignoreCase = true)
         }
+    val compactScreen = LocalConfiguration.current.screenWidthDp < 600
 
     if (creatingAdvanced || editing != null) {
         ProductAdvancedEditorView(
@@ -135,7 +136,7 @@ fun ProductsCrudScreen(
     }
 
     Column(Modifier.fillMaxSize().background(Color.White).padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        if (compactScreen) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Column {
                 Text("Productos y servicios", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
@@ -148,7 +149,16 @@ fun ProductsCrudScreen(
                 onClick = { creatingAdvanced = true },
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFD0505), contentColor = Color.White),
+                modifier = Modifier.fillMaxWidth(),
             ) {
+                Text("+ Nuevo producto")
+            }
+        } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text("Productos y servicios", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Crea, edita y administra cada detalle de los productos que vendes.", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF475569))
+            }
+            Button(onClick = { creatingAdvanced = true }, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFD0505), contentColor = Color.White)) {
                 Text("+ Nuevo producto")
             }
         }
@@ -211,21 +221,19 @@ private fun ProductsTable(
         shadowElevation = 1.dp,
     ) {
         Column {
-            Row(
-                Modifier.fillMaxWidth().padding(10.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            val searchField: @Composable (Modifier) -> Unit = { fieldModifier ->
                 OutlinedTextField(
                     value = search,
                     onValueChange = onSearch,
                     placeholder = { Text("Buscar") },
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    modifier = Modifier.widthIn(min = 260.dp, max = 360.dp),
+                    modifier = fieldModifier,
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true,
                 )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            }
+            val filterList: @Composable (Modifier) -> Unit = { listModifier ->
+                LazyRow(modifier = listModifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
                         FilterChip(
                             selected = selectedCategoryId == null,
@@ -258,12 +266,23 @@ private fun ProductsTable(
                     }
                 }
             }
+            if (compact) {
+                Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    searchField(Modifier.fillMaxWidth())
+                    filterList(Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    searchField(Modifier.widthIn(min = 260.dp, max = 360.dp))
+                    filterList(Modifier.weight(1f))
+                }
+            }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Text("Nombre", modifier = Modifier.weight(2f), fontWeight = FontWeight.SemiBold)
                 if (!compact) Text("Código Producto", modifier = Modifier.weight(1.4f), fontWeight = FontWeight.SemiBold)
                 Text("Precio público", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                Text("Stock", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                if (!compact) Text("Stock", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(48.dp))
             }
             HorizontalDivider(color = Color(0xFFE2E8F0))
@@ -273,13 +292,10 @@ private fun ProductsTable(
                     HorizontalDivider(color = Color(0xFFE2E8F0))
                 }
             }
-            Row(
-                Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            val paginationInfo: @Composable () -> Unit = {
                 val from = if (products.isEmpty()) 0 else currentPage * pageSize + 1
                 val to = minOf(products.size, (currentPage + 1) * pageSize)
-                Text("Registros por pagina:", color = Color(0xFF475569))
+                Text(if (compact) "Filas:" else "Registros por pagina:", color = Color(0xFF475569))
                 Box {
                     TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = Color(0xFF111827)) }
                     MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
@@ -293,13 +309,30 @@ private fun ProductsTable(
                         }
                     }
                 }
-                Text("$from-$to de ${products.size}", color = Color(0xFF475569), modifier = Modifier.weight(1f))
-                Text("Pagina ${currentPage + 1} de $totalPages", color = Color(0xFF475569))
+                Text("$from-$to de ${products.size}", color = Color(0xFF475569))
+            }
+            val paginationButtons: @Composable () -> Unit = {
                 IconButton(onClick = { currentPage-- }, enabled = currentPage > 0) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Pagina anterior")
                 }
                 IconButton(onClick = { currentPage++ }, enabled = currentPage < totalPages - 1) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Pagina siguiente")
+                }
+            }
+            if (compact) {
+                Column(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { paginationInfo() }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                        Text("Pagina ${currentPage + 1} de $totalPages", color = Color(0xFF475569))
+                        paginationButtons()
+                    }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    paginationInfo()
+                    Spacer(Modifier.weight(1f))
+                    Text("Pagina ${currentPage + 1} de $totalPages", color = Color(0xFF475569))
+                    paginationButtons()
                 }
             }
         }
@@ -320,6 +353,7 @@ private fun ProductTableRow(
     ) {
         Column(modifier = Modifier.weight(2f)) {
             Text(product.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (compact) Text("Stock: ${product.stock.toInt()}", color = Color(0xFF475569), style = MaterialTheme.typography.labelSmall)
             if (product.syncState == "PENDING") {
                 Text(
                     "Pendiente de sincronizar",
@@ -330,7 +364,7 @@ private fun ProductTableRow(
         }
         if (!compact) Text(product.code.ifBlank { "-" }, modifier = Modifier.weight(1.4f), color = Color(0xFF475569))
         Text("S/ %.2f".format(product.price), modifier = Modifier.weight(1f), color = Color(0xFF0F172A))
-        Text(product.stock.toInt().toString(), modifier = Modifier.weight(1f), color = Color(0xFF0F172A))
+        if (!compact) Text(product.stock.toInt().toString(), modifier = Modifier.weight(1f), color = Color(0xFF0F172A))
         Box {
             IconButton(onClick = { menuExpanded = true }) {
                 Icon(Icons.Filled.MoreVert, contentDescription = "Opciones")
