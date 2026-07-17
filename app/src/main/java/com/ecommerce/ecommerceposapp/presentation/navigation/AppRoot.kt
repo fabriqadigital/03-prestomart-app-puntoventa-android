@@ -1,9 +1,11 @@
 package com.ecommerce.ecommerceposapp.presentation.navigation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,44 +13,30 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddShoppingCart
-import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Payment
-import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.Smartphone
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -56,9 +44,11 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -80,18 +70,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import com.ecommerce.ecommerceposapp.R
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import java.io.File
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import coil.compose.AsyncImage
 import java.util.Locale
-import java.text.SimpleDateFormat
-import java.util.Date
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -99,13 +90,7 @@ import androidx.navigation.compose.rememberNavController
 import com.ecommerce.ecommerceposapp.domain.repository.auth.AuthRepository
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository
-import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
-import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
-import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
-import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
-import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
-import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
 import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
 import com.ecommerce.ecommerceposapp.presentation.auth.LoginUiState
 import com.ecommerce.ecommerceposapp.presentation.auth.LoginViewModel
@@ -114,22 +99,17 @@ import com.ecommerce.ecommerceposapp.presentation.categories.CategoriesViewModel
 import com.ecommerce.ecommerceposapp.presentation.clients.ClientsCrudScreen
 import com.ecommerce.ecommerceposapp.presentation.clients.ClientsViewModel
 import com.ecommerce.ecommerceposapp.presentation.products.ProductsCrudScreen
+import com.ecommerce.ecommerceposapp.presentation.products.ProductEditDialog
 import com.ecommerce.ecommerceposapp.presentation.products.ProductsViewModel
 import com.ecommerce.ecommerceposapp.presentation.profile.ProfileScreen
 import com.ecommerce.ecommerceposapp.presentation.suppliers.SuppliersCrudScreen
 import com.ecommerce.ecommerceposapp.presentation.suppliers.SuppliersViewModel
 import com.ecommerce.ecommerceposapp.presentation.users.UsersCrudScreen
 import com.ecommerce.ecommerceposapp.presentation.users.UsersViewModel
-import com.ecommerce.ecommerceposapp.presentation.pos.EmitirComprobanteDialog
-import com.ecommerce.ecommerceposapp.presentation.pos.PosUiState
 import com.ecommerce.ecommerceposapp.presentation.pos.PosViewModel
-import com.ecommerce.ecommerceposapp.presentation.pos.VistaPreviaReciboDialog
 import com.ecommerce.ecommerceposapp.presentation.sales.SalesHistoryScreen
-import com.ecommerce.ecommerceposapp.presentation.sync.SyncUiState
 import com.ecommerce.ecommerceposapp.presentation.sync.SyncViewModel
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -146,6 +126,30 @@ private val SurfaceAlt = Color(0xFFEEF0F5)     // superficie alternativa más os
 private val TextPrimary = Color(0xFF111827)    // texto principal
 private val TextSecondary = Color(0xFF6B7280)  // texto secundario / muted
 private val Divider = Color(0xFFE5E7EB)        // separadores
+
+@Composable
+private fun FloatingRightNotice(data: SnackbarData) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Card(
+            modifier = Modifier.widthIn(min = 300.dp, max = 440.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFF111827)),
+            elevation = androidx.compose.material3.CardDefaults.cardElevation(10.dp),
+        ) {
+            Row(
+                Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Color(0xFF4ADE80))
+                Text(data.visuals.message, color = Color.White, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                IconButton(onClick = data::dismiss, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Filled.Close, contentDescription = "Cerrar notificación", tint = Color(0xFFCBD5E1))
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun PosAppRoot(navController: NavHostController = rememberNavController()) {
@@ -174,18 +178,19 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
         composable(LOGIN) {
             val vm: LoginViewModel = koinViewModel()
             val state by vm.uiState.collectAsState()
-            LaunchedEffect(Unit) { vm.refreshOfflineAvailability() }
-            LoginScreen(
+            ModernLoginScreen(
                 state = state,
                 onEmailChange = vm::setEmail,
                 onPasswordChange = vm::setPassword,
-                onModeChange = vm::setOnlineMode,
+                onOfflineModeChange = vm::setOfflineMode,
                 onSubmit = vm::login,
             )
             LaunchedEffect(state.user) {
                 val user = state.user ?: return@LaunchedEffect
                 currentUser = user
-                navController.navigate(SYNC)
+                navController.navigate(if (user.offlineSession) POS else SYNC) {
+                    popUpTo(LOGIN) { inclusive = true }
+                }
             }
         }
         composable(SYNC) {
@@ -266,11 +271,83 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
 }
 
 @Composable
+private fun ModernLoginScreen(
+    state: LoginUiState,
+    onEmailChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onOfflineModeChange: (Boolean) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.White)) {
+        val wide = maxWidth >= 760.dp
+        val compactHeight = maxHeight < 650.dp
+        Row(Modifier.fillMaxSize()) {
+            if (wide) {
+                Box(Modifier.weight(1.05f).fillMaxHeight()) {
+                    Image(
+                        painter = painterResource(R.drawable.post),
+                        contentDescription = "Cajera en punto de venta",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, BrandDark.copy(alpha = 0.22f)))))
+                }
+            }
+            Box(
+                Modifier.weight(1f).fillMaxHeight().padding(horizontal = if (wide) 52.dp else 20.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().widthIn(max = 430.dp).verticalScroll(rememberScrollState())
+                        .padding(vertical = if (compactHeight) 16.dp else 28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (!wide) {
+                        Image(
+                            painterResource(R.drawable.post),
+                            "Punto de venta PrestoMart",
+                            Modifier.fillMaxWidth().height(if (compactHeight) 120.dp else 180.dp).clip(RoundedCornerShape(18.dp)),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Spacer(Modifier.height(if (compactHeight) 14.dp else 22.dp))
+                    }
+                    Text("Modo de conectividad", fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                        Icon(Icons.Filled.Cloud, null, tint = if (!state.offlineMode) Color(0xFF16A34A) else TextSecondary, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(6.dp)); Text("Online", color = if (!state.offlineMode) Color(0xFF16A34A) else TextSecondary)
+                        androidx.compose.material3.Switch(checked = state.offlineMode, onCheckedChange = onOfflineModeChange, enabled = state.offlineAvailable, modifier = Modifier.padding(horizontal = 8.dp))
+                        Icon(Icons.Filled.CloudOff, null, tint = if (state.offlineMode) Brand else TextSecondary, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(6.dp)); Text("Offline", color = if (state.offlineMode) Brand else TextSecondary)
+                    }
+                    if (!state.offlineAvailable) Text("El modo offline se habilita después del primer acceso online.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                    Spacer(Modifier.height(if (compactHeight) 18.dp else 28.dp))
+                    Text("PrestoMart POS", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold, color = Color(0xFF10213F))
+                    Text(if (state.offlineMode) "Accede sin conexión con tus credenciales guardadas." else "Bienvenido. Ingresa con tu cuenta de cajero.", color = TextSecondary)
+                    Spacer(Modifier.height(if (compactHeight) 18.dp else 28.dp))
+                    OutlinedTextField(state.email, onEmailChange, placeholder = { Text("Correo electrónico") }, leadingIcon = { Icon(Icons.Filled.Email, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, shape = RoundedCornerShape(10.dp))
+                    Spacer(Modifier.height(14.dp))
+                    OutlinedTextField(state.password, onPasswordChange, placeholder = { Text("Contraseña") }, leadingIcon = { Icon(Icons.Filled.Lock, null) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation(), shape = RoundedCornerShape(10.dp))
+                    state.error?.let { Spacer(Modifier.height(10.dp)); Text(it, color = Brand, modifier = Modifier.fillMaxWidth()) }
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = onSubmit, enabled = !state.busy && state.email.isNotBlank() && state.password.isNotBlank(), modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.buttonColors(Brand)) {
+                        if (state.busy) { CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
+                        Text(if (state.offlineMode) "Ingresar sin conexión" else "Iniciar sesión", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                    Spacer(Modifier.height(if (compactHeight) 24.dp else 54.dp))
+                    Text("© 2026 PrestoMart POS", color = Color(0xFF94A3B8), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun LoginScreen(
     state: LoginUiState,
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
-    onModeChange: (Boolean) -> Unit,
+    onOfflineModeChange: (Boolean) -> Unit,
     onSubmit: () -> Unit,
 ) {
     Box(
@@ -306,13 +383,13 @@ private fun LoginScreen(
             }
             Spacer(Modifier.height(16.dp))
             Text(
-                "MiniMarket POS",
+                "PrestoMart POS",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
             )
             Text(
-                "Sistema de punto de venta",
+                "Tu caja lista para vender",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
             )
@@ -326,6 +403,26 @@ private fun LoginScreen(
                 shadowElevation = 6.dp,
             ) {
                 Column(modifier = Modifier.padding(24.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text("Bienvenido", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text("Ingresa con tu cuenta de cajero", color = TextSecondary)
+                        }
+                        Surface(shape = RoundedCornerShape(20.dp), color = if (state.offlineAvailable) Color(0xFFFFF1F2) else Color(0xFFF1F5F9)) {
+                            Text(
+                                if (state.offlineAvailable) "Offline disponible" else "Acceso seguro",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                color = if (state.offlineAvailable) BrandDark else TextSecondary,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(22.dp))
                     OutlinedTextField(
                         value = state.email,
                         onValueChange = onEmailChange,
@@ -344,71 +441,20 @@ private fun LoginScreen(
                     )
                     Spacer(Modifier.height(16.dp))
 
-                    if (!state.canChooseOffline) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFFFFF8E1))
-                                .padding(12.dp),
-                        ) {
-                            Text(
-                                "Primera vez: inicie sesión en línea y espere la sincronización. Luego podrá usar modo sin conexión.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF92400E),
-                            )
-                        }
-                        Spacer(Modifier.height(16.dp))
-                    }
-
-                    // Selector de modo
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        val offlineSel = !state.onlineMode && state.canChooseOffline
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (offlineSel) SurfaceAlt else Color(0xFFF9FAFB))
-                                .clickable(enabled = state.canChooseOffline) { onModeChange(false) }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                if (!state.onlineMode) "✓ Offline" else "Offline",
-                                color = if (offlineSel) TextPrimary else TextSecondary,
-                                fontWeight = if (offlineSel) FontWeight.SemiBold else FontWeight.Normal,
-                                style = MaterialTheme.typography.labelLarge,
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (state.onlineMode) Color(0xFFEFF6FF) else Color(0xFFF9FAFB))
-                                .clickable { onModeChange(true) }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                if (state.onlineMode) "✓ Online" else "Online",
-                                color = if (state.onlineMode) Color(0xFF1E40AF) else TextSecondary,
-                                fontWeight = if (state.onlineMode) FontWeight.SemiBold else FontWeight.Normal,
-                                style = MaterialTheme.typography.labelLarge,
-                            )
-                        }
-                    }
                     Spacer(Modifier.height(20.dp))
                     Button(
                         onClick = onSubmit,
+                        enabled = !state.busy && state.email.isNotBlank() && state.password.isNotBlank(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Brand),
                     ) {
+                        if (state.busy) {
+                            CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(10.dp))
+                        }
                         Text(
                             "Iniciar sesión",
                             fontWeight = FontWeight.Bold,
@@ -441,155 +487,6 @@ private fun LoginScreen(
     }
 }
 
-@Composable
-private fun SyncScreen(
-    user: UserSession,
-    state: SyncUiState,
-    requiresSync: Boolean,
-    onSync: () -> Unit,
-    onToggleModule: (String) -> Unit,
-    onBack: () -> Unit,
-    onContinue: () -> Unit,
-) {
-    fun formatLastSync(millis: Long): String {
-        if (millis <= 0L) return "Nunca"
-        return SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("es", "PE")).format(Date(millis))
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(AppBg, SurfaceAlt))),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Spacer(Modifier.height(16.dp))
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 620.dp),
-                horizontalArrangement = Arrangement.Start,
-            ) {
-                OutlinedButton(onClick = onBack) { Text("← Volver") }
-            }
-            Spacer(Modifier.height(24.dp))
-
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Brand),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Filled.ShoppingCart,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(34.dp),
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "Hola, ${user.name}",
-                style = MaterialTheme.typography.headlineSmall,
-                color = TextPrimary,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (requiresSync) "Primera sincronización requerida para modo offline." else "Sincronización inicial ya completada.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
-            )
-            Spacer(Modifier.height(24.dp))
-
-            if (requiresSync) {
-                Button(
-                    onClick = onSync,
-                    colors = ButtonDefaults.buttonColors(containerColor = Brand),
-                    shape = RoundedCornerShape(12.dp),
-                ) { Text("Sincronizar catálogo", fontWeight = FontWeight.Bold, color = Color.White) }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onSync) { Text("Re-sincronizar") }
-                    Button(
-                        onClick = onContinue,
-                        colors = ButtonDefaults.buttonColors(containerColor = Brand),
-                        shape = RoundedCornerShape(12.dp),
-                    ) { Text("Entrar al POS", fontWeight = FontWeight.Bold, color = Color.White) }
-                }
-            }
-
-            Spacer(Modifier.height(24.dp))
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 620.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = SurfaceWhite,
-                shadowElevation = 4.dp,
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(
-                        "Módulos de sincronización",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    state.modules.forEach { m ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(m.label, fontWeight = FontWeight.Medium, color = TextPrimary)
-                                Text(
-                                    "Última: ${formatLastSync(m.lastSyncAt)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary,
-                                )
-                            }
-                            FilterChip(
-                                selected = state.selectedModules.contains(m.key),
-                                onClick = { onToggleModule(m.key) },
-                                label = { Text(if (state.selectedModules.contains(m.key)) "Seleccionado" else "Seleccionar") },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Brand,
-                                    selectedLabelColor = Color.White,
-                                ),
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (state.syncing || state.message.isNotBlank()) {
-                Spacer(Modifier.height(16.dp))
-                Text(state.message, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            }
-            if (state.completed) {
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = onContinue,
-                    colors = ButtonDefaults.buttonColors(containerColor = Brand),
-                    shape = RoundedCornerShape(12.dp),
-                ) { Text("Continuar al POS", fontWeight = FontWeight.Bold, color = Color.White) }
-            }
-            Spacer(Modifier.height(24.dp))
-        }
-    }
-}
-
 private val drawerMenuItems = listOf(
     "Punto de venta",
     "Historial de ventas",
@@ -598,7 +495,6 @@ private val drawerMenuItems = listOf(
     "Clientes",
     "Proveedores",
     "Usuarios",
-    "Mi perfil",
     "Sincronizar catálogo",
     "Cerrar sesión",
 )
@@ -606,10 +502,14 @@ private val drawerMenuItems = listOf(
 @Composable
 private fun PosNavigationDrawerContent(
     selectedLabel: String,
-    greetingName: String,
+    session: UserSession,
+    cashRegisterName: String,
     onItemClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val photoPath = context.getSharedPreferences("profile_preferences", android.content.Context.MODE_PRIVATE)
+        .getString("profile_photo_${session.id}", "").orEmpty()
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -620,35 +520,43 @@ private fun PosNavigationDrawerContent(
         // Encabezado
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .clickable { onItemClick("Mi perfil") }
+                .padding(horizontal = 8.dp, vertical = 12.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(13.dp))
-                    .background(Brand),
+                    .size(54.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(Color(0xFFFFE4E6)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    Icons.Filled.ShoppingCart,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
+                if (photoPath.isNotBlank() && File(photoPath.removePrefix("file://")).exists()) {
+                    AsyncImage(model = photoPath, contentDescription = "Foto de ${session.name}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                } else {
+                    Text(session.name.trim().firstOrNull()?.uppercase() ?: "C", color = Brand, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                }
             }
             Spacer(Modifier.width(12.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(
-                    "MiniMarket POS",
+                    "Hola, ${session.name.ifBlank { "cajero" }}",
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "Hola, $greetingName",
+                    cashRegisterName.ifBlank { session.defaultCashRegisterName }.ifBlank { "Sin caja asignada" },
                     color = TextSecondary,
                     style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                Text("Ver mi perfil", color = Brand, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
             }
         }
 
@@ -676,7 +584,7 @@ private fun PosNavigationDrawerContent(
                 selected = selected,
                 onClick = { onItemClick(label) },
                 colors = NavigationDrawerItemDefaults.colors(
-                    selectedContainerColor = Color(0xFFFFEBEB),
+                    selectedContainerColor = Color(0xFFF3F4F6),
                     unselectedContainerColor = Color.Transparent,
                     selectedTextColor = Brand,
                     unselectedTextColor = TextPrimary,
@@ -686,7 +594,7 @@ private fun PosNavigationDrawerContent(
 
         Spacer(Modifier.weight(1f))
         Text(
-            "v1.0 · MiniMarket POS",
+            "v1.0 · PrestoMart POS",
             color = Color(0xFF9CA3AF),
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(8.dp),
@@ -710,73 +618,163 @@ private fun PosScreen(
     val catalog: CatalogRepository = koinInject()
     val state by posVm.uiState.collectAsState()
     val clientsState by clientsVm.uiState.collectAsState()
+    val productsState by productsVm.uiState.collectAsState()
+    val categoriesState by categoriesVm.uiState.collectAsState()
+    val suppliersState by suppliersVm.uiState.collectAsState()
+    val usersState by usersVm.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var selectedModule by remember { mutableStateOf("Punto de venta") }
+    var showQuickProductDialog by remember { mutableStateOf(false) }
+    var openAdvancedProductForm by remember { mutableStateOf(false) }
     val widthDp = LocalConfiguration.current.screenWidthDp
     val responsiveTwoPanels = widthDp >= 900
 
+    LaunchedEffect(session.cashierId) {
+        posVm.loadCashSession(session.cashierId)
+    }
+
     val topBarTitle = selectedModule
 
+    LaunchedEffect(productsState.message, productsState.error) {
+        val notice = productsState.error ?: productsState.message
+        if (!notice.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(notice)
+            productsVm.clearMessages()
+        }
+    }
+
+    LaunchedEffect(categoriesState.message, categoriesState.error) {
+        val notice = categoriesState.error ?: categoriesState.message
+        if (!notice.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(notice)
+            categoriesVm.clearMessages()
+        }
+    }
+
+    LaunchedEffect(clientsState.message, clientsState.error) {
+        val notice = clientsState.error ?: clientsState.message
+        if (!notice.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(notice)
+            clientsVm.clearMessages()
+        }
+    }
+
+    LaunchedEffect(suppliersState.message, suppliersState.error) {
+        val notice = suppliersState.error ?: suppliersState.message
+        if (!notice.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(notice)
+            suppliersVm.clearMessages()
+        }
+    }
+
+    LaunchedEffect(usersState.message, usersState.error) {
+        val notice = usersState.error ?: usersState.message
+        if (!notice.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(notice)
+            usersVm.clearMessages()
+        }
+    }
+
     LaunchedEffect(selectedModule) {
-        if (selectedModule == "Punto de venta" || selectedModule == "Historial de ventas") {
-            posVm.load()
-            clientsVm.load()
+        when (selectedModule) {
+            "Punto de venta", "Historial de ventas" -> {
+                posVm.refreshCatalog()
+                clientsVm.load()
+            }
+            "Productos" -> {
+                posVm.refreshCatalog()
+                productsVm.load()
+            }
+            "Categorías" -> {
+                posVm.refreshCatalog()
+                categoriesVm.loadAll()
+            }
         }
     }
 
     val posContent: @Composable (PaddingValues) -> Unit = { padding ->
         when (selectedModule) {
             "Punto de venta" -> {
-                if (responsiveTwoPanels) {
-                    Row(modifier = Modifier.fillMaxSize().padding(padding)) {
-                        CatalogPane(
-                            Modifier.weight(1f).fillMaxHeight(),
-                            state,
-                            posVm::setSearch,
-                            posVm::setCategory,
-                            posVm::setSubcategory,
-                            onAddToCart = posVm::addToCart,
-                        )
-                        CartPane(
-                            Modifier.width(360.dp),
-                            state,
-                            clientsState.clients,
-                            catalog,
-                            posVm::increase,
-                            posVm::decrease,
-                            onPay = { p, idC -> posVm.pay(p, idC) },
-                        )
+                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    if (responsiveTwoPanels) {
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            CatalogPane(
+                                Modifier.weight(1f).fillMaxHeight(),
+                                state,
+                                posVm::setSearch,
+                                posVm::setCategory,
+                                posVm::setSubcategory,
+                                onAddToCart = posVm::addToCart,
+                                onToggleFeatured = posVm::toggleFeatured,
+                                onNewProduct = { showQuickProductDialog = true },
+                            )
+                            CartPane(
+                                Modifier.width(360.dp),
+                                state,
+                                "${session.name} ${session.lastName}".trim(),
+                                clientsState.clients,
+                                catalog,
+                                posVm::increase,
+                                posVm::decrease,
+                                onPay = { p, idC -> posVm.pay(p, idC) },
+                                onNewClient = { selectedModule = "Clientes" },
+                            )
+                        }
+                    } else {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            CatalogPane(
+                                Modifier.weight(1f).fillMaxWidth().fillMaxHeight(),
+                                state,
+                                posVm::setSearch,
+                                posVm::setCategory,
+                                posVm::setSubcategory,
+                                onAddToCart = posVm::addToCart,
+                                onToggleFeatured = posVm::toggleFeatured,
+                                onNewProduct = { showQuickProductDialog = true },
+                            )
+                            CartPane(
+                                Modifier.fillMaxWidth().height(320.dp),
+                                state,
+                                "${session.name} ${session.lastName}".trim(),
+                                clientsState.clients,
+                                catalog,
+                                posVm::increase,
+                                posVm::decrease,
+                                onPay = { p, idC -> posVm.pay(p, idC) },
+                                onNewClient = { selectedModule = "Clientes" },
+                            )
+                        }
                     }
-                } else {
-                    Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                        CatalogPane(
-                            Modifier.weight(1f).fillMaxWidth().fillMaxHeight(),
-                            state,
-                            posVm::setSearch,
-                            posVm::setCategory,
-                            posVm::setSubcategory,
-                            onAddToCart = posVm::addToCart,
-                        )
-                        CartPane(
-                            Modifier.fillMaxWidth().height(320.dp),
-                            state,
-                            clientsState.clients,
-                            catalog,
-                            posVm::increase,
-                            posVm::decrease,
-                            onPay = { p, idC -> posVm.pay(p, idC) },
-                        )
-                    }
+                    CashSessionIndicator(
+                        state = state,
+                        onClose = {
+                            scope.launch { posVm.loadCashSummary() }
+                            requestCashClose()
+                        },
+                        modifier = Modifier.align(Alignment.TopEnd),
+                    )
                 }
             }
             "Historial de ventas" -> Box(Modifier.fillMaxSize().padding(padding)) { SalesHistoryScreen(catalog, clientsState.clients) }
-            "Productos" -> Box(Modifier.fillMaxSize().padding(padding)) { ProductsCrudScreen(productsVm) }
+            "Productos" -> Box(Modifier.fillMaxSize().padding(padding)) {
+                ProductsCrudScreen(
+                    vm = productsVm,
+                    openCreateAdvanced = openAdvancedProductForm,
+                    onCreateAdvancedConsumed = { openAdvancedProductForm = false },
+                )
+            }
             "Categorías" -> Box(Modifier.fillMaxSize().padding(padding)) { CategoriesCrudScreen(categoriesVm) }
             "Clientes" -> Box(Modifier.fillMaxSize().padding(padding)) { ClientsCrudScreen(clientsVm) }
             "Proveedores" -> Box(Modifier.fillMaxSize().padding(padding)) { SuppliersCrudScreen(suppliersVm) }
             "Usuarios" -> Box(Modifier.fillMaxSize().padding(padding)) { UsersCrudScreen(usersVm, session) }
-            "Mi perfil" -> Box(Modifier.fillMaxSize().padding(padding)) { ProfileScreen(session, onLogout) }
+            "Mi perfil" -> Box(Modifier.fillMaxSize().padding(padding)) {
+                ProfileScreen(
+                    session = session,
+                    onLogout = onLogout,
+                ) { notice -> scope.launch { snackbarHostState.showSnackbar(notice) } }
+            }
             else -> Box(Modifier.fillMaxSize().padding(padding)) { Text("Seleccione una opción del menú.") }
         }
     }
@@ -784,6 +782,13 @@ private fun PosScreen(
     val scaffold: @Composable () -> Unit = {
         Scaffold(
             containerColor = AppBg,
+            snackbarHost = {
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.fillMaxWidth().padding(end = 18.dp, bottom = 18.dp),
+                    snackbar = { data -> FloatingRightNotice(data) },
+                )
+            },
             topBar = {
                 TopAppBar(
                     title = {
@@ -817,7 +822,7 @@ private fun PosScreen(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(
-                                        if (session.offlineSession) Color(0xFFFFEBEB) else Color(0xFFDCFCE7),
+                                        if (session.offlineSession) Color(0xFFF3F4F6) else Color(0xFFDCFCE7),
                                     )
                                     .padding(horizontal = 10.dp, vertical = 4.dp),
                             ) {
@@ -850,7 +855,8 @@ private fun PosScreen(
             ) {
                 PosNavigationDrawerContent(
                     selectedLabel = selectedModule,
-                    greetingName = session.name,
+                    session = session,
+                    cashRegisterName = state.cashSession?.cashRegisterName.orEmpty(),
                     onItemClick = { label ->
                         when (label) {
                             "Cerrar sesión" -> {
@@ -873,742 +879,42 @@ private fun PosScreen(
     ) {
         scaffold()
     }
-}
 
-@Composable
-private fun ProductSaleCard(
-    product: ProductItem,
-    onAddToCart: (ProductItem) -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
-    ) {
-        Column(Modifier.padding(12.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1.05f)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFFF5F5F5)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (product.imageUrl.isBlank()) {
-                    Icon(
-                        Icons.Filled.Image,
-                        contentDescription = null,
-                        tint = Color(0xFFBDBDBD),
-                        modifier = Modifier.size(48.dp),
-                    )
-                } else {
-                    var coilFailed by rememberSaveable(product.imageUrl) { mutableStateOf(false) }
-                    if (coilFailed) {
-                        Icon(
-                            Icons.Filled.Image,
-                            contentDescription = null,
-                            tint = Color(0xFFBDBDBD),
-                            modifier = Modifier.size(48.dp),
-                        )
-                    } else {
-                        AsyncImage(
-                            model = product.imageUrl,
-                            contentDescription = product.name,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                            onError = { coilFailed = true },
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = product.name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = TextPrimary,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "S/ ${"%.2f".format(product.price)}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Brand,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "Stock: ${product.stock.toInt()}",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary,
-            )
-            Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = { onAddToCart(product) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Brand),
-            ) {
-                Icon(
-                    Icons.Filled.AddShoppingCart,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = Color.White,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text("Agregar", style = MaterialTheme.typography.labelLarge, color = Color.White)
-            }
-        }
-    }
-}
-
-@Composable
-private fun CatalogPane(
-    modifier: Modifier,
-    state: PosUiState,
-    onSearch: (String) -> Unit,
-    onCategory: (Long?) -> Unit,
-    onSubcategory: (Long?) -> Unit,
-    onAddToCart: (ProductItem) -> Unit,
-) {
-    val products = state.products.filter {
-        (state.selectedCategoryId == null || it.categoryId == state.selectedCategoryId) &&
-            (state.selectedSubcategoryId == null || it.subcategoryId == state.selectedSubcategoryId) &&
-            (state.search.isBlank() || it.name.contains(state.search, ignoreCase = true) ||
-                (it.code.isNotBlank() && it.code.contains(state.search, ignoreCase = true)))
-    }
-    val visibleSubcategories = state.subcategories.filter { it.categoryId == state.selectedCategoryId }
-    val gridMinWidth = when {
-        LocalConfiguration.current.screenWidthDp >= 900 -> 200.dp
-        LocalConfiguration.current.screenWidthDp >= 600 -> 176.dp
-        else -> 156.dp
-    }
-    Column(modifier = modifier.fillMaxSize().background(AppBg).padding(12.dp)) {
-        OutlinedTextField(
-            value = state.search,
-            onValueChange = onSearch,
-            label = { Text("Buscar producto...") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(8.dp))
-        LazyRow(contentPadding = PaddingValues(horizontal = 2.dp)) {
-            item {
-                FilterChip(
-                    selected = state.selectedCategoryId == null,
-                    onClick = { onCategory(null) },
-                    label = { Text("Todos") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Brand,
-                        selectedLabelColor = Color.White,
-                    ),
-                )
-            }
-            items(state.categories) { category ->
-                Spacer(Modifier.width(8.dp))
-                FilterChip(
-                    selected = state.selectedCategoryId == category.id,
-                    onClick = { onCategory(category.id) },
-                    label = { Text(category.name) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Brand,
-                        selectedLabelColor = Color.White,
-                    ),
-                )
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        if (visibleSubcategories.isNotEmpty()) {
-            LazyRow(contentPadding = PaddingValues(horizontal = 2.dp)) {
-                item {
-                    FilterChip(
-                        selected = state.selectedSubcategoryId == null,
-                        onClick = { onSubcategory(null) },
-                        label = { Text("Todas") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Brand,
-                            selectedLabelColor = Color.White,
-                        ),
-                    )
-                }
-                items(visibleSubcategories) { subcategory ->
-                    Spacer(Modifier.width(8.dp))
-                    FilterChip(
-                        selected = state.selectedSubcategoryId == subcategory.id,
-                        onClick = { onSubcategory(subcategory.id) },
-                        label = { Text(subcategory.name) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Brand,
-                            selectedLabelColor = Color.White,
-                        ),
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = gridMinWidth),
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentPadding = PaddingValues(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(products, key = { it.id }) { product ->
-                ProductSaleCard(
-                    product = product,
-                    onAddToCart = onAddToCart,
-                )
-            }
-        }
-    }
-}
-
-private enum class PosPaymentMethod { Efectivo, Tarjeta, Yape, Plin }
-
-private fun appendMontoRecibido(current: String, key: String): String {
-    if (key == "⌫") return if (current.isEmpty()) "" else current.dropLast(1)
-    if (key == ".") {
-        if (current.contains('.')) return current
-        return if (current.isEmpty()) "0." else current + "."
-    }
-    if (!key.all { it.isDigit() }) return current
-    val next = current + key
-    val parts = next.split('.')
-    if (parts.size > 1 && parts[1].length > 2) return current
-    return next
-}
-
-private fun mapPosPaymentMethodToTipoPago(m: PosPaymentMethod): String = when (m) {
-    PosPaymentMethod.Efectivo -> "EFE"
-    PosPaymentMethod.Tarjeta -> "TAR"
-    PosPaymentMethod.Yape -> "YAP"
-    PosPaymentMethod.Plin -> "PLN"
-}
-
-@Composable
-private fun CobrarVentaDialog(
-    total: Double,
-    onDismiss: () -> Unit,
-    onCobroExitoso: (CompletedSaleReceipt) -> Unit,
-    onPay: suspend (SalePaymentInfo) -> Result<CompletedSaleReceipt>,
-) {
-    val headerBg = BrandDark
-    val bodyBg = SurfaceWhite
-    val keypadBg = SurfaceAlt
-    val methodUnselected = Color(0xFFF0F2F5)
-    val methodSelected = Brand
-    val labelMuted = TextSecondary
-
-    var method by remember { mutableStateOf(PosPaymentMethod.Efectivo) }
-    var receivedText by remember { mutableStateOf("") }
-    var processing by remember { mutableStateOf(false) }
-    var errorText by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(method, total) {
-        receivedText = when (method) {
-            PosPaymentMethod.Efectivo -> ""
-            else -> String.format(Locale.US, "%.2f", total)
-        }
-    }
-
-    val received = receivedText.toDoubleOrNull() ?: 0.0
-    val vuelto = (received - total).coerceAtLeast(0.0)
-    val canConfirm = total > 0 && !processing && received + 1e-6 >= total
-
-    Dialog(onDismissRequest = { if (!processing) onDismiss() }) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Surface(
-                modifier = Modifier
-                    .widthIn(max = 440.dp)
-                    .fillMaxHeight(0.92f),
-                shape = RoundedCornerShape(20.dp),
-                color = bodyBg,
-                shadowElevation = 12.dp,
-            ) {
-                Column(Modifier.fillMaxSize()) {
-                    // Cabecera roja
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(headerBg)
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.Payment,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(26.dp),
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                "Cobrar venta",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleLarge,
-                            )
-                        }
-                        IconButton(onClick = { if (!processing) onDismiss() }, enabled = !processing) {
-                            Icon(Icons.Filled.Close, contentDescription = "Cerrar", tint = Color.White)
-                        }
-                    }
-
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                            .padding(16.dp),
-                    ) {
-                        Text("TOTAL A COBRAR", color = labelMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            Text(
-                                "S/ ${String.format(Locale.US, "%.2f", total)}",
-                                color = TextPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 28.sp,
-                            )
-                        }
-                        Spacer(Modifier.height(20.dp))
-                        Text("MÉTODO DE PAGO", color = labelMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            val methods = listOf(
-                                Triple(PosPaymentMethod.Efectivo, "Efectivo", Icons.Filled.AttachMoney),
-                                Triple(PosPaymentMethod.Tarjeta, "Tarjeta", Icons.Filled.CreditCard),
-                                Triple(PosPaymentMethod.Yape, "Yape", Icons.Filled.Smartphone),
-                                Triple(PosPaymentMethod.Plin, "Plin", Icons.Filled.Smartphone),
-                            )
-                            methods.forEach { (m, label, icon) ->
-                                val sel = method == m
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (sel) methodSelected else methodUnselected)
-                                        .clickable(enabled = !processing) {
-                                            method = m
-                                            errorText = ""
-                                        }
-                                        .padding(vertical = 12.dp, horizontal = 4.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
-                                    Icon(
-                                        icon,
-                                        contentDescription = null,
-                                        tint = if (sel) Color.White else TextSecondary,
-                                        modifier = Modifier.size(26.dp),
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        label,
-                                        color = if (sel) Color.White else TextSecondary,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(20.dp))
-                        Text("MONTO RECIBIDO", color = labelMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(SurfaceAlt, RoundedCornerShape(10.dp))
-                                .padding(vertical = 14.dp, horizontal = 12.dp),
-                            contentAlignment = Alignment.CenterEnd,
-                        ) {
-                            Text(
-                                text = if (receivedText.isEmpty()) "0" else receivedText,
-                                color = TextPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 32.sp,
-                            )
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        Text("VUELTO", color = labelMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(SurfaceAlt, RoundedCornerShape(10.dp))
-                                .padding(vertical = 12.dp, horizontal = 12.dp),
-                            contentAlignment = Alignment.CenterEnd,
-                        ) {
-                            Text(
-                                "S/ ${String.format(Locale.US, "%.2f", vuelto)}",
-                                color = Color(0xFF16A34A),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 26.sp,
-                            )
-                        }
-                        Spacer(Modifier.height(18.dp))
-                        Text("TECLADO NUMÉRICO", color = labelMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(8.dp))
-                        val keys = listOf(
-                            listOf("7", "8", "9"),
-                            listOf("4", "5", "6"),
-                            listOf("1", "2", "3"),
-                            listOf(".", "0", "⌫"),
-                        )
-                        keys.forEach { row ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                row.forEach { k ->
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(48.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(keypadBg)
-                                            .clickable(enabled = !processing && method == PosPaymentMethod.Efectivo) {
-                                                receivedText = appendMontoRecibido(receivedText, k)
-                                                errorText = ""
-                                            },
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(k, color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 18.sp)
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                        }
-                        if (errorText.isNotBlank()) {
-                            Text(errorText, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                            Spacer(Modifier.height(8.dp))
-                        }
-                    }
-
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Button(
-                            onClick = {
-                                if (!canConfirm) return@Button
-                                scope.launch {
-                                    processing = true
-                                    errorText = ""
-                                    val payment = SalePaymentInfo(
-                                        tipoPago = mapPosPaymentMethodToTipoPago(method),
-                                        montoRecibido = received,
-                                        vuelto = vuelto,
-                                    )
-                                    val r = onPay(payment)
-                                    processing = false
-                                    r.fold(
-                                        onSuccess = {
-                                            onCobroExitoso(it)
-                                            onDismiss()
-                                        },
-                                        onFailure = { errorText = it.message ?: "No se pudo registrar la venta." },
-                                    )
-                                }
-                            },
-                            enabled = canConfirm,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Brand),
-                            shape = RoundedCornerShape(12.dp),
-                        ) {
-                            Text(
-                                "COBRAR  S/ ${String.format(Locale.US, "%.2f", total)}",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                            )
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        TextButton(
-                            onClick = { if (!processing) onDismiss() },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("Cancelar", color = labelMuted)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CartPane(
-    modifier: Modifier,
-    state: PosUiState,
-    clients: List<ClientRow>,
-    catalog: CatalogRepository,
-    onIncrease: (CartLine) -> Unit,
-    onDecrease: (CartLine) -> Unit,
-    onPay: suspend (SalePaymentInfo, Long) -> Result<CompletedSaleReceipt>,
-) {
-    var message by remember { mutableStateOf("") }
-    var showCobrarVenta by remember { mutableStateOf(false) }
-    var selectedCliente by remember { mutableStateOf<ClientRow?>(null) }
-    var showClientePicker by remember { mutableStateOf(false) }
-    var pendingReceipt by remember { mutableStateOf<CompletedSaleReceipt?>(null) }
-    var showEmitir by remember { mutableStateOf(false) }
-    var showPreview by remember { mutableStateOf(false) }
-    var comprobanteEmitido by remember { mutableStateOf<ComprobanteEmitidoResult?>(null) }
-    val scope = rememberCoroutineScope()
-
-    Column(modifier = modifier.background(SurfaceWhite).padding(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.ShoppingCart,
-                contentDescription = null,
-                tint = Brand,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Carrito (${state.cart.sumOf { it.quantity }})",
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-                style = MaterialTheme.typography.titleSmall,
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "Cliente: ${selectedCliente?.name ?: "—"}",
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            TextButton(onClick = { showClientePicker = true }) {
-                Text("Cambiar", color = Brand)
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(state.cart) { line ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(AppBg)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            line.productName,
-                            fontWeight = FontWeight.Medium,
-                            color = TextPrimary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            "S/ ${"%.2f".format(line.unitPrice)}",
-                            color = TextSecondary,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { onDecrease(line) },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(Icons.Filled.Remove, contentDescription = "Menos", tint = Brand)
-                        }
-                        Text(
-                            "${line.quantity}",
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        IconButton(
-                            onClick = { onIncrease(line) },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = "Más", tint = Brand)
-                        }
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(AppBg)
-                .padding(12.dp),
-        ) {
-            Column {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Subtotal", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text("S/ ${"%.2f".format(state.subtotal)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                }
-                Spacer(Modifier.height(4.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("IGV (18%)", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text("S/ ${"%.2f".format(state.igv)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                }
-                Spacer(Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(Divider),
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("TOTAL", fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "S/ ${"%.2f".format(state.total)}",
-                        fontWeight = FontWeight.Bold,
-                        color = Brand,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        Button(
-            onClick = {
-                if (state.cart.isEmpty()) {
-                    message = "Agregue productos al carrito."
-                    return@Button
-                }
-                message = ""
-                showCobrarVenta = true
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Brand),
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Icon(Icons.Filled.Print, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("PAGAR", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-        }
-        if (message.isNotBlank()) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                message,
-                color = if (message.contains("Agregue")) Brand else Color(0xFF16A34A),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-    }
-
-    if (showCobrarVenta) {
-        CobrarVentaDialog(
-            total = state.total,
-            onDismiss = { showCobrarVenta = false },
-            onCobroExitoso = { receipt ->
-                message = "Venta registrada."
-                pendingReceipt = receipt
-                showEmitir = true
-            },
-            onPay = { payment -> onPay(payment, selectedCliente?.id ?: 0L) },
-        )
-    }
-
-    if (showClientePicker) {
-        AlertDialog(
-            onDismissRequest = { showClientePicker = false },
-            title = { Text("Cliente en esta venta") },
-            text = {
-                Column(
-                    Modifier
-                        .heightIn(max = 360.dp)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    Text(
-                        "Sin cliente (no identificado)",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                selectedCliente = null
-                                showClientePicker = false
-                            }
-                            .padding(vertical = 8.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    clients.filter { it.active }.forEach { c ->
-                        Text(
-                            "${c.name} — ${c.document.ifBlank { "—" }}",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    selectedCliente = c
-                                    showClientePicker = false
-                                }
-                                .padding(vertical = 8.dp),
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showClientePicker = false }) { Text("Cerrar") }
-            },
-        )
-    }
-
-    if (showEmitir && pendingReceipt != null) {
-        EmitirComprobanteDialog(
+    if (showQuickProductDialog) {
+        ProductEditDialog(
+            initial = ProductAdminRow(
+                id = 0L,
+                categoryId = productsState.categories.firstOrNull { it.active }?.id ?: 0L,
+                subcategoryId = 0L,
+                name = "",
+                code = "",
+                imageUrl = "",
+                price = 0.0,
+                stock = 0.0,
+                active = true,
+            ),
+            categories = productsState.categories,
+            subcategories = productsState.subcategories,
             onDismiss = {
-                showEmitir = false
-                pendingReceipt = null
+                showQuickProductDialog = false
+                productsVm.clearMessages()
             },
-            onElegir = pick@{ tipo ->
-                val pr = pendingReceipt ?: return@pick
-                scope.launch {
-                    val r = withContext(Dispatchers.IO) {
-                        catalog.emitComprobanteForVenta(pr.ventaId, tipo, selectedCliente?.id ?: pr.idCliente)
+            onSave = {
+                showQuickProductDialog = false
+                productsVm.save(it) {
+                    scope.launch {
+                        posVm.refreshCatalog()
                     }
-                    r.fold(
-                        onSuccess = {
-                            comprobanteEmitido = it
-                            showEmitir = false
-                            showPreview = true
-                        },
-                        onFailure = { e -> message = e.message ?: "Error al emitir comprobante." },
-                    )
                 }
             },
-        )
-    }
-
-    if (showPreview && pendingReceipt != null && comprobanteEmitido != null) {
-        val pr = pendingReceipt!!
-        val em = comprobanteEmitido!!
-        val cid = (selectedCliente?.id ?: pr.idCliente).coerceAtLeast(0L)
-        val cdisp = if (cid > 0L) catalog.getClienteDisplay(cid) else null
-        VistaPreviaReciboDialog(
-            receipt = pr,
-            emitido = em,
-            clienteNombre = cdisp?.first,
-            clienteDoc = cdisp?.second,
-            idClienteVenta = cid,
-            clients = clients,
-            catalog = catalog,
-            onDismiss = {
-                showPreview = false
-                pendingReceipt = null
-                comprobanteEmitido = null
-                selectedCliente = null
+            quickMode = true,
+            initialAdvanced = false,
+            onAdvancedRequest = {
+                showQuickProductDialog = false
+                selectedModule = "Productos"
+                openAdvancedProductForm = true
             },
         )
     }
+    CashFlowHost(session, state, posVm)
 }
