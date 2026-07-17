@@ -8,5 +8,10 @@ open class ClientRealm : RealmObject() {
     var name: String = ""
     var document: String = ""
     var phone: String = ""
+    var lastName: String = ""
+    var email: String = ""
+    var address: String = ""
+    var businessName: String = ""
+    var branchName: String = ""
     var active: Boolean = true
 }

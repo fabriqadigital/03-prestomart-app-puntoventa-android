@@ -21,6 +21,9 @@ data class ProductItem(
     val price: Double,
     val stock: Double,
     val code: String = "",
+    val barcode: String = "",
     val imageUrl: String = "",
+    val salesChannel: String = "ambos",
+    val featuredInPos: Boolean = false,
     val active: Boolean = true,
 )

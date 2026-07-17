@@ -168,9 +168,7 @@ fun SalesHistoryScreen(
             emitido = comp,
             clienteNombre = cdisp?.first,
             clienteDoc = cdisp?.second,
-            idClienteVenta = receipt.idCliente,
-            clients = clients,
-            catalog = catalog,
+            whatsappPhone = if (receipt.idCliente > 0L) catalog.getClienteTelefono(receipt.idCliente).orEmpty() else "",
             onDismiss = {
                 previewReceipt = null
                 previewComp = null

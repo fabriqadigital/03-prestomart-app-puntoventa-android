@@ -4,8 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
-import com.ecommerce.ecommerceposapp.domain.usecase.categories.DeactivateCategoryUseCase
-import com.ecommerce.ecommerceposapp.domain.usecase.categories.DeactivateSubcategoryUseCase
+import com.ecommerce.ecommerceposapp.domain.usecase.categories.DeleteCategoryUseCase
+import com.ecommerce.ecommerceposapp.domain.usecase.categories.DeleteSubcategoryUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetCategoriesUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetSubcategoriesUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.SaveCategoryUseCase
@@ -30,10 +30,10 @@ data class CategoriesUiState(
 class CategoriesViewModel(
     private val getCategories: GetCategoriesUseCase,
     private val saveCategoryUseCase: SaveCategoryUseCase,
-    private val deactivateCategoryUseCase: DeactivateCategoryUseCase,
+    private val deleteCategoryUseCase: DeleteCategoryUseCase,
     private val getSubcategories: GetSubcategoriesUseCase,
     private val saveSubcategoryUseCase: SaveSubcategoryUseCase,
-    private val deactivateSubcategoryUseCase: DeactivateSubcategoryUseCase,
+    private val deleteSubcategoryUseCase: DeleteSubcategoryUseCase,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CategoriesUiState())
     val uiState: StateFlow<CategoriesUiState> = _uiState.asStateFlow()
@@ -50,9 +50,9 @@ class CategoriesViewModel(
     }
 
     fun saveCategory(row: CategoryAdminRow) = action("Categoria guardada.") { saveCategoryUseCase(row) }
-    fun removeCategory(id: Long) = action("Categoria desactivada.") { deactivateCategoryUseCase(id) }
+    fun removeCategory(id: Long) = action("Categoria eliminada correctamente.") { deleteCategoryUseCase(id) }
     fun saveSubcategory(row: SubcategoryAdminRow) = action("Subcategoria guardada.") { saveSubcategoryUseCase(row) }
-    fun removeSubcategory(id: Long) = action("Subcategoria desactivada.") { deactivateSubcategoryUseCase(id) }
+    fun removeSubcategory(id: Long) = action("Subcategoria eliminada correctamente.") { deleteSubcategoryUseCase(id) }
     fun clearMessages() = _uiState.update { it.copy(message = null, error = null) }
 
     private fun action(message: String, block: suspend () -> Result<Unit>) = viewModelScope.launch {

@@ -4,6 +4,7 @@ import android.content.Context
 import com.ecommerce.ecommerceposapp.data.local.categories.CategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.categories.SubcategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.products.ProductRealm
+import com.ecommerce.ecommerceposapp.data.remote.api.CategoryApiDataSource
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
 import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
@@ -12,28 +13,41 @@ import io.realm.Case
 
 class CategoryRepositoryImpl(context: Context) : CategoryRepository {
     private val db = RealmDataSource(context)
+    private val api = CategoryApiDataSource(context)
 
-    override fun listCategoriesAdmin() = db.query { realm -> realm.where(CategoryRealm::class.java).equalTo("active", true).findAll().map { CategoryAdminRow(it.id, it.name, it.active) } }
+    override fun listCategoriesAdmin() = db.query { realm ->
+        realm.where(CategoryRealm::class.java).findAll()
+            .map { CategoryAdminRow(it.id, it.name, it.active) }
+            .sortedByDescending { it.id }
+    }
 
     override fun upsertCategory(row: CategoryAdminRow): Result<Unit> {
         if (row.name.isBlank()) return Result.failure(Exception("Nombre obligatorio."))
-        db.write { realm ->
-            val id = if (row.id == 0L) db.nextId(realm, CategoryRealm::class.java) else row.id
-            realm.insertOrUpdate(CategoryRealm().apply { this.id = id; name = row.name.trim(); active = row.active })
+        return api.saveCategory(row).map { savedId ->
+            db.write { realm ->
+                realm.insertOrUpdate(CategoryRealm().apply { id = savedId; name = row.name.trim(); active = row.active })
+            }
         }
-        return Result.success(Unit)
     }
 
     override fun deleteCategory(id: Long): Result<Unit> {
-        db.write { realm ->
-            realm.where(CategoryRealm::class.java).equalTo("id", id).findFirst()?.active = false
-            realm.where(SubcategoryRealm::class.java).equalTo("categoryId", id).findAll().forEach { it.active = false }
-            realm.where(ProductRealm::class.java).equalTo("categoryId", id).findAll().forEach { it.active = false }
+        val hasProducts = db.query { realm ->
+            realm.where(ProductRealm::class.java).equalTo("categoryId", id).count() > 0L
         }
-        return Result.success(Unit)
+        if (hasProducts) return Result.failure(Exception("No se puede eliminar la categoria porque tiene productos asociados."))
+        return api.deleteCategory(id).onSuccess {
+            db.write { realm ->
+                realm.where(SubcategoryRealm::class.java).equalTo("categoryId", id).findAll().deleteAllFromRealm()
+                realm.where(CategoryRealm::class.java).equalTo("id", id).findFirst()?.deleteFromRealm()
+            }
+        }
     }
 
-    override fun listSubcategoriesAdmin() = db.query { realm -> realm.where(SubcategoryRealm::class.java).equalTo("active", true).findAll().map { SubcategoryAdminRow(it.id, it.categoryId, it.name, it.active) } }
+    override fun listSubcategoriesAdmin() = db.query { realm ->
+        realm.where(SubcategoryRealm::class.java).findAll()
+            .map { SubcategoryAdminRow(it.id, it.categoryId, it.name, it.active) }
+            .sortedByDescending { it.id }
+    }
 
     override fun upsertSubcategory(row: SubcategoryAdminRow): Result<Unit> {
         if (row.name.isBlank()) return Result.failure(Exception("Nombre obligatorio."))
@@ -44,18 +58,22 @@ class CategoryRepositoryImpl(context: Context) : CategoryRepository {
             existing != null && existing.id != row.id
         }
         if (duplicate) return Result.failure(Exception("Ya existe una subcategoria con ese nombre en la categoria."))
-        db.write { realm ->
-            val id = if (row.id == 0L) db.nextId(realm, SubcategoryRealm::class.java) else row.id
-            realm.insertOrUpdate(SubcategoryRealm().apply { this.id = id; categoryId = row.categoryId; name = row.name.trim(); active = row.active })
+        return api.saveSubcategory(row).map { savedId ->
+            db.write { realm ->
+                realm.insertOrUpdate(SubcategoryRealm().apply { id = savedId; categoryId = row.categoryId; name = row.name.trim(); active = row.active })
+            }
         }
-        return Result.success(Unit)
     }
 
     override fun deleteSubcategory(id: Long): Result<Unit> {
-        db.write { realm ->
-            realm.where(SubcategoryRealm::class.java).equalTo("id", id).findFirst()?.active = false
-            realm.where(ProductRealm::class.java).equalTo("subcategoryId", id).findAll().forEach { it.active = false }
+        val hasProducts = db.query { realm ->
+            realm.where(ProductRealm::class.java).equalTo("subcategoryId", id).count() > 0L
         }
-        return Result.success(Unit)
+        if (hasProducts) return Result.failure(Exception("No se puede eliminar la subcategoria porque tiene productos asociados."))
+        return api.deleteSubcategory(id).onSuccess {
+            db.write { realm ->
+                realm.where(SubcategoryRealm::class.java).equalTo("id", id).findFirst()?.deleteFromRealm()
+            }
+        }
     }
 }

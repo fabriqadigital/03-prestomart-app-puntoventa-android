@@ -10,6 +10,7 @@ class ApiHttpClient(context: Context) {
     val client: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(AuthInterceptor(sessionStore))
         .addInterceptor(HostHeaderInterceptor(sessionStore))
+        .authenticator(JwtAuthenticator(context.applicationContext))
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
