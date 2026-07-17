@@ -24,7 +24,7 @@ class PosApplication : Application() {
         Realm.init(this)
         val config = RealmConfiguration.Builder()
             .name("ecommerce_pos.realm")
-            .schemaVersion(12)
+            .schemaVersion(13)
             .migration(RealmMigration { realm, oldVersion, _ ->
                 if (oldVersion < 9L) {
                     realm.schema.get("ProductRealm")?.apply {
@@ -88,6 +88,33 @@ class PosApplication : Application() {
                         addField("branchName", String::class.java)
                         transform { client -> client.setString("branchName", "") }
                         setRequired("branchName", true)
+                    }
+                }
+                if (oldVersion < 13L) {
+                    realm.schema.get("SupplierRealm")?.apply {
+                        val requiredTextFields = listOf(
+                            "codigoProveedor",
+                            "correo",
+                            "direccion",
+                            "personaContacto",
+                            "cargoContacto",
+                            "telefonoContacto",
+                            "correoContacto",
+                            "fechaRegistro",
+                            "observaciones",
+                            "banco",
+                            "cuenta",
+                            "cci",
+                        )
+                        requiredTextFields.forEach { field ->
+                            addField(field, String::class.java)
+                            transform { supplier -> supplier.setString(field, "") }
+                            setRequired(field, true)
+                        }
+                        addField("calificacion", Int::class.javaPrimitiveType!!)
+                        addField("estado", String::class.java)
+                        transform { supplier -> supplier.setString("estado", "Activo") }
+                        setRequired("estado", true)
                     }
                 }
             })
