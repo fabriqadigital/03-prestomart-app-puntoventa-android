@@ -623,15 +623,6 @@ class PosRepositoryImpl(private val context: Context) :
                     active = true
                 })
             }
-            if ("proveedores" in selected && realm.where(SupplierRealm::class.java).count() == 0L) {
-                realm.insertOrUpdate(SupplierRealm().apply {
-                    id = 1
-                    businessName = "Proveedor demo"
-                    ruc = ""
-                    phone = ""
-                    active = true
-                })
-            }
             // Tras migración/borrado de Realm puede haber sesión sin fila local: sin esto nunca se habilita login offline.
             if ("usuarios" in selected && realm.where(UserRealm::class.java).equalTo("id", user.id).findFirst() == null) {
                 realm.insertOrUpdate(UserRealm().apply {
@@ -779,36 +770,6 @@ class PosRepositoryImpl(private val context: Context) :
         }
         return Result.success(Unit)
     }
-
-    private fun listSuppliers(): List<SupplierRow> = realmQuery { realm ->
-        realm.where(SupplierRealm::class.java).equalTo("active", true).findAll().map { s ->
-            SupplierRow(s.id, s.businessName, s.ruc, s.phone, s.active)
-        }
-    }
-
-    private fun upsertSupplier(row: SupplierRow): Result<Unit> {
-        if (row.businessName.isBlank()) return Result.failure(Exception("Razón social obligatoria."))
-        realmWrite { realm ->
-            val id = if (row.id == 0L) nextId(realm, SupplierRealm::class.java) else row.id
-            realm.insertOrUpdate(SupplierRealm().apply {
-                this.id = id
-                businessName = row.businessName.trim()
-                ruc = row.ruc.trim()
-                phone = row.phone.trim()
-                active = row.active
-            })
-        }
-        return Result.success(Unit)
-    }
-
-    private fun deleteSupplier(id: Long): Result<Unit> {
-        realmWrite { realm ->
-            val s = realm.where(SupplierRealm::class.java).equalTo("id", id).findFirst() ?: return@realmWrite
-            s.active = false
-        }
-        return Result.success(Unit)
-    }
-
     private fun onlineLogin(email: String, password: String): Result<UserSession> {
         val apiSession = authApi.login(email, password)
         if (apiSession != null) {

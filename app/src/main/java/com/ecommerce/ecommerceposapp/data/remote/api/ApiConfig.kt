@@ -15,4 +15,11 @@ object ApiConfig {
     const val CATEGORY_LIST = "$POS_PREFIX/producto_categoria/listar"
     const val SUBCATEGORY_LIST = "$POS_PREFIX/producto_categoria_sub/listar"
     const val SYNC_CATALOG = "$POS_PREFIX/finanza/sync/catalog"
+
+    const val SUPPLIER_LIST = "$POS_PREFIX/proveedores/listar"
+    const val SUPPLIER_GET = "$POS_PREFIX/proveedores/obtener"
+    const val SUPPLIER_CREATE = "$POS_PREFIX/proveedores/crear"
+    const val SUPPLIER_UPDATE = "$POS_PREFIX/proveedores/actualizar"
+    const val SUPPLIER_UPDATE_ESTADO = "$POS_PREFIX/proveedores/actualizar_estado"
+    const val SUPPLIER_DELETE = "$POS_PREFIX/proveedores/eliminar"
 }
