@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,26 +12,33 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -43,53 +49,151 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
-import com.ecommerce.ecommerceposapp.presentation.common.CrudEditDeleteIcons
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
-import com.ecommerce.ecommerceposapp.presentation.common.ToolbarAddIconButton
 
-private val COMPACT_BREAKPOINT = 600.dp
+// Paleta consistente con el resto de la app
+private val Brand = Color(0xFFFD0505)
+private val AppBg = Color(0xFFF5F7FA)
+private val SurfaceWhite = Color(0xFFFFFFFF)
+private val TextPrimary = Color(0xFF111827)
+private val TextSecondary = Color(0xFF6B7280)
+private val DividerColor = Color(0xFFE5E7EB)
+private const val PAGE_SIZE = 10
 
 @Composable
 fun SuppliersCrudScreen(vm: SuppliersViewModel) {
     val state by vm.uiState.collectAsState()
     LaunchedEffect(Unit) { vm.load() }
+
     var editing by remember { mutableStateOf<SupplierRow?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
+    var search by remember { mutableStateOf("") }
+    var page by remember { mutableStateOf(0) }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Lista de proveedores", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            ToolbarAddIconButton(onClick = { showCreate = true }, contentDescription = "Nuevo proveedor")
+    val filtered = remember(state.suppliers, search) {
+        if (search.isBlank()) {
+            state.suppliers
+        } else {
+            state.suppliers.filter {
+                it.businessName.contains(search, ignoreCase = true) ||
+                        it.ruc.contains(search, ignoreCase = true) ||
+                        it.codigoProveedor.contains(search, ignoreCase = true) ||
+                        it.correo.contains(search, ignoreCase = true)
+            }
         }
-        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-        Spacer(Modifier.height(8.dp))
+    }
+    LaunchedEffect(filtered.size) {
+        val maxPage = if (filtered.isEmpty()) 0 else (filtered.size - 1) / PAGE_SIZE
+        if (page > maxPage) page = 0
+    }
+    val totalPages = if (filtered.isEmpty()) 1 else ((filtered.size - 1) / PAGE_SIZE) + 1
+    val pageItems = filtered.drop(page * PAGE_SIZE).take(PAGE_SIZE)
 
-        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-            val isCompact = maxWidth < COMPACT_BREAKPOINT
-            val onEdit: (SupplierRow) -> Unit = { editing = it }
-            val onDelete: (SupplierRow) -> Unit = { row ->
-                pendingConfirm = PendingConfirm(
-                    title = "Desactivar proveedor",
-                    body = "Desactivar al proveedor ${row.businessName}? Dejara de mostrarse como activo.",
-                    confirmButtonText = "Desactivar",
-                    onConfirm = { vm.remove(row.id) },
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(AppBg)
+            .padding(20.dp)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        Text(
+            "Proveedores",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Administra los proveedores disponibles para tus compras.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary,
+        )
+        Spacer(Modifier.height(16.dp))
+
+        Button(
+            onClick = { showCreate = true },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Brand),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.width(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Agregar", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it; page = 0 },
+            placeholder = { Text("Buscar por nombre o RUC") },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextSecondary) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+        )
+        Spacer(Modifier.height(16.dp))
+
+        state.error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.height(8.dp))
+        }
+        state.message?.let {
+            Text(it, color = Color(0xFF16A34A))
+            Spacer(Modifier.height(8.dp))
+        }
+
+        if (pageItems.isEmpty() && !state.isLoading) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = SurfaceWhite,
+                shadowElevation = 2.dp,
+            ) {
+                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text("No hay proveedores registrados", color = TextSecondary)
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                pageItems.forEach { row ->
+                    SupplierCard(
+                        row = row,
+                        onEdit = { editing = row },
+                        onDelete = {
+                            pendingConfirm = PendingConfirm(
+                                title = "Desactivar proveedor",
+                                body = "¿Desactivar al proveedor ${row.businessName}? Dejará de mostrarse como activo.",
+                                confirmButtonText = "Desactivar",
+                                onConfirm = { vm.remove(row.id) },
+                            )
+                        },
+                    )
+                }
+            }
+            /*Spacer(Modifier.height(8.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = SurfaceWhite,
+                shadowElevation = 2.dp,
+            ) {
+                PaginationFooter(
+                    page = page,
+                    totalPages = totalPages,
+                    totalItems = filtered.size,
+                    onPrev = { if (page > 0) page-- },
+                    onNext = { if (page < totalPages - 1) page++ },
                 )
-            }
-
-            if (isCompact) {
-                SuppliersCardList(state.suppliers, state.isLoading, onEdit, onDelete)
-            } else {
-                SuppliersTable(state.suppliers, state.isLoading, onEdit, onDelete)
-            }
+            }*/
         }
     }
 
@@ -106,54 +210,51 @@ fun SuppliersCrudScreen(vm: SuppliersViewModel) {
     ConfirmDestructiveDialog(pendingConfirm, onDismiss = { pendingConfirm = null })
 }
 
-// ---------- Layout compacto (celular): tarjetas ----------
-
-@Composable
-private fun SuppliersCardList(
-    suppliers: List<SupplierRow>,
-    isLoading: Boolean,
-    onEdit: (SupplierRow) -> Unit,
-    onDelete: (SupplierRow) -> Unit,
-) {
-    if (suppliers.isEmpty() && !isLoading) {
-        EmptyState()
-        return
-    }
-    LazyColumn(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(suppliers, key = { it.id }) { row ->
-            SupplierCard(row, onEdit = { onEdit(row) }, onDelete = { onDelete(row) })
-        }
-    }
-}
-
 @Composable
 private fun SupplierCard(row: SupplierRow, onEdit: () -> Unit, onDelete: () -> Unit) {
+    var menuExpanded by remember { mutableStateOf(false) }
     Card(
         Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, DividerColor),
+        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
-                    Text(row.businessName.ifBlank { "-" }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        row.businessName.ifBlank { "-" },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     if (row.codigoProveedor.isNotBlank()) {
-                        Text("Código: ${row.codigoProveedor}", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            row.codigoProveedor,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                        )
                     }
                 }
-                CrudEditDeleteIcons(onEdit = onEdit, onDelete = onDelete, deleteContentDescription = "Desactivar proveedor")
+                StatusPill(row.estado.ifBlank { "Activo" })
+                Box {
+                    IconButton(onClick = { menuExpanded = true }, modifier = Modifier.width(36.dp)) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Opciones", tint = TextSecondary)
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(text = { Text("Editar") }, onClick = { menuExpanded = false; onEdit() })
+                        DropdownMenuItem(text = { Text("Desactivar") }, onClick = { menuExpanded = false; onDelete() })
+                    }
+                }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             InfoLine("RUC", row.ruc)
             InfoLine("Teléfono", row.phone)
             if (row.correo.isNotBlank()) InfoLine("Correo", row.correo)
-            Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(row.estado.ifBlank { "Activo" }, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
-                Text("Calif. ${row.calificacion}", style = MaterialTheme.typography.bodySmall)
-                if (row.fechaRegistro.isNotBlank()) Text(row.fechaRegistro, style = MaterialTheme.typography.bodySmall)
-            }
+            if (row.fechaRegistro.isNotBlank()) InfoLine("Registrado", row.fechaRegistro)
         }
     }
 }
@@ -161,122 +262,76 @@ private fun SupplierCard(row: SupplierRow, onEdit: () -> Unit, onDelete: () -> U
 @Composable
 private fun InfoLine(label: String, value: String) {
     if (value.isBlank()) return
-    Text("$label: $value", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "$label:",
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary,
+            modifier = Modifier.width(72.dp),
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
-// ---------- Layout ancho (tablet): tabla ----------
+@Composable
+private fun StatusPill(status: String) {
+    val (bg, fg) = when (status.lowercase()) {
+        "activo" -> Color(0xFFDCFCE7) to Color(0xFF16A34A)
+        "bloqueado" -> Color(0xFFFFEBEB) to Brand
+        else -> Color(0xFFF3F4F6) to TextSecondary
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(bg)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    ) {
+        Text(status, color = fg, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+    }
+}
 
 @Composable
-private fun SuppliersTable(
-    suppliers: List<SupplierRow>,
-    isLoading: Boolean,
-    onEdit: (SupplierRow) -> Unit,
-    onDelete: (SupplierRow) -> Unit,
+private fun PaginationFooter(
+    page: Int,
+    totalPages: Int,
+    totalItems: Int,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
 ) {
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surface),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        SupplierTableHeader()
-        Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
-        if (suppliers.isEmpty() && !isLoading) {
-            EmptyState()
-        }
-        LazyColumn(Modifier.fillMaxWidth()) {
-            items(suppliers, key = { it.id }) { row ->
-                SupplierTableRow(row = row, onEdit = { onEdit(row) }, onDelete = { onDelete(row) })
-                Divider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        Text(PAGE_SIZE.toString(), color = TextPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+        val start = if (totalItems == 0) 0 else page * PAGE_SIZE + 1
+        val end = minOf((page + 1) * PAGE_SIZE, totalItems)
+        Text("$start-$end de $totalItems", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+        Row {
+            IconButton(onClick = onPrev, enabled = page > 0) {
+                Icon(
+                    Icons.Filled.KeyboardArrowLeft,
+                    contentDescription = "Anterior",
+                    tint = if (page > 0) TextPrimary else Color(0xFFD1D5DB),
+                )
+            }
+            IconButton(onClick = onNext, enabled = page < totalPages - 1) {
+                Icon(
+                    Icons.Filled.KeyboardArrowRight,
+                    contentDescription = "Siguiente",
+                    tint = if (page < totalPages - 1) TextPrimary else Color(0xFFD1D5DB),
+                )
             }
         }
     }
-}
-
-@Composable
-private fun EmptyState() {
-    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-        Text("No hay proveedores registrados", style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-@Composable
-private fun SupplierTableHeader() {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp, horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        HeaderCell("Código", 0.8f)
-        HeaderCell("Razón social", 1.8f)
-        HeaderCell("RUC", 1.1f)
-        HeaderCell("Correo", 1.8f)
-        HeaderCell("Teléfono", 1.1f)
-        HeaderCell("Estado", 1.0f)
-        HeaderCell("Calif.", 0.7f, TextAlign.Center)
-        HeaderCell("Banco", 1.0f)
-        HeaderCell("Fecha", 1.0f)
-        HeaderCell("Acciones", 0.9f, TextAlign.End)
-    }
-}
-
-@Composable
-private fun androidx.compose.foundation.layout.RowScope.HeaderCell(
-    text: String,
-    weight: Float,
-    align: TextAlign = TextAlign.Start,
-) {
-    Text(
-        text,
-        modifier = Modifier.weight(weight).padding(horizontal = 4.dp),
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = FontWeight.SemiBold,
-        textAlign = align,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-}
-
-@Composable
-private fun SupplierTableRow(row: SupplierRow, onEdit: () -> Unit, onDelete: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp, horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Cell(row.codigoProveedor, 0.8f)
-        Cell(row.businessName, 1.8f, FontWeight.Medium)
-        Cell(row.ruc, 1.1f)
-        Cell(row.correo, 1.8f)
-        Cell(row.phone, 1.1f)
-        Cell(row.estado.ifBlank { "Activo" }, 1.0f)
-        Cell(row.calificacion.toString(), 0.7f, align = TextAlign.Center)
-        Cell(row.banco, 1.0f)
-        Cell(row.fechaRegistro, 1.0f)
-        Row(Modifier.weight(0.9f), horizontalArrangement = Arrangement.End) {
-            CrudEditDeleteIcons(onEdit = onEdit, onDelete = onDelete, deleteContentDescription = "Desactivar proveedor")
-        }
-    }
-}
-
-@Composable
-private fun androidx.compose.foundation.layout.RowScope.Cell(
-    text: String,
-    weight: Float,
-    fontWeight: FontWeight = FontWeight.Normal,
-    align: TextAlign = TextAlign.Start,
-) {
-    Text(
-        text.ifBlank { "-" },
-        modifier = Modifier.weight(weight).padding(horizontal = 4.dp),
-        style = MaterialTheme.typography.bodySmall,
-        fontWeight = fontWeight,
-        textAlign = align,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
 }
 
 @Composable
@@ -298,6 +353,7 @@ private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSa
     var banco by remember(initial) { mutableStateOf(initial.banco) }
     var cuenta by remember(initial) { mutableStateOf(initial.cuenta) }
     var cci by remember(initial) { mutableStateOf(initial.cci) }
+    var codigoError by remember { mutableStateOf(false) }
 
     val estados = listOf("Activo", "Inactivo", "Bloqueado")
 
@@ -312,7 +368,16 @@ private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSa
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(value = codigo, onValueChange = { codigo = it }, label = { Text("Codigo proveedor") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = codigo,
+                    onValueChange = { codigo = it; codigoError = false },
+                    label = { Text("Codigo proveedor *") },
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = codigoError,
+                    supportingText = {
+                        if (codigoError) Text("El código es obligatorio", color = MaterialTheme.colorScheme.error)
+                    },
+                )
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Razon social") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = ruc, onValueChange = { ruc = it }, label = { Text("RUC") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = correo, onValueChange = { correo = it }, label = { Text("Correo") }, modifier = Modifier.fillMaxWidth())
@@ -356,7 +421,11 @@ private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSa
             }
         },
         confirmButton = {
-            IconButton(onClick = {
+            TextButton(onClick = {
+                if (codigo.isBlank()) {
+                    codigoError = true
+                    return@TextButton
+                }
                 onSave(
                     SupplierRow(
                         id = initial.id,
@@ -380,8 +449,10 @@ private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSa
                         active = estado == "Activo",
                     )
                 )
-            }) { Icon(Icons.Filled.Check, contentDescription = "Guardar") }
+            }) { Text("Guardar") }
         },
-        dismissButton = { IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Cancelar") } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        },
     )
 }
