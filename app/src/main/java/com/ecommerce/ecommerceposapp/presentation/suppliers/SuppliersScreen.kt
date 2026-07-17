@@ -52,6 +52,7 @@ import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialo
 import com.ecommerce.ecommerceposapp.presentation.common.CrudEditDeleteIcons
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
 import com.ecommerce.ecommerceposapp.presentation.common.ToolbarAddIconButton
+import androidx.compose.material3.TextButton
 
 private val COMPACT_BREAKPOINT = 600.dp
 
@@ -298,6 +299,7 @@ private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSa
     var banco by remember(initial) { mutableStateOf(initial.banco) }
     var cuenta by remember(initial) { mutableStateOf(initial.cuenta) }
     var cci by remember(initial) { mutableStateOf(initial.cci) }
+    var codigoError by remember { mutableStateOf(false) }
 
     val estados = listOf("Activo", "Inactivo", "Bloqueado")
 
@@ -312,7 +314,16 @@ private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSa
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(value = codigo, onValueChange = { codigo = it }, label = { Text("Codigo proveedor") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = codigo,
+                    onValueChange = { codigo = it; codigoError = false },
+                    label = { Text("Codigo proveedor *") },
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = codigoError,
+                    supportingText = {
+                        if (codigoError) Text("El código es obligatorio", color = MaterialTheme.colorScheme.error)
+                    },
+                )
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Razon social") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = ruc, onValueChange = { ruc = it }, label = { Text("RUC") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = correo, onValueChange = { correo = it }, label = { Text("Correo") }, modifier = Modifier.fillMaxWidth())
@@ -356,7 +367,11 @@ private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSa
             }
         },
         confirmButton = {
-            IconButton(onClick = {
+            TextButton(onClick = {
+                if (codigo.isBlank()) {
+                    codigoError = true
+                    return@TextButton
+                }
                 onSave(
                     SupplierRow(
                         id = initial.id,
@@ -380,8 +395,10 @@ private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSa
                         active = estado == "Activo",
                     )
                 )
-            }) { Icon(Icons.Filled.Check, contentDescription = "Guardar") }
+            }) { Text("Guardar") }
         },
-        dismissButton = { IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Cancelar") } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        },
     )
 }
