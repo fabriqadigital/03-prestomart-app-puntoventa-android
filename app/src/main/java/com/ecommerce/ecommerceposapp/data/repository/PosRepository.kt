@@ -18,9 +18,14 @@ import com.ecommerce.ecommerceposapp.data.local.sync.SyncModuleStateRealm
 import com.ecommerce.ecommerceposapp.data.local.sync.SyncStateRealm
 import com.ecommerce.ecommerceposapp.data.local.users.UserRealm
 import com.ecommerce.ecommerceposapp.data.remote.api.AuthApiDataSource
+import com.ecommerce.ecommerceposapp.data.remote.api.ClientApiDataSource
+import com.ecommerce.ecommerceposapp.data.remote.api.CashApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.ProductImageApiDataSource
+import com.ecommerce.ecommerceposapp.data.remote.api.PosSaleApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.RemoteCatalogDataSource
 import com.ecommerce.ecommerceposapp.data.repository.pos.AmountInWordsFormatter
+import com.ecommerce.ecommerceposapp.data.repository.products.ProductRepositoryImpl
+import com.ecommerce.ecommerceposapp.data.security.OfflineCredentialVerifier
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
@@ -38,6 +43,9 @@ import com.ecommerce.ecommerceposapp.domain.model.catalog.SubcategoryItem
 import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
 import com.ecommerce.ecommerceposapp.domain.model.users.UserRow
 import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
+import com.ecommerce.ecommerceposapp.domain.model.cash.CashRegister
+import com.ecommerce.ecommerceposapp.domain.model.cash.CashSession
+import com.ecommerce.ecommerceposapp.domain.model.cash.CashSummary
 import com.ecommerce.ecommerceposapp.domain.repository.categories.CategoryRepository
 import com.ecommerce.ecommerceposapp.domain.repository.clients.ClientRepository
 import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
@@ -46,10 +54,10 @@ import com.ecommerce.ecommerceposapp.domain.repository.users.UserRepository
 import com.ecommerce.ecommerceposapp.domain.repository.auth.AuthRepository as DomainAuthRepository
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository as DomainCatalogRepository
 import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository as DomainSyncRepository
-import com.ecommerce.ecommerceposapp.domain.repository.auth.LoginMode as DomainLoginMode
 import io.realm.Realm
 import io.realm.RealmObject
 import java.net.URL
+import java.io.IOException
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -65,50 +73,45 @@ class PosRepositoryImpl(private val context: Context) :
     DomainSyncRepository {
 
     private val prefs = context.getSharedPreferences("pos_prefs", Context.MODE_PRIVATE)
+    private val offlineCredentials = OfflineCredentialVerifier(prefs)
     private val authApi = AuthApiDataSource(context)
+    private val clientApi = ClientApiDataSource(context)
+    private val cashApi = CashApiDataSource(context)
     private val remoteCatalog = RemoteCatalogDataSource(context)
+    private val remoteSale = PosSaleApiDataSource(context)
     private val productImagesApi = ProductImageApiDataSource(context)
+    private val pendingProducts = ProductRepositoryImpl(context)
     private val allSyncModules = listOf("productos", "imagenes_productos", "categorias", "subcategorias", "clientes", "proveedores", "usuarios", "ventas")
 
-    /**
-     * Si Realm aún no tiene usuario + sync inicial, rellena el mismo demo que tras sincronizar.
-     * Así el modo offline está disponible desde el primer arranque (POS demo sin pasar obligatoriamente por online).
-     */
-    private fun ensureLocalDataForOfflineLogin() {
-        val ready = realmQuery { realm ->
-            realm.where(UserRealm::class.java).equalTo("active", true).count() > 0L &&
-                realm.where(SyncStateRealm::class.java).equalTo("id", 1L).findFirst()?.initialSyncDone == true
-        }
-        if (ready) return
-        syncInitialData(
-            UserSession(
-                id = 1L,
-                email = "admin@gmail.com",
-                name = "admin",
-                role = "Cajero admin",
-                offlineSession = false,
-            ),
-        )
-    }
-
-    override fun canUseOfflineLogin(): Boolean {
-        ensureLocalDataForOfflineLogin()
-        return realmQuery { realm ->
-            val users = realm.where(UserRealm::class.java).equalTo("active", true).count()
-            val sync = realm.where(SyncStateRealm::class.java).equalTo("id", 1L).findFirst()
-            users > 0L && sync?.initialSyncDone == true
-        }
-    }
-
-    override fun login(email: String, password: String, mode: DomainLoginMode): Result<UserSession> {
+    override fun login(email: String, password: String): Result<UserSession> {
         if (email.isBlank() || password.isBlank()) return Result.failure(Exception("Completa usuario y contraseña."))
-        if (mode == DomainLoginMode.OfflineOnly && !canUseOfflineLogin()) {
-            return Result.failure(Exception("Primera vez o sin sincronización: use modo en línea y sincronice el catálogo."))
+        val online = onlineLogin(email, password)
+        if (online.isSuccess) return online
+        val error = online.exceptionOrNull()
+        if (error !is IOException) return online
+        val cached = getSession()
+        if (cached == null || cached.email.trim().lowercase() != email.trim().lowercase()) {
+            return Result.failure(Exception("Sin Internet. Este cajero todavía no tiene acceso offline en este dispositivo."))
         }
-        return when (mode) {
-            DomainLoginMode.OfflineOnly -> offlineLogin(email, password)
-            DomainLoginMode.OnlineOnly -> onlineLogin(email, password)
+        if (!offlineCredentials.verify(email, password.toCharArray())) {
+            return Result.failure(Exception("No se pudo validar el acceso offline. Conéctate a Internet para renovar la autorización."))
         }
+        val offline = cached.copy(offlineSession = true)
+        saveSession(offline)
+        return Result.success(offline)
+    }
+
+    override fun canLoginOffline(email: String): Boolean = offlineCredentials.isAvailableFor(email)
+
+    override fun loginOffline(email: String, password: String): Result<UserSession> {
+        val cached = getSession()
+        if (cached == null || cached.email.trim().lowercase() != email.trim().lowercase()) {
+            return Result.failure(Exception("Este cajero todavía no tiene acceso offline en este dispositivo."))
+        }
+        if (!offlineCredentials.verify(email, password.toCharArray())) {
+            return Result.failure(Exception("Credenciales offline incorrectas. Conéctate para renovar el acceso."))
+        }
+        return Result.success(cached.copy(offlineSession = true).also(::saveSession))
     }
 
     override fun getSession(): UserSession? {
@@ -119,17 +122,34 @@ class PosRepositoryImpl(private val context: Context) :
             email = prefs.getString("session_email", "") ?: "",
             name = prefs.getString("session_name", "") ?: "",
             role = prefs.getString("session_role", "admin") ?: "admin",
-            offlineSession = prefs.getBoolean("session_offline", true),
+            offlineSession = prefs.getBoolean("session_offline", false),
+            cashierId = prefs.getLong("session_cashier_id", 0L),
+            defaultCashRegisterId = prefs.getLong("session_default_cash_register_id", 0L),
+            defaultCashRegisterName = prefs.getString("session_default_cash_register_name", "") ?: "",
+            document = prefs.getString("session_document", "") ?: "",
+            phone = prefs.getString("session_phone", "") ?: "",
+            address = prefs.getString("session_address", "") ?: "",
+            branchName = prefs.getString("session_branch_name", "") ?: "",
+            lastName = prefs.getString("session_last_name", "") ?: "",
+            documentType = prefs.getString("session_document_type", "DNI") ?: "DNI",
+            cashierState = prefs.getString("session_cashier_state", "Activo") ?: "Activo",
         )
     }
 
     override fun logout() {
+        offlineCredentials.clear()
         prefs.edit()
             .remove("session_user_id")
             .remove("session_email")
             .remove("session_name")
             .remove("session_role")
             .remove("session_offline")
+            .remove("session_cashier_id")
+            .remove("session_default_cash_register_id")
+            .remove("session_default_cash_register_name")
+            .remove("api_token")
+            .remove("api_refresh_token")
+            .remove("pos_cash_session_id")
             .apply()
     }
 
@@ -150,7 +170,9 @@ class PosRepositoryImpl(private val context: Context) :
     }
 
     override fun products(): List<ProductItem> = realmQuery {
+        val featuredIds = prefs.getStringSet("featured_pos_products", emptySet()).orEmpty()
         it.where(ProductRealm::class.java).equalTo("active", true).findAll()
+            .filter { p -> p.canalVenta.trim().lowercase() in setOf("fisica", "ambos") }
             .filter { p -> productHasActiveCategoryPath(it, p) }
             .map { p ->
                 val rawUrl = normalizedProductImageUrl(p.id, p.imageUrl)
@@ -168,26 +190,42 @@ class PosRepositoryImpl(private val context: Context) :
                     price = p.price,
                     stock = p.stock,
                     code = p.codigo,
+                    barcode = p.barcode,
                     imageUrl = resolvedUrl,
+                    salesChannel = p.canalVenta.ifBlank { "ambos" },
+                    featuredInPos = p.id.toString() in featuredIds,
                     active = p.active,
                 )
             }
+            .sortedWith(compareByDescending<ProductItem> { it.featuredInPos }.thenBy { it.name.lowercase(Locale.getDefault()) })
+    }
+
+    override fun setProductFeatured(productId: Long, featured: Boolean) {
+        val ids = prefs.getStringSet("featured_pos_products", emptySet()).orEmpty().toMutableSet()
+        if (featured) ids += productId.toString() else ids -= productId.toString()
+        prefs.edit().putStringSet("featured_pos_products", ids).apply()
+    }
+
+    override fun refreshCatalog(): Result<Unit> {
+        val session = getSession() ?: return Result.failure(Exception("Sin sesion de usuario."))
+        return syncModules(session, setOf("categorias", "subcategorias", "productos"))
     }
 
     override fun registerSale(lines: List<CartLine>, payment: SalePaymentInfo, idCliente: Long): Result<CompletedSaleReceipt> {
         if (lines.isEmpty()) return Result.failure(Exception("El carrito está vacío."))
         val session = getSession() ?: return Result.failure(Exception("Sin sesión de usuario."))
+        val cashSessionId = prefs.getLong("pos_cash_session_id", 0L)
+        val registered = remoteSale.registerSale(lines, payment, idCliente, cashSessionId).getOrElse { return Result.failure(it) }
         val linesCopy = lines.map { it.copy() }
         val fechaMillis = System.currentTimeMillis()
         lateinit var receipt: CompletedSaleReceipt
         realmWrite { realm ->
-            ensureFinanzaSeed(realm)
-            val sesionId = ensureSesionAbierta(realm, session.id)
-            val subtotal = round(lines.sumOf { it.lineTotal } * 100) / 100
-            val igv = round(subtotal * 0.18 * 100) / 100
-            val total = round((subtotal + igv) * 100) / 100
-            val ventaId = nextId(realm, FinanzaVentaRealm::class.java)
-            val numero = "TICK-$ventaId-${System.currentTimeMillis() % 1_000_000}"
+            val sesionId = cashSessionId
+            val total = round(lines.sumOf { it.lineTotal } * 100) / 100
+            val subtotal = round((total / 1.18) * 100) / 100
+            val igv = round((total - subtotal) * 100) / 100
+            val ventaId = registered.id
+            val numero = registered.number
             realm.insertOrUpdate(
                 FinanzaVentaRealm().apply {
                     id = ventaId
@@ -210,7 +248,8 @@ class PosRepositoryImpl(private val context: Context) :
             )
             lines.forEach { line ->
                 val detId = nextId(realm, FinanzaVentaDetalleRealm::class.java)
-                val lineSub = round(line.unitPrice * line.quantity * 100) / 100
+                val lineTotal = round(line.unitPrice * line.quantity * 100) / 100
+                val lineSub = round((lineTotal / 1.18) * 100) / 100
                 realm.insertOrUpdate(
                     FinanzaVentaDetalleRealm().apply {
                         id = detId
@@ -382,10 +421,10 @@ class PosRepositoryImpl(private val context: Context) :
             var orden = 0
             detalles.forEach { d ->
                 orden += 1
-                val precioConIgv = round(d.precioUnitario * 1.18 * 100) / 100
+                val precioConIgv = round(d.precioUnitario * 100) / 100
                 val subLinea = round(d.subtotal * 100) / 100
-                val igvLinea = round(subLinea * 0.18 * 100) / 100
-                val totalLinea = round((subLinea + igvLinea) * 100) / 100
+                val totalLinea = round(d.precioUnitario * d.cantidad * 100) / 100
+                val igvLinea = round((totalLinea - subLinea) * 100) / 100
                 val detId = nextId(realm, FinanzaComprobanteDetalleRealm::class.java)
                 realm.insertOrUpdate(
                     FinanzaComprobanteDetalleRealm().apply {
@@ -396,7 +435,7 @@ class PosRepositoryImpl(private val context: Context) :
                         descripcion = d.nombreProducto
                         unidadMedida = "NIU"
                         cantidad = d.cantidad
-                        valorUnitario = round(d.precioUnitario * 100) / 100
+                        valorUnitario = round((d.precioUnitario / 1.18) * 100) / 100
                         precioUnitario = precioConIgv
                         descuentoMonto = d.descuento
                         subtotalLinea = subLinea
@@ -451,60 +490,62 @@ class PosRepositoryImpl(private val context: Context) :
         return Result.success(Unit)
     }
 
-    override fun listSalesHistory(): List<SalesHistoryRow> = realmQuery { realm ->
-        realm.where(FinanzaVentaRealm::class.java)
-            .findAll()
-            .sortedByDescending { it.fechaVenta }
-            .map { v ->
-                val clienteNombre = if (v.idCliente > 0L) {
-                    realm.where(ClientRealm::class.java).equalTo("id", v.idCliente).findFirst()?.name
-                } else {
-                    null
-                } ?: "Sin cliente"
-                val cajeroNombre = realm.where(UserRealm::class.java).equalTo("id", v.idUsuario).findFirst()?.name ?: "admin"
-                SalesHistoryRow(
-                    ventaId = v.id,
-                    numeroComprobante = v.numeroComprobante,
-                    tipoComprobante = v.tipoComprobante,
-                    fechaMillis = v.fechaVenta,
-                    clienteNombre = clienteNombre,
-                    cajeroNombre = cajeroNombre,
-                    tipoPago = v.tipoPago,
-                    total = v.total,
-                    estado = v.estado,
-                    idCliente = v.idCliente,
-                )
-            }
+    override fun listSalesHistory(): List<SalesHistoryRow> {
+        val sessionId = prefs.getLong("pos_cash_session_id", 0L)
+        if (sessionId <= 0L) return emptyList()
+        return cashApi.listSales(sessionId).getOrThrow()
     }
 
-    override fun getSaleReceipt(ventaId: Long): Result<CompletedSaleReceipt> = realmQuery { realm ->
-        val v = realm.where(FinanzaVentaRealm::class.java).equalTo("id", ventaId).findFirst()
-            ?: return@realmQuery Result.failure(Exception("Venta no encontrada."))
-        val lines = realm.where(FinanzaVentaDetalleRealm::class.java).equalTo("idVenta", ventaId).findAll()
-            .map { d ->
-                CartLine(
-                    productId = d.idProducto,
-                    productName = d.nombreProducto,
-                    unitPrice = d.precioUnitario,
-                    quantity = d.cantidad.toInt().coerceAtLeast(1),
-                )
-            }
-        val vendedor = realm.where(UserRealm::class.java).equalTo("id", v.idUsuario).findFirst()?.name ?: "admin"
-        Result.success(
-            CompletedSaleReceipt(
-                ventaId = v.id,
-                numeroTicket = v.numeroComprobante,
-                subtotal = v.subtotal,
-                igv = v.igv,
-                total = v.total,
-                tipoPago = v.tipoPago,
-                montoRecibido = v.montoRecibido,
-                vuelto = v.vuelto,
-                fechaMillis = v.fechaVenta,
-                lines = lines,
-                vendedorNombre = vendedor,
-                idCliente = v.idCliente,
-            ),
+    override fun getSaleReceipt(ventaId: Long): Result<CompletedSaleReceipt> = cashApi.getSaleReceipt(ventaId)
+
+    override fun listCashRegisters(): Result<List<CashRegister>> = cashApi.listCashRegisters().recoverCatching { error ->
+        if (error !is IOException) throw error
+        val session = getSession() ?: throw error
+        listOf(CashRegister(session.defaultCashRegisterId, "", session.defaultCashRegisterName, "", true))
+            .filter { it.id > 0L }
+    }
+
+    override fun findOpenCashSession(cashierId: Long): Result<CashSession?> = cashApi.findOpenSession(cashierId)
+        .onSuccess(::cacheCashSession)
+        .recoverCatching { error -> if (error is IOException) cachedCashSession(cashierId) else throw error }
+
+    override fun openCashSession(cashRegisterId: Long, cashierId: Long, openingAmount: Double): Result<CashSession> =
+        cashApi.openSession(cashRegisterId, cashierId, openingAmount).onSuccess {
+            cacheCashSession(it)
+        }
+
+    override fun cashSummary(sessionId: Long): Result<CashSummary> = cashApi.summary(sessionId)
+
+    override fun closeCashSession(sessionId: Long, countedCash: Double, observations: String): Result<Unit> =
+        cashApi.closeSession(sessionId, countedCash, observations).onSuccess {
+            cacheCashSession(null)
+        }
+
+    private fun cacheCashSession(session: CashSession?) {
+        prefs.edit().apply {
+            putLong("pos_cash_session_id", session?.id ?: 0L)
+            putLong("pos_cash_register_id", session?.cashRegisterId ?: 0L)
+            putString("pos_cash_register_name", session?.cashRegisterName ?: "")
+            putLong("pos_cashier_id", session?.cashierId ?: 0L)
+            putString("pos_cashier_name", session?.cashierName ?: "")
+            putLong("pos_cash_opened_at", session?.openedAt ?: 0L)
+            putFloat("pos_cash_opening_amount", (session?.openingAmount ?: 0.0).toFloat())
+            apply()
+        }
+    }
+
+    private fun cachedCashSession(cashierId: Long): CashSession? {
+        val id = prefs.getLong("pos_cash_session_id", 0L)
+        if (id <= 0L || prefs.getLong("pos_cashier_id", cashierId) != cashierId) return null
+        return CashSession(
+            id = id,
+            cashRegisterId = prefs.getLong("pos_cash_register_id", 0L),
+            cashRegisterName = prefs.getString("pos_cash_register_name", "") ?: "",
+            cashierId = cashierId,
+            cashierName = prefs.getString("pos_cashier_name", "") ?: "",
+            openedAt = prefs.getLong("pos_cash_opened_at", 0L),
+            openingAmount = prefs.getFloat("pos_cash_opening_amount", 0f).toDouble(),
+            status = "Abierta",
         )
     }
 
@@ -532,7 +573,9 @@ class PosRepositoryImpl(private val context: Context) :
         val selected = modules.intersect(allSyncModules.toSet())
         if (selected.isEmpty()) return Result.failure(Exception("Seleccione al menos un módulo para sincronizar."))
         val includeImageSync = "imagenes_productos" in selected
+        if ("productos" in selected) pendingProducts.syncPendingProducts()
         val remote = remoteCatalog.fetchBestEffort()
+        val remoteClients = if ("clientes" in selected) clientApi.list().getOrNull() else null
         val now = System.currentTimeMillis()
         if ("categorias" in selected && remote.categories.isEmpty()) {
             return Result.failure(Exception("No se recibieron categorias desde https://prestomartperu.com."))
@@ -568,7 +611,7 @@ class PosRepositoryImpl(private val context: Context) :
                 }
             }
             if ("productos" in selected) {
-                realm.where(ProductRealm::class.java).findAll().deleteAllFromRealm()
+                realm.where(ProductRealm::class.java).notEqualTo("syncState", "PENDING").findAll().deleteAllFromRealm()
                 remote.products.mapNotNull { rp ->
                     if (rp.subcategoryId <= 0L) rp.subcategoryName?.trim().takeUnless { n -> n.isNullOrBlank() }?.let { rp.categoryId to it } else null
                 }.distinct().forEach { (categoryId, subcatName) ->
@@ -588,6 +631,11 @@ class PosRepositoryImpl(private val context: Context) :
                     }
                 }
                 remote.products.forEach { rp ->
+                    val pendingLocal = realm.where(ProductRealm::class.java)
+                        .equalTo("id", rp.id)
+                        .equalTo("syncState", "PENDING")
+                        .findFirst()
+                    if (pendingLocal != null) return@forEach
                     val remoteCatName = rp.categoryName?.trim().orEmpty()
                     val catId = if (remoteCatName.isNotBlank()) {
                         realm.where(CategoryRealm::class.java).equalTo("name", remoteCatName, io.realm.Case.INSENSITIVE).findFirst()?.id
@@ -601,10 +649,38 @@ class PosRepositoryImpl(private val context: Context) :
                         subcategoryId = subcatId
                         name = rp.name
                         codigo = rp.code
+                        barcode = rp.barcode
+                        slug = rp.slug
+                        description = rp.description
+                        location = rp.location
+                        canalVenta = rp.salesChannel.ifBlank { "ambos" }
                         imageUrl = normalizedProductImageUrl(id, rp.imageUrl)
                         price = rp.price
                         stock = rp.stock
+                        oldPrice = rp.oldPrice
+                        costPrice = rp.costPrice
+                        wholesalePrice = rp.wholesalePrice
+                        wholesaleOldPrice = rp.wholesaleOldPrice
+                        yapePrice = rp.yapePrice
+                        minimumStock = rp.minimumStock
+                        productTypeId = rp.productTypeId
+                        ratingsEnabled = rp.ratingsEnabled
+                        adminRating = rp.adminRating
+                        packageMeasures = rp.packageMeasures
+                        packageDimension = rp.packageDimension
+                        weightKg = rp.weightKg
+                        promoCutoffTime = rp.promoCutoffTime
+                        saturdayCutoffTime = rp.saturdayCutoffTime
+                        offerMaxQuantity = rp.offerMaxQuantity
+                        offerMaxQuantityPrice = rp.offerMaxQuantityPrice
+                        metaTitle = rp.metaTitle
+                        metaDescription = rp.metaDescription
                         active = rp.active
+                        localCreatedAt = rp.createdAt
+                        remoteCreatedAt = rp.createdAt
+                        remoteUpdatedAt = rp.updatedAt
+                        syncState = "SYNCED"
+                        syncError = ""
                     })
                 }
             }
@@ -613,6 +689,23 @@ class PosRepositoryImpl(private val context: Context) :
                 realm.where(ProductRealm::class.java).findAll().forEach { p ->
                     if (p.imageUrl.contains("picsum.photos", ignoreCase = true)) p.imageUrl = ""
                 }
+            }
+            if (remoteClients != null) {
+                realm.where(ClientRealm::class.java).findAll().deleteAllFromRealm()
+                remoteClients.forEach { client ->
+                    realm.insertOrUpdate(ClientRealm().apply {
+                        id = client.id
+                        name = client.name
+                        document = client.document
+                        phone = client.phone
+                        lastName = client.lastName
+                        email = client.email
+                        address = client.address
+                        businessName = client.businessName
+                        active = client.active
+                    })
+                }
+                prefs.edit().putBoolean("clients_remote_cache_ready", true).apply()
             }
             if ("clientes" in selected && realm.where(ClientRealm::class.java).count() == 0L) {
                 realm.insertOrUpdate(ClientRealm().apply {
@@ -639,7 +732,6 @@ class PosRepositoryImpl(private val context: Context) :
                 syncedUserId = user.id
                 initialSyncDone = true
             })
-            if ("ventas" in selected) ensureFinanzaSeed(realm)
             selected.forEach { key ->
                 realm.insertOrUpdate(
                     SyncModuleStateRealm().apply {
@@ -771,73 +863,36 @@ class PosRepositoryImpl(private val context: Context) :
         return Result.success(Unit)
     }
     private fun onlineLogin(email: String, password: String): Result<UserSession> {
-        val apiSession = authApi.login(email, password)
-        if (apiSession != null) {
-            val user = UserSession(
-                id = if (apiSession.userId > 0L) apiSession.userId else 1L,
-                email = email,
-                name = apiSession.name.ifBlank { "admin" },
-                role = "Cajero admin",
-                offlineSession = false,
-            )
-            realmWrite { realm ->
-                realm.insertOrUpdate(UserRealm().apply {
-                    id = user.id
-                    this.email = user.email
-                    name = user.name
-                    this.password = hash(password)
-                    role = user.role
-                    active = true
-                })
-            }
-            prefs.edit()
-                .putString("api_base_url", apiSession.baseUrl)
-                .putString("api_host_header", apiSession.hostHeader ?: "")
-                .putString("api_token", apiSession.token)
-                .apply()
-            saveSession(user)
-            return Result.success(user)
+        val apiSession = authApi.login(email, password).getOrElse { return Result.failure(it) }
+        if (apiSession.userId <= 0L || apiSession.cashierId <= 0L) {
+            return Result.failure(Exception("La cuenta no tiene un perfil de cajero POS válido."))
         }
-        if (email != "admin@gmail.com" || password != "123456789") {
-            return Result.failure(Exception("Credenciales inválidas para API y modo demo local."))
-        }
-        val user = UserSession(1, email, "admin", "Cajero admin", offlineSession = false)
-        realmWrite { realm ->
-            realm.insertOrUpdate(UserRealm().apply {
-                id = user.id
-                this.email = user.email
-                name = user.name
-                this.password = hash(password)
-                role = user.role
-                active = true
-            })
-        }
+        val user = UserSession(
+            id = apiSession.userId,
+            email = email,
+            name = apiSession.name,
+            role = "Cajero POS",
+            offlineSession = false,
+            cashierId = apiSession.cashierId,
+            defaultCashRegisterId = apiSession.defaultCashRegisterId,
+            defaultCashRegisterName = apiSession.defaultCashRegisterName,
+            document = apiSession.document,
+            phone = apiSession.phone,
+            address = apiSession.address,
+            branchName = apiSession.branchName,
+            lastName = apiSession.lastName,
+            documentType = apiSession.documentType,
+            cashierState = apiSession.cashierState,
+        )
+        prefs.edit()
+            .putString("api_base_url", apiSession.baseUrl)
+            .putString("api_host_header", apiSession.hostHeader ?: "")
+            .putString("api_token", apiSession.token)
+            .putString("api_refresh_token", apiSession.refreshToken)
+            .apply()
         saveSession(user)
+        offlineCredentials.remember(email, password.toCharArray())
         return Result.success(user)
-    }
-
-    private fun offlineLogin(email: String, password: String): Result<UserSession> {
-        // No devolver UserRealm fuera de realmQuery: .use {} cierra la instancia y el objeto queda inválido.
-        val user = realmQuery { realm ->
-            val u = realm.where(UserRealm::class.java).equalTo("email", email, io.realm.Case.INSENSITIVE).findFirst()
-                ?: return@realmQuery null
-            LocalUserRow(
-                id = u.id,
-                email = u.email,
-                name = u.name,
-                role = u.role,
-                passwordHash = u.password,
-                active = u.active,
-            )
-        } ?: return Result.failure(Exception("No existe usuario local. Use modo en línea la primera vez."))
-
-        if (!user.active) return Result.failure(Exception("Usuario inactivo."))
-        if (user.passwordHash != hash(password)) return Result.failure(Exception("Contraseña offline incorrecta."))
-        if (!hasInitialSync(user.id)) return Result.failure(Exception("Sincronización inicial pendiente para este usuario."))
-
-        val session = UserSession(user.id, user.email, user.name, user.role, offlineSession = true)
-        saveSession(session)
-        return Result.success(session)
     }
 
     private fun saveSession(user: UserSession) {
@@ -847,6 +902,16 @@ class PosRepositoryImpl(private val context: Context) :
             .putString("session_name", user.name)
             .putString("session_role", user.role)
             .putBoolean("session_offline", user.offlineSession)
+            .putLong("session_cashier_id", user.cashierId)
+            .putLong("session_default_cash_register_id", user.defaultCashRegisterId)
+            .putString("session_default_cash_register_name", user.defaultCashRegisterName)
+            .putString("session_document", user.document)
+            .putString("session_phone", user.phone)
+            .putString("session_address", user.address)
+            .putString("session_branch_name", user.branchName)
+            .putString("session_last_name", user.lastName)
+            .putString("session_document_type", user.documentType)
+            .putString("session_cashier_state", user.cashierState)
             .apply()
     }
 
@@ -998,12 +1063,3 @@ class PosRepositoryImpl(private val context: Context) :
     }
 }
 
-/** Copia de campos de [UserRealm] válida tras cerrar la instancia de Realm. */
-private data class LocalUserRow(
-    val id: Long,
-    val email: String,
-    val name: String,
-    val role: String,
-    val passwordHash: String,
-    val active: Boolean,
-)

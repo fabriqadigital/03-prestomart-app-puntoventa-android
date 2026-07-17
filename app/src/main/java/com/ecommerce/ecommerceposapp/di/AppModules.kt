@@ -47,10 +47,10 @@ val appModules = module {
     viewModel { PosViewModel(get()) }
     factory { GetCategoriesUseCase(get()) }
     factory { SaveCategoryUseCase(get()) }
-    factory { DeactivateCategoryUseCase(get()) }
+    factory { DeleteCategoryUseCase(get()) }
     factory { GetSubcategoriesUseCase(get()) }
     factory { SaveSubcategoryUseCase(get()) }
-    factory { DeactivateSubcategoryUseCase(get()) }
+    factory { DeleteSubcategoryUseCase(get()) }
     factory { GetClientsUseCase(get()) }
     factory { SaveClientUseCase(get()) }
     factory { DeleteClientUseCase(get()) }
@@ -66,7 +66,7 @@ val appModules = module {
 
     viewModel { CategoriesViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { ClientsViewModel(get(), get(), get()) }
-    viewModel { ProductsViewModel(get(), get(), get(), get(), get()) }
+    viewModel { ProductsViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { SuppliersViewModel(get(), get(), get()) }
     viewModel { UsersViewModel(get(), get(), get()) }
 }

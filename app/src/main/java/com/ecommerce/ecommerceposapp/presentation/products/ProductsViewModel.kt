@@ -10,6 +10,7 @@ import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetSubcategoriesU
 import com.ecommerce.ecommerceposapp.domain.usecase.products.DeactivateProductUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.products.GetProductsUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.products.SaveProductUseCase
+import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +35,7 @@ class ProductsViewModel(
     private val getSubcategories: GetSubcategoriesUseCase,
     private val saveProduct: SaveProductUseCase,
     private val deactivateProduct: DeactivateProductUseCase,
+    private val productRepository: ProductRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ProductsUiState())
     val uiState: StateFlow<ProductsUiState> = _uiState.asStateFlow()
@@ -41,17 +43,24 @@ class ProductsViewModel(
     fun load() = viewModelScope.launch {
         _uiState.update { it.copy(isLoading = true) }
         runCatching {
-            withContext(Dispatchers.IO) { Triple(getProducts(), getCategories(), getSubcategories()) }
+            withContext(Dispatchers.IO) {
+                productRepository.syncPendingProducts()
+                Triple(getProducts(), getCategories(), getSubcategories())
+            }
         }.onSuccess { (products, categories, subcategories) ->
             _uiState.update { it.copy(products = products, categories = categories, subcategories = subcategories, isLoading = false) }
         }.onFailure(::showError)
     }
-    fun save(row: ProductAdminRow) = action("Producto guardado.") { saveProduct(row) }
-    fun remove(id: Long) = action("Producto desactivado.") { deactivateProduct(id) }
+    fun save(row: ProductAdminRow, onSuccess: () -> Unit = {}) = action("Producto guardado.", onSuccess) { saveProduct(row) }
+    fun remove(id: Long) = action("Producto eliminado correctamente.") { deactivateProduct(id) }
     fun clearMessages() = _uiState.update { it.copy(message = null, error = null) }
-    private fun action(message: String, block: suspend () -> Result<Unit>) = viewModelScope.launch {
+    private fun action(message: String, onSuccess: () -> Unit = {}, block: suspend () -> Result<Unit>) = viewModelScope.launch {
         _uiState.update { it.copy(isSaving = true, message = null, error = null) }
-        withContext(Dispatchers.IO) { block() }.onSuccess { _uiState.update { it.copy(isSaving = false, message = message) }; load() }.onFailure(::showError)
+        withContext(Dispatchers.IO) { block() }.onSuccess {
+            _uiState.update { it.copy(isSaving = false, message = message) }
+            onSuccess()
+            load()
+        }.onFailure(::showError)
     }
     private fun showError(error: Throwable) { _uiState.update { it.copy(isLoading = false, isSaving = false, error = error.message ?: "Ocurrio un error") } }
 }

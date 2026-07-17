@@ -12,6 +12,16 @@ class ApiSessionStore(context: Context) {
     val token: String
         get() = prefs.getString("api_token", "")?.trim().orEmpty()
 
+    val refreshToken: String
+        get() = prefs.getString("api_refresh_token", "")?.trim().orEmpty()
+
+    fun updateTokens(token: String, refreshToken: String) {
+        prefs.edit()
+            .putString("api_token", token)
+            .putString("api_refresh_token", refreshToken)
+            .apply()
+    }
+
     val hostHeader: String
         get() = prefs.getString("api_host_header", "")?.trim().orEmpty()
 }

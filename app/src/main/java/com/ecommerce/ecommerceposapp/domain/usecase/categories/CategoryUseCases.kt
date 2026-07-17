@@ -6,7 +6,7 @@ import com.ecommerce.ecommerceposapp.domain.repository.categories.CategoryReposi
 
 class GetCategoriesUseCase(private val repository: CategoryRepository) { operator fun invoke() = repository.listCategoriesAdmin() }
 class SaveCategoryUseCase(private val repository: CategoryRepository) { operator fun invoke(row: CategoryAdminRow) = repository.upsertCategory(row) }
-class DeactivateCategoryUseCase(private val repository: CategoryRepository) { operator fun invoke(id: Long) = repository.deleteCategory(id) }
+class DeleteCategoryUseCase(private val repository: CategoryRepository) { operator fun invoke(id: Long) = repository.deleteCategory(id) }
 class GetSubcategoriesUseCase(private val repository: CategoryRepository) { operator fun invoke() = repository.listSubcategoriesAdmin() }
 class SaveSubcategoryUseCase(private val repository: CategoryRepository) { operator fun invoke(row: SubcategoryAdminRow) = repository.upsertSubcategory(row) }
-class DeactivateSubcategoryUseCase(private val repository: CategoryRepository) { operator fun invoke(id: Long) = repository.deleteSubcategory(id) }
+class DeleteSubcategoryUseCase(private val repository: CategoryRepository) { operator fun invoke(id: Long) = repository.deleteSubcategory(id) }

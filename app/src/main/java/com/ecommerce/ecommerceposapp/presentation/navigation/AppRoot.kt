@@ -132,7 +132,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
-import androidx.compose.material3.CircularProgressIndicator
 
 private const val LOGIN = "login"
 private const val SYNC = "sync"
@@ -186,9 +185,7 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
             LaunchedEffect(state.user) {
                 val user = state.user ?: return@LaunchedEffect
                 currentUser = user
-                navController.navigate(SYNC) {
-                    popUpTo(LOGIN) { inclusive = true }
-                }
+                navController.navigate(SYNC)
             }
         }
         composable(SYNC) {
@@ -335,7 +332,6 @@ private fun LoginScreen(
                         label = { Text("Correo electrónico") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        enabled = !state.busy,
                     )
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
@@ -345,7 +341,6 @@ private fun LoginScreen(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
-                        enabled = !state.busy,
                     )
                     Spacer(Modifier.height(16.dp))
 
@@ -377,7 +372,7 @@ private fun LoginScreen(
                                 .weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(if (offlineSel) SurfaceAlt else Color(0xFFF9FAFB))
-                                .clickable(enabled = state.canChooseOffline && !state.busy) { onModeChange(false) }
+                                .clickable(enabled = state.canChooseOffline) { onModeChange(false) }
                                 .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -393,7 +388,7 @@ private fun LoginScreen(
                                 .weight(1f)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(if (state.onlineMode) Color(0xFFEFF6FF) else Color(0xFFF9FAFB))
-                                .clickable(enabled = !state.busy) { onModeChange(true) }
+                                .clickable { onModeChange(true) }
                                 .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -408,30 +403,18 @@ private fun LoginScreen(
                     Spacer(Modifier.height(20.dp))
                     Button(
                         onClick = onSubmit,
-                        enabled = !state.busy,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Brand,
-                            disabledContainerColor = Brand.copy(alpha = 0.6f),
-                        ),
+                        colors = ButtonDefaults.buttonColors(containerColor = Brand),
                     ) {
-                        if (state.busy) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                color = Color.White,
-                                strokeWidth = 2.5.dp,
-                            )
-                        } else {
-                            Text(
-                                "Iniciar sesión",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = Color.White,
-                            )
-                        }
+                        Text(
+                            "Iniciar sesión",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = Color.White,
+                        )
                     }
                     state.error?.let { err ->
                         Spacer(Modifier.height(12.dp))
@@ -944,7 +927,6 @@ private fun ProductSaleCard(
                 text = product.name,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                minLines = 2,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 color = TextPrimary,

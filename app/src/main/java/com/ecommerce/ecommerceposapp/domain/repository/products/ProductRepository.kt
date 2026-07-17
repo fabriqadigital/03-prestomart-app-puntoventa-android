@@ -6,4 +6,5 @@ interface ProductRepository {
     fun listProductsAdmin(): List<ProductAdminRow>
     fun upsertProduct(row: ProductAdminRow): Result<Unit>
     fun deleteProduct(id: Long): Result<Unit>
+    fun syncPendingProducts(): Result<Int>
 }

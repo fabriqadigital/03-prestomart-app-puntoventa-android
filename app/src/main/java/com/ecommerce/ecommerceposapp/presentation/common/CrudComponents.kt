@@ -142,7 +142,7 @@ internal fun RowScope.CrudEditDeactivateIcons(
     onDeactivate: () -> Unit,
 ) {
     IconButton(onClick = onDeactivate) {
-        Icon(Icons.Filled.Delete, contentDescription = "Desactivar")
+        Icon(Icons.Filled.Delete, contentDescription = "Eliminar")
     }
     IconButton(onClick = onEdit) {
         Icon(Icons.Filled.Edit, contentDescription = "Editar")

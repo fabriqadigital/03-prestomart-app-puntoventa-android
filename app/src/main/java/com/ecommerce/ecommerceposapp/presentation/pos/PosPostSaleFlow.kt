@@ -2,6 +2,8 @@ package com.ecommerce.ecommerceposapp.presentation.pos
 
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,12 +46,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,12 +68,14 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import java.net.URLEncoder
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.round
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private fun r2(x: Double) = round(x * 100) / 100
@@ -136,6 +143,84 @@ private suspend fun encodeQrBitmap(text: String, size: Int = 240): Bitmap = with
         }
     }
     bmp
+}
+
+internal fun createReceiptPdfForSharing(
+    context: android.content.Context,
+    receipt: CompletedSaleReceipt,
+    emitido: ComprobanteEmitidoResult,
+    clienteNombre: String?,
+    clienteDoc: String?,
+    qrBitmap: Bitmap?,
+): File {
+    val folder = File(context.cacheDir, "shared_receipts").apply { mkdirs() }
+    folder.listFiles()?.sortedByDescending { it.lastModified() }?.drop(30)?.forEach { it.delete() }
+    val safeNumber = emitido.numeroCompleto.replace(Regex("[^A-Za-z0-9_-]"), "_")
+    val output = File(folder, "comprobante_$safeNumber.pdf")
+    val document = PdfDocument()
+    val page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+    val canvas = page.canvas
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.BLACK; textSize = 11f }
+    var y = 42f
+    fun line(text: String, bold: Boolean = false, center: Boolean = false, gap: Float = 17f) {
+        paint.isFakeBoldText = bold
+        paint.textAlign = if (center) Paint.Align.CENTER else Paint.Align.LEFT
+        canvas.drawText(text, if (center) 297.5f else 48f, y, paint)
+        y += gap
+    }
+    paint.textSize = 14f
+    line(emitido.emisorRazonSocial.uppercase(Locale("es", "PE")), bold = true, center = true, gap = 20f)
+    paint.textSize = 10f
+    line("RUC: ${emitido.emisorRuc}", center = true)
+    if (emitido.emisorDireccion.isNotBlank()) line(emitido.emisorDireccion.take(85), center = true)
+    y += 8f
+    paint.textSize = 12f
+    line(tituloComprobante(emitido.tipoSunat), bold = true, center = true)
+    line(emitido.numeroCompleto, bold = true, center = true, gap = 24f)
+    paint.textSize = 10f
+    val (fecha, hora) = formatFechaHoraPeru(receipt.fechaMillis)
+    line("Fecha de emisión: $fecha   Hora: $hora")
+    line("Cliente: ${clienteNombre?.ifBlank { "—" } ?: "—"}")
+    line("Documento: ${clienteDoc?.ifBlank { "—" } ?: "—"}", gap = 22f)
+    line("CANT.    DESCRIPCIÓN                                      IMPORTE", bold = true)
+    receipt.lines.forEach { item ->
+        line("${item.quantity.toString().padEnd(8)} ${item.productName.take(42).padEnd(45)} S/ ${"%.2f".format(Locale.US, item.lineTotal)}")
+    }
+    y += 8f
+    line("OP. GRAVADAS: S/ ${"%.2f".format(Locale.US, receipt.subtotal)}")
+    line("IGV (18%): S/ ${"%.2f".format(Locale.US, receipt.igv)}")
+    paint.textSize = 13f
+    line("TOTAL: S/ ${"%.2f".format(Locale.US, receipt.total)}", bold = true, gap = 20f)
+    paint.textSize = 9f
+    line(emitido.totalLetras.take(90))
+    line("Forma de pago: ${mapTipoPagoEtiqueta(receipt.tipoPago)}")
+    line("Cajero: ${receipt.vendedorNombre}")
+    qrBitmap?.let { qr ->
+        val top = (y + 8f).coerceAtMost(670f)
+        canvas.drawBitmap(qr, null, android.graphics.RectF(227f, top, 367f, top + 140f), paint)
+    }
+    document.finishPage(page)
+    output.outputStream().use(document::writeTo)
+    document.close()
+    return output
+}
+
+internal fun shareReceiptPdfOnWhatsapp(context: android.content.Context, pdf: File, phone: String) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pdf)
+    val normalizedPhone = sanitizePhone51(phone)
+    val baseIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_TEXT, "Comprobante de pago PrestoMart")
+        normalizedPhone?.let { putExtra("jid", "$it@s.whatsapp.net") }
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    val whatsapp = Intent(baseIntent).setPackage("com.whatsapp")
+    runCatching { context.startActivity(whatsapp) }.recoverCatching {
+        context.startActivity(Intent(baseIntent).setPackage("com.whatsapp.w4b"))
+    }.getOrElse {
+        context.startActivity(Intent.createChooser(baseIntent, "Enviar comprobante PDF").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
 }
 
 @Composable
@@ -292,9 +377,7 @@ fun VistaPreviaReciboDialog(
     emitido: ComprobanteEmitidoResult,
     clienteNombre: String?,
     clienteDoc: String?,
-    idClienteVenta: Long,
-    clients: List<ClientRow>,
-    catalog: CatalogRepository,
+    whatsappPhone: String,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -303,40 +386,9 @@ fun VistaPreviaReciboDialog(
     LaunchedEffect(emitido.qrPayload) {
         qrBitmap = encodeQrBitmap(emitido.qrPayload)
     }
-    var showWa by remember { mutableStateOf(false) }
-
-    val shareText = remember(receipt, emitido, clienteNombre, clienteDoc) {
-        buildReceiptShareText(receipt, emitido, clienteNombre, clienteDoc)
-    }
-
-    fun enviarWa(phone51: String) {
-        openWhatsapp(context, phone51, shareText)
-    }
-
-    fun intentarWhatsappRegistrado() {
-        val tel = catalog.getClienteTelefono(idClienteVenta)
-        val p51 = tel?.let { sanitizePhone51(it) }
-        if (p51 != null) enviarWa(p51) else showWa = true
-    }
-
-    if (showWa) {
-        WhatsappDestinoDialog(
-            clients = clients,
-            onDismiss = { showWa = false },
-            onEnviarTelefono = { p ->
-                enviarWa(p)
-                showWa = false
-            },
-            onElegirCliente = { c ->
-                val p = sanitizePhone51(c.phone)
-                if (p != null) {
-                    catalog.actualizarClienteEnVenta(receipt.ventaId, c.id)
-                    enviarWa(p)
-                    showWa = false
-                }
-            },
-        )
-    }
+    var shareError by remember { mutableStateOf("") }
+    var sharingPdf by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -431,8 +483,8 @@ fun VistaPreviaReciboDialog(
                         )
                         receipt.lines.forEach { line ->
                             val desc = line.productName.take(28)
-                            val puIgv = r2(line.unitPrice * 1.18)
-                            val totIgv = r2(line.lineTotal * 1.18)
+                            val puIgv = r2(line.unitPrice)
+                            val totIgv = r2(line.lineTotal)
                             Text(
                                 "${line.quantity} und  $desc",
                                 fontFamily = FontFamily.Monospace,
@@ -482,7 +534,7 @@ fun VistaPreviaReciboDialog(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 9.sp,
                         )
-                        Text("Vendedor: ${receipt.vendedorNombre}", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                        Text("Cajero: ${receipt.vendedorNombre}", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
                         Text("Gracias por su compra / Vuelva pronto", fontFamily = FontFamily.Monospace, fontSize = 8.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     }
                 }
@@ -495,11 +547,25 @@ fun VistaPreviaReciboDialog(
                         modifier = Modifier
                             .size(44.dp)
                             .background(Color(0xFF25D366), RoundedCornerShape(8.dp))
-                            .clickable { intentarWhatsappRegistrado() },
+                            .clickable(enabled = !sharingPdf) {
+                                scope.launch {
+                                    sharingPdf = true
+                                    shareError = ""
+                                    runCatching {
+                                        val pdf = withContext(Dispatchers.IO) {
+                                            createReceiptPdfForSharing(context, receipt, emitido, clienteNombre, clienteDoc, qrBitmap)
+                                        }
+                                        shareReceiptPdfOnWhatsapp(context, pdf, whatsappPhone)
+                                    }.onFailure { shareError = "No se pudo generar o compartir el PDF." }
+                                    sharingPdf = false
+                                }
+                            },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Chat, "Enviar por WhatsApp", tint = Color.White, modifier = Modifier.size(22.dp))
+                        if (sharingPdf) CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                        else Icon(Icons.AutoMirrored.Filled.Chat, "Enviar por WhatsApp", tint = Color.White, modifier = Modifier.size(22.dp))
                     }
+                    if (shareError.isNotBlank()) Text(shareError, color = Color(0xFFFD0505), style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick = onDismiss) { Text("Cancelar") }
                     Button(
                         onClick = { /* impresión térmica: integrar en fase siguiente */ },

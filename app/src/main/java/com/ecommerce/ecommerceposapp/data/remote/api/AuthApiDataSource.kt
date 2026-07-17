@@ -4,82 +4,80 @@ import android.content.Context
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import org.json.JSONObject
 
 data class ApiSession(
     val baseUrl: String,
     val hostHeader: String?,
     val token: String,
+    val refreshToken: String,
     val userId: Long,
     val name: String,
+    val cashierId: Long,
+    val defaultCashRegisterId: Long,
+    val defaultCashRegisterName: String,
+    val document: String,
+    val phone: String,
+    val address: String,
+    val branchName: String,
+    val lastName: String,
+    val documentType: String,
+    val cashierState: String,
 )
 
 class AuthApiDataSource(context: Context) {
     private val prefs = context.getSharedPreferences(ApiConfig.PREFS_NAME, Context.MODE_PRIVATE)
-    private val candidates = listOf(ApiBaseCandidate(ApiConfig.PRODUCTION_BASE_URL))
 
-    fun login(email: String, password: String): ApiSession? {
-        val preferredBase = prefs.getString("api_base_url", null)
-        val preferredHost = prefs.getString("api_host_header", null)?.takeIf { it.isNotBlank() }
-        val preferred = preferredBase?.let { ApiBaseCandidate(it, preferredHost) }
-        val bases = listOfNotNull(preferred) + candidates.filter { it.baseUrl != preferredBase }
-        for (base in bases) {
-            val loginUrl = "${base.baseUrl}/api${ApiConfig.LOGIN}"
-            val fromJson = runCatching { tryLoginJson(loginUrl, base, email, password) }.getOrNull()
-            if (fromJson != null) return fromJson
-            val fromForm = runCatching { tryLoginForm(loginUrl, base, email, password) }.getOrNull()
-            if (fromForm != null) return fromForm
-        }
-        return null
-    }
-
-    private fun tryLoginJson(url: String, base: ApiBaseCandidate, email: String, password: String): ApiSession? {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+    fun login(email: String, password: String): Result<ApiSession> = runCatching {
+        val baseUrl = prefs.getString("api_base_url", null)?.trim().takeUnless { it.isNullOrBlank() }
+            ?: ApiConfig.PRODUCTION_BASE_URL
+        val hostHeader = prefs.getString("api_host_header", null)?.trim().takeUnless { it.isNullOrBlank() }
+        val connection = (URL("$baseUrl/api${ApiConfig.CASHIER_LOGIN}").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 7000
-            readTimeout = 7000
+            connectTimeout = 10_000
+            readTimeout = 15_000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Accept", "application/json")
-            base.hostHeader?.let { setRequestProperty("Host", it) }
+            hostHeader?.let { setRequestProperty("Host", it) }
         }
-        val body = JSONObject().apply {
-            put("email", email)
-            put("password", password)
-        }.toString()
-        OutputStreamWriter(conn.outputStream).use { it.write(body) }
-        if (conn.responseCode !in 200..299) return null
-        val payload = conn.inputStream.bufferedReader().use { it.readText() }
-        return parseLoginPayload(base, payload)
-    }
-
-    private fun tryLoginForm(url: String, base: ApiBaseCandidate, email: String, password: String): ApiSession? {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 7000
-            readTimeout = 7000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-            setRequestProperty("Accept", "application/json")
-            base.hostHeader?.let { setRequestProperty("Host", it) }
+        OutputStreamWriter(connection.outputStream).use { writer ->
+            writer.write(JSONObject().put("email", email).put("password", password).toString())
         }
-        val body = "email=${URLEncoder.encode(email, "UTF-8")}&password=${URLEncoder.encode(password, "UTF-8")}"
-        OutputStreamWriter(conn.outputStream).use { it.write(body) }
-        if (conn.responseCode !in 200..299) return null
-        val payload = conn.inputStream.bufferedReader().use { it.readText() }
-        return parseLoginPayload(base, payload)
+        val responseBody = (if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream)
+            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+        val response = runCatching { JSONObject(responseBody) }.getOrNull()
+        if (connection.responseCode == 429) {
+            throw Exception("Demasiados intentos de inicio de sesión. Espera un minuto antes de volver a intentarlo.")
+        }
+        if (connection.responseCode !in 200..299 || response?.optBoolean("success", false) != true) {
+            throw Exception(response?.optString("message")?.takeIf { it.isNotBlank() } ?: "No se pudo iniciar sesion como cajero.")
+        }
+        val user = response.optJSONObject("user") ?: JSONObject()
+        val cashier = response.optJSONObject("cajero") ?: JSONObject()
+        ApiSession(
+            baseUrl = baseUrl,
+            hostHeader = hostHeader,
+            token = response.optString("token").trim().ifBlank { throw Exception("El backend no devolvio el token de acceso.") },
+            refreshToken = response.optString("refreshToken").trim(),
+            userId = user.optLong("id"),
+            name = cashier.firstString("nombres").ifBlank { user.optString("name").trim() },
+            cashierId = cashier.optLong("id_cajero"),
+            defaultCashRegisterId = cashier.optLong("id_caja_default"),
+            defaultCashRegisterName = cashier.optString("caja_default_nombre").trim(),
+            document = cashier.firstString("documento_numero", "numero_documento", "documento", "dni", "nro_documento").ifBlank { user.firstString("documento_numero", "numero_documento", "documento", "dni") },
+            phone = cashier.firstString("telefono", "celular", "numero_celular", "phone").ifBlank { user.firstString("telefono", "celular", "phone") },
+            address = cashier.firstString("direccion", "domicilio", "address").ifBlank { user.firstString("direccion", "domicilio", "address") },
+            branchName = cashier.firstString("sucursal", "sucursal_nombre", "nombre_sucursal", "branch_name")
+                .ifBlank { cashier.optJSONObject("sucursal")?.firstString("nombre", "name").orEmpty() }
+                .ifBlank { user.firstString("sucursal_nombre", "nombre_sucursal", "branch_name") },
+            lastName = cashier.firstString("apellidos"),
+            documentType = cashier.firstString("documento_tipo").ifBlank { "DNI" },
+            cashierState = cashier.firstString("estado").ifBlank { "Activo" },
+        )
     }
 
-    private fun parseLoginPayload(base: ApiBaseCandidate, payload: String): ApiSession? {
-        val obj = runCatching { JSONObject(payload) }.getOrNull() ?: return null
-        val token = obj.optString("token", obj.optString("access_token", obj.optString("jwt", ""))).trim()
-        if (token.isBlank()) return null
-        val userObj = obj.optJSONObject("user") ?: obj.optJSONObject("usuario")
-        val userId = userObj?.optLong("id", 1L) ?: 1L
-        val name = userObj?.optString("name", userObj.optString("nombre", "admin")) ?: "admin"
-        return ApiSession(baseUrl = base.baseUrl, hostHeader = base.hostHeader, token = token, userId = userId, name = name)
-    }
-
-    private data class ApiBaseCandidate(val baseUrl: String, val hostHeader: String? = null)
+    private fun JSONObject.firstString(vararg keys: String): String = keys.firstNotNullOfOrNull { key ->
+        opt(key)?.takeUnless { it == JSONObject.NULL }?.toString()?.trim()?.takeIf { it.isNotBlank() }
+    }.orEmpty()
 }

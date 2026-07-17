@@ -1,0 +1,178 @@
+package com.ecommerce.ecommerceposapp.data.remote.api
+
+import android.content.Context
+import com.ecommerce.ecommerceposapp.domain.model.cash.CashRegister
+import com.ecommerce.ecommerceposapp.domain.model.cash.CashSession
+import com.ecommerce.ecommerceposapp.domain.model.cash.CashSummary
+import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
+import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
+import java.text.SimpleDateFormat
+import java.util.Locale
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+
+class CashApiDataSource(context: Context) {
+    private val session = ApiSessionStore(context)
+    private val resolver = ApiUrlResolver(session)
+    private val client = ApiHttpClient(context).client
+    private val jsonType = "application/json; charset=utf-8".toMediaType()
+
+    fun listCashRegisters(): Result<List<CashRegister>> = runCatching {
+        executeGet(ApiConfig.CASH_REGISTER_LIST).resultArray().mapNotNull { item ->
+            val id = item.optLong("id_caja")
+            if (id <= 0L) null else CashRegister(
+                id = id,
+                code = item.cleanString("codigo"),
+                name = item.cleanString("nombre"),
+                branch = item.cleanString("sucursal"),
+                active = item.cleanString("estado").equals("Activa", true) && item.cleanString("Activo").ifBlank { "S" }.equals("S", true),
+            )
+        }
+    }
+
+    fun findOpenSession(cashierId: Long): Result<CashSession?> = runCatching {
+        executeGet(ApiConfig.CASH_SESSION_LIST, mapOf("estado" to "Abierta"))
+            .resultArray()
+            .map(::parseSession)
+            .firstOrNull { it.cashierId == cashierId }
+    }
+
+    fun openSession(cashRegisterId: Long, cashierId: Long, openingAmount: Double): Result<CashSession> = runCatching {
+        val response = executePost(
+            ApiConfig.CASH_SESSION_OPEN,
+            JSONObject()
+                .put("id_caja", cashRegisterId)
+                .put("id_cajero", cashierId)
+                .put("monto_inicial", openingAmount),
+        )
+        parseSession(response.optJSONObject("result") ?: throw Exception("El backend no devolvio la sesion de caja."))
+    }
+
+    fun summary(sessionId: Long): Result<CashSummary> = runCatching {
+        val item = executeGet(ApiConfig.CASH_SESSION_SUMMARY, mapOf("id_caja_sesion" to sessionId.toString()))
+            .optJSONObject("result") ?: JSONObject()
+        CashSummary(
+            totalSales = item.optDoubleFlexible("total_ventas"),
+            expectedCash = item.optDoubleFlexible("efectivo_esperado"),
+            income = item.optDoubleFlexible("ingresos"),
+            expenses = item.optDoubleFlexible("egresos"),
+        )
+    }
+
+    fun closeSession(sessionId: Long, countedCash: Double, observations: String): Result<Unit> = runCatching {
+        executePost(
+            ApiConfig.CASH_SESSION_CLOSE,
+            JSONObject().put("id_caja_sesion", sessionId).put("efectivo_contado", countedCash).put("observaciones", observations),
+        )
+        Unit
+    }
+
+    fun listSales(sessionId: Long): Result<List<SalesHistoryRow>> = runCatching {
+        executeGet(ApiConfig.CASH_SALES, mapOf("id_caja_sesion" to sessionId.toString())).resultArray().map { item ->
+            SalesHistoryRow(
+                ventaId = item.optLong("id_venta"),
+                numeroComprobante = item.cleanString("numero"),
+                tipoComprobante = "TICK",
+                fechaMillis = parseDate(item.cleanString("fecha")),
+                clienteNombre = item.cleanString("cliente_nombre"),
+                cajeroNombre = item.cleanString("usuario_nombre"),
+                tipoPago = "",
+                total = item.optDoubleFlexible("total"),
+                estado = item.cleanString("estado"),
+                idCliente = item.optLong("id_cliente"),
+            )
+        }
+    }
+
+    fun getSaleReceipt(saleId: Long): Result<CompletedSaleReceipt> = runCatching {
+        val result = executeGet(ApiConfig.CASH_SALE_DETAIL, mapOf("id_venta" to saleId.toString())).optJSONObject("result")
+            ?: throw Exception("El backend no devolvio el detalle de venta.")
+        val sale = result.optJSONObject("venta") ?: throw Exception("Venta no encontrada.")
+        val details = result.optJSONArray("detalles") ?: JSONArray()
+        val payments = result.optJSONArray("pagos") ?: JSONArray()
+        val lines = (0 until details.length()).mapNotNull { index ->
+            val item = details.optJSONObject(index) ?: return@mapNotNull null
+            CartLine(
+                productId = item.optLong("id_producto"),
+                productName = item.cleanString("producto_nombre"),
+                unitPrice = item.optDoubleFlexible("precio_unitario"),
+                quantity = item.optDoubleFlexible("cantidad").toInt(),
+            )
+        }
+        val total = sale.optDoubleFlexible("total")
+        val subtotal = total / 1.18
+        val firstPayment = payments.optJSONObject(0)
+        CompletedSaleReceipt(
+            ventaId = sale.optLong("id_venta"),
+            numeroTicket = sale.cleanString("numero"),
+            subtotal = subtotal,
+            igv = total - subtotal,
+            total = total,
+            tipoPago = firstPayment?.cleanString("metodo").orEmpty(),
+            montoRecibido = firstPayment?.optDoubleFlexible("monto") ?: total,
+            vuelto = 0.0,
+            fechaMillis = parseDate(sale.cleanString("fecha")),
+            lines = lines,
+            vendedorNombre = sale.cleanString("cajero_nombre").ifBlank { sale.cleanString("usuario_nombre") },
+            idCliente = sale.optLong("id_cliente"),
+        )
+    }
+
+    private fun executeGet(path: String, params: Map<String, String> = emptyMap()): JSONObject {
+        val url = resolver.endpoint(path).toHttpUrl().newBuilder().apply {
+            params.forEach { (key, value) -> addQueryParameter(key, value) }
+        }.build()
+        return execute(Request.Builder().url(url).get().build())
+    }
+
+    private fun executePost(path: String, payload: JSONObject): JSONObject = execute(
+        Request.Builder().url(resolver.endpoint(path)).post(payload.toString().toRequestBody(jsonType)).build(),
+    )
+
+    private fun execute(request: Request): JSONObject {
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            val json = runCatching { JSONObject(body) }.getOrNull()
+            if (!response.isSuccessful || json?.optBoolean("success", false) != true) {
+                throw Exception(json?.optString("message")?.takeIf { it.isNotBlank() } ?: "No se pudo completar la operacion de caja (${response.code}).")
+            }
+            return json
+        }
+    }
+
+    private fun parseSession(item: JSONObject) = CashSession(
+        id = item.optLong("id_caja_sesion"),
+        cashRegisterId = item.optLong("id_caja"),
+        cashRegisterName = item.cleanString("caja_nombre"),
+        cashierId = item.optLong("id_cajero"),
+        cashierName = item.cleanString("cajero_nombre"),
+        openedAt = parseDate(item.cleanString("hora_apertura")),
+        openingAmount = item.optDoubleFlexible("monto_inicial"),
+        status = item.cleanString("estado"),
+    )
+
+    private fun JSONObject.resultArray(): List<JSONObject> {
+        val array = optJSONArray("result") ?: JSONArray()
+        return (0 until array.length()).mapNotNull(array::optJSONObject)
+    }
+
+    private fun JSONObject.cleanString(key: String): String = opt(key).takeUnless { it == null || it == JSONObject.NULL }?.toString()?.trim().orEmpty()
+
+    private fun JSONObject.optDoubleFlexible(key: String): Double = when (val value = opt(key)) {
+        is Number -> value.toDouble()
+        is String -> value.replace(",", ".").toDoubleOrNull() ?: 0.0
+        else -> 0.0
+    }
+
+    private fun parseDate(value: String): Long {
+        val patterns = listOf("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm:ssXXX")
+        return patterns.firstNotNullOfOrNull { pattern ->
+            runCatching { SimpleDateFormat(pattern, Locale.US).parse(value)?.time }.getOrNull()
+        } ?: 0L
+    }
+}
