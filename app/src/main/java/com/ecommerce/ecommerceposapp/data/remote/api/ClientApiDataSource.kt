@@ -20,25 +20,31 @@ class ClientApiDataSource(context: Context) {
             .mapNotNull(::parseClient)
     }
 
-    fun save(row: ClientRow): Result<Unit> = authenticated {
+    fun save(row: ClientRow): Result<String> = authenticated {
         val payload = JSONObject().apply {
             if (row.id > 0L) put("id", row.id)
-            put("name", row.name.trim())
-            put("email", row.email.trim())
-            put("documento", row.document.trim())
+            if (row.userId > 0L) put("id_usuario", row.userId)
+            put("tipo_persona", row.personType)
+            put("tipo_documento", row.documentType)
+            put("numero_documento", row.document.trim())
+            put("nombre", row.name.trim())
+            put("apellido", row.lastName.trim())
+            put("razon_social", row.businessName.trim())
             put("telefono", row.phone.trim())
             put("direccion", row.address.trim())
-            put("razon_social", row.businessName.trim())
-            if (row.newPassword.isNotBlank()) put("password", row.newPassword)
-            put("Activo", if (row.active) "S" else "N")
+            put("alias", row.alias.trim())
+            put("correo", row.email.trim())
+            put("genero", row.gender)
+            put("estado_civil", row.maritalStatus)
+            put("descuento_porcentaje", row.discountPercentage)
+            put("observaciones", row.observations.trim())
+            put("estado", if (row.active) "Activo" else "Inactivo")
+            put("acceso_sistema", row.webAccess)
         }
         val body = payload.toString().toRequestBody(jsonMediaType)
-        val request = Request.Builder()
-            .url(resolver.endpoint(if (row.id > 0L) ApiConfig.CLIENT_UPDATE else ApiConfig.CLIENT_CREATE))
-            .post(body)
-            .build()
-        execute(request)
-        Unit
+        val builder = Request.Builder().url(resolver.endpoint(if (row.id > 0L) ApiConfig.CLIENT_UPDATE else ApiConfig.CLIENT_CREATE))
+        val request = if (row.id > 0L) builder.put(body).build() else builder.post(body).build()
+        execute(request).optString("message", "Cliente guardado.")
     }
 
     fun delete(id: Long): Result<Unit> = authenticated {
@@ -79,19 +85,28 @@ class ClientApiDataSource(context: Context) {
     }
 
     private fun parseClient(json: JSONObject): ClientRow? {
-        val id = json.optLong("id", 0L).takeIf { it > 0L } ?: json.optLong("id_usuario", 0L)
+        val id = json.optLong("id_cliente_pos", 0L).takeIf { it > 0L } ?: json.optLong("id", 0L)
         if (id <= 0L) return null
         return ClientRow(
             id = id,
-            name = json.firstString("name", "nombre", "usuario_nombre"),
-            document = json.firstString("documento", "numero_documento", "dni", "document"),
+            name = json.firstString("nombre", "name", "usuario_nombre"),
+            document = json.firstString("numero_documento", "documento", "dni", "document"),
             phone = json.firstString("telefono", "celular", "phone"),
-            active = json.optString("Activo", "S").equals("S", true),
-            lastName = "",
-            email = json.firstString("email", "correo"),
+            active = json.firstString("estado", "Activo").ifBlank { "Activo" }.let { it.equals("Activo", true) || it.equals("S", true) },
+            lastName = json.firstString("apellido"),
+            email = json.firstString("correo", "email", "usuario_email"),
             address = json.firstString("direccion", "address"),
             businessName = json.firstString("razon_social", "business_name"),
             branchName = json.firstString("sucursal_nombre", "nombre_sucursal", "sucursal", "branch_name"),
+            userId = json.optLong("id_usuario", 0L),
+            personType = json.firstString("tipo_persona").ifBlank { "Natural" },
+            documentType = json.firstString("tipo_documento").ifBlank { "DNI" },
+            alias = json.firstString("alias"),
+            gender = json.firstString("genero"),
+            maritalStatus = json.firstString("estado_civil"),
+            discountPercentage = json.optDouble("descuento_porcentaje", 0.0),
+            observations = json.firstString("observaciones"),
+            webAccess = json.optBoolean("acceso_sistema", json.optLong("id_usuario", 0L) > 0L),
         )
     }
 

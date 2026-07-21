@@ -705,6 +705,16 @@ class PosRepositoryImpl(private val context: Context) :
                         email = client.email
                         address = client.address
                         businessName = client.businessName
+                        branchName = client.branchName
+                        userId = client.userId
+                        personType = client.personType
+                        documentType = client.documentType
+                        alias = client.alias
+                        gender = client.gender
+                        maritalStatus = client.maritalStatus
+                        discountPercentage = client.discountPercentage
+                        observations = client.observations
+                        webAccess = client.webAccess
                         active = client.active
                     })
                 }

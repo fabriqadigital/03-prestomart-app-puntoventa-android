@@ -13,5 +13,14 @@ open class ClientRealm : RealmObject() {
     var address: String = ""
     var businessName: String = ""
     var branchName: String = ""
+    var userId: Long = 0
+    var personType: String = "Natural"
+    var documentType: String = "DNI"
+    var alias: String = ""
+    var gender: String = ""
+    var maritalStatus: String = ""
+    var discountPercentage: Double = 0.0
+    var observations: String = ""
+    var webAccess: Boolean = false
     var active: Boolean = true
 }

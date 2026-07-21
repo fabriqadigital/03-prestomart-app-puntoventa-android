@@ -1,7 +1,6 @@
 package com.ecommerce.ecommerceposapp.presentation.clients
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,12 +17,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -40,7 +40,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,13 +52,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
 
-private val ClientsAccent = Color(0xFFFD0505)
+private val ClientsAccent = Color(0xFFB91C2B)
 private val ClientsText = Color(0xFF111827)
 private val ClientsMuted = Color(0xFF64748B)
 private val ClientsDivider = Color(0xFFE2E8F0)
@@ -67,43 +67,46 @@ private val ClientsDivider = Color(0xFFE2E8F0)
 @Composable
 fun ClientsCrudScreen(vm: ClientsViewModel) {
     val state by vm.uiState.collectAsState()
-    LaunchedEffect(Unit) { vm.load() }
     var editing by remember { mutableStateOf<ClientRow?>(null) }
-    var showCreate by remember { mutableStateOf(false) }
+    var creating by remember { mutableStateOf(false) }
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
     var search by remember { mutableStateOf("") }
-    val filteredClients = state.clients.filter { client ->
-        search.isBlank() || listOf(client.displayName(), client.email)
+    val compact = LocalConfiguration.current.screenWidthDp < 760
+
+    LaunchedEffect(Unit) { vm.load() }
+    val clients = state.clients.filter { client ->
+        search.isBlank() || listOf(client.displayName(), client.email, client.document, client.phone)
             .any { it.contains(search, ignoreCase = true) }
     }
 
-    Column(Modifier.fillMaxSize().background(Color.White).padding(16.dp)) {
-        ClientsHeader(onAdd = { showCreate = true })
+    Column(Modifier.fillMaxSize().background(Color.White).padding(if (compact) 12.dp else 16.dp)) {
+        ClientsHeader(compact) { creating = true }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
         state.message?.let { Text(it, color = ClientsAccent, modifier = Modifier.padding(top = 8.dp)) }
         Spacer(Modifier.height(12.dp))
-        ClientsTable(
-            clients = filteredClients,
-            search = search,
-            onSearch = { search = it },
-            isLoading = state.isLoading,
-            onEdit = { editing = it },
-            onDelete = { client ->
-                pendingConfirm = PendingConfirm(
-                    title = "Eliminar cliente",
-                    body = "Eliminar a ${client.displayName()}? Dejara de mostrarse en el listado.",
-                    confirmButtonText = "Eliminar",
-                    onConfirm = { vm.remove(client.id) },
-                )
-            },
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            placeholder = { Text("Buscar por nombre, documento o correo") },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            modifier = if (compact) Modifier.fillMaxWidth() else Modifier.widthIn(320.dp, 480.dp),
+            singleLine = true,
+            shape = RoundedCornerShape(10.dp),
         )
+        Spacer(Modifier.height(10.dp))
+        when {
+            state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ClientsAccent) }
+            clients.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No se encontraron clientes", color = ClientsMuted) }
+            compact -> ClientCards(clients, { editing = it }) { client -> pendingConfirm = deleteConfirmation(client, vm) }
+            else -> ClientTable(clients, { editing = it }) { client -> pendingConfirm = deleteConfirmation(client, vm) }
+        }
     }
 
-    if (showCreate) {
+    if (creating) {
         ClientEditDialog(
-            initial = ClientRow(0, "", "", ""),
-            onDismiss = { showCreate = false; vm.clearMessages() },
-            onSave = { vm.save(it); showCreate = false },
+            initial = ClientRow(0L, "", "", ""),
+            onDismiss = { creating = false; vm.clearMessages() },
+            onSave = { vm.save(it); creating = false },
         )
     }
     editing?.let { client ->
@@ -117,127 +120,42 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
 }
 
 @Composable
-private fun ClientsHeader(onAdd: () -> Unit) {
-    val compact = LocalConfiguration.current.screenWidthDp < 600
-    if (compact) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            ClientsTitle()
-            Button(
-                onClick = onAdd,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ClientsAccent, contentColor = Color.White),
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Agregar")
-            }
-        }
-    } else {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            ClientsTitle()
-            Button(
-                onClick = onAdd,
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ClientsAccent, contentColor = Color.White),
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Agregar")
-            }
-        }
-    }
-}
-
-@Composable
-private fun ClientsTitle() {
-    Column {
-        Text("Clientes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text("Administra los clientes disponibles para tus ventas.", color = ClientsMuted)
-    }
-}
-
-@Composable
-private fun ClientsTable(
-    clients: List<ClientRow>,
-    search: String,
-    onSearch: (String) -> Unit,
-    isLoading: Boolean,
-    onEdit: (ClientRow) -> Unit,
-    onDelete: (ClientRow) -> Unit,
-) {
-    val compact = LocalConfiguration.current.screenWidthDp < 760
-    var pageSize by remember { mutableStateOf(10) }
-    var pageSizeExpanded by remember { mutableStateOf(false) }
-    var currentPage by remember(clients.size, pageSize, search) { mutableStateOf(0) }
-    val totalPages = maxOf(1, (clients.size + pageSize - 1) / pageSize)
-    val pageClients = clients.drop(currentPage * pageSize).take(pageSize)
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        shape = RoundedCornerShape(8.dp),
-        color = Color.White,
-        contentColor = ClientsText,
-        tonalElevation = 0.dp,
-        shadowElevation = 1.dp,
-    ) {
+private fun ClientsHeader(compact: Boolean, onAdd: () -> Unit) {
+    val title: @Composable () -> Unit = {
         Column {
-            OutlinedTextField(
-                value = search,
-                onValueChange = onSearch,
-                placeholder = { Text("Buscar por nombre o correo") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                modifier = Modifier.padding(10.dp).then(if (compact) Modifier.fillMaxWidth() else Modifier.widthIn(280.dp, 420.dp)),
-                shape = RoundedCornerShape(10.dp),
-                singleLine = true,
-            )
-            HorizontalDivider(color = ClientsDivider)
-            Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text("Nombre", modifier = Modifier.weight(1.7f), fontWeight = FontWeight.SemiBold)
-                Text("Correo", modifier = Modifier.weight(1.7f), fontWeight = FontWeight.SemiBold)
-                Text("Estado", modifier = Modifier.weight(.8f), fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.width(48.dp))
-            }
-            HorizontalDivider(color = ClientsDivider)
-            Box(Modifier.fillMaxWidth().weight(1f).background(Color.White), contentAlignment = Alignment.Center) {
-                when {
-                    isLoading -> CircularProgressIndicator(color = ClientsAccent)
-                    pageClients.isEmpty() -> Text("No se encontraron clientes", color = ClientsMuted)
-                    else -> LazyColumn(Modifier.fillMaxSize()) {
-                        items(pageClients, key = { it.id }) { client ->
-                            ClientTableRow(client, onEdit, onDelete)
-                            HorizontalDivider(color = ClientsDivider)
-                        }
+            Text("Clientes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Clientes del punto de venta y cuentas web vinculadas.", color = ClientsMuted)
+        }
+    }
+    val button: @Composable () -> Unit = {
+        Button(
+            onClick = onAdd,
+            modifier = if (compact) Modifier.fillMaxWidth() else Modifier,
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = ClientsAccent, contentColor = Color.White),
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Nuevo cliente")
+        }
+    }
+    if (compact) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { title(); button() }
+    else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { title(); button() }
+}
+
+@Composable
+private fun ClientCards(clients: List<ClientRow>, onEdit: (ClientRow) -> Unit, onDelete: (ClientRow) -> Unit) {
+    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(clients, key = { it.id }) { client ->
+            Surface(shape = RoundedCornerShape(10.dp), color = Color.White, shadowElevation = 1.dp) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(client.displayName(), color = ClientsText, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${client.documentType}: ${client.document}", color = ClientsMuted)
+                        Text(if (client.webAccess) "Cuenta web vinculada" else "Solo cliente POS", color = if (client.webAccess) Color(0xFF15803D) else ClientsMuted)
                     }
-                }
-            }
-            Row(
-                Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val from = if (clients.isEmpty()) 0 else currentPage * pageSize + 1
-                val to = minOf(clients.size, (currentPage + 1) * pageSize)
-                if (!compact) Text("Registros por pagina:", color = ClientsMuted)
-                Box {
-                    TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = ClientsText) }
-                    MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
-                        DropdownMenu(pageSizeExpanded, { pageSizeExpanded = false }) {
-                            listOf(10, 20, 50).forEach { size ->
-                                DropdownMenuItem(
-                                    text = { Text(size.toString()) },
-                                    onClick = { pageSize = size; pageSizeExpanded = false },
-                                )
-                            }
-                        }
-                    }
-                }
-                Text("$from-$to de ${clients.size}", color = ClientsMuted, modifier = Modifier.weight(1f))
-                if (!compact) Text("Pagina ${currentPage + 1} de $totalPages", color = ClientsMuted)
-                IconButton(onClick = { currentPage-- }, enabled = currentPage > 0) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Pagina anterior")
-                }
-                IconButton(onClick = { currentPage++ }, enabled = currentPage < totalPages - 1) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Pagina siguiente")
+                    IconButton(onClick = { onEdit(client) }) { Icon(Icons.Filled.Edit, contentDescription = "Editar") }
+                    IconButton(onClick = { onDelete(client) }) { Icon(Icons.Filled.Delete, contentDescription = "Eliminar") }
                 }
             }
         }
@@ -245,83 +163,176 @@ private fun ClientsTable(
 }
 
 @Composable
-private fun ClientTableRow(
-    client: ClientRow,
-    onEdit: (ClientRow) -> Unit,
-    onDelete: (ClientRow) -> Unit,
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    Row(
-        Modifier.fillMaxWidth().background(Color.White).clickable { onEdit(client) }.padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(client.displayName(), modifier = Modifier.weight(1.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(client.email.ifBlank { "-" }, modifier = Modifier.weight(1.7f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(if (client.active) "Activo" else "Inactivo", modifier = Modifier.weight(.8f), color = if (client.active) Color(0xFF15803D) else ClientsMuted)
-        Box {
-            IconButton(onClick = { menuExpanded = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Opciones") }
-            MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
-                DropdownMenu(menuExpanded, { menuExpanded = false }) {
-                    DropdownMenuItem(text = { Text("Editar") }, onClick = { menuExpanded = false; onEdit(client) })
-                    DropdownMenuItem(text = { Text("Eliminar") }, onClick = { menuExpanded = false; onDelete(client) })
+private fun ClientTable(clients: List<ClientRow>, onEdit: (ClientRow) -> Unit, onDelete: (ClientRow) -> Unit) {
+    Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(8.dp), color = Color.White, shadowElevation = 1.dp) {
+        Column {
+            Row(Modifier.fillMaxWidth().background(Color(0xFFF8FAFC)).padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text("Nombre", Modifier.weight(1.8f), fontWeight = FontWeight.SemiBold)
+                Text("Documento", Modifier.weight(1.1f), fontWeight = FontWeight.SemiBold)
+                Text("Correo", Modifier.weight(1.7f), fontWeight = FontWeight.SemiBold)
+                Text("Acceso", Modifier.weight(.8f), fontWeight = FontWeight.SemiBold)
+                Text("Estado", Modifier.weight(.7f), fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(96.dp))
+            }
+            HorizontalDivider(color = ClientsDivider)
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(clients, key = { it.id }) { client ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(client.displayName(), Modifier.weight(1.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${client.documentType} ${client.document}", Modifier.weight(1.1f), color = ClientsMuted)
+                        Text(client.email.ifBlank { "-" }, Modifier.weight(1.7f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (client.webAccess) "Web" else "POS", Modifier.weight(.8f), color = if (client.webAccess) Color(0xFF15803D) else ClientsMuted)
+                        Text(if (client.active) "Activo" else "Inactivo", Modifier.weight(.7f), color = if (client.active) Color(0xFF15803D) else ClientsMuted)
+                        IconButton(onClick = { onEdit(client) }) { Icon(Icons.Filled.Edit, contentDescription = "Editar") }
+                        IconButton(onClick = { onDelete(client) }) { Icon(Icons.Filled.Delete, contentDescription = "Eliminar") }
+                    }
+                    HorizontalDivider(color = ClientsDivider)
                 }
             }
         }
     }
 }
+
+private fun deleteConfirmation(client: ClientRow, vm: ClientsViewModel) = PendingConfirm(
+    title = "Eliminar cliente",
+    body = "Se inactivara la ficha POS de ${client.displayName()}. La cuenta web vinculada no se eliminara.",
+    confirmButtonText = "Eliminar",
+    onConfirm = { vm.remove(client.id) },
+)
 
 private fun ClientRow.displayName(): String {
-    val personName = listOf(name.cleanDisplayValue(), lastName.cleanDisplayValue()).filter { it.isNotBlank() }.joinToString(" ")
-    return personName.ifBlank { email.cleanDisplayValue() }.ifBlank { "Usuario sin nombre" }
+    val fullName = listOf(name.cleanValue(), lastName.cleanValue()).filter(String::isNotBlank).joinToString(" ")
+    return fullName.ifBlank { businessName.cleanValue() }.ifBlank { alias.cleanValue() }.ifBlank { email.cleanValue() }.ifBlank { "Cliente sin nombre" }
 }
 
-private fun String.cleanDisplayValue(): String = trim().takeUnless { it.equals("null", true) } ?: ""
+private fun String.cleanValue(): String = trim().takeUnless { it.equals("null", true) } ?: ""
 
 @Composable
 private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: (ClientRow) -> Unit) {
-    var name by remember(initial) { mutableStateOf(initial.name.cleanDisplayValue()) }
-    var email by remember(initial) { mutableStateOf(initial.email.cleanDisplayValue()) }
-    var password by remember(initial) { mutableStateOf("") }
+    val compact = LocalConfiguration.current.screenWidthDp < 700
+    var personType by remember(initial) { mutableStateOf(initial.personType.ifBlank { "Natural" }) }
+    var documentType by remember(initial) { mutableStateOf(initial.documentType.ifBlank { "DNI" }) }
+    var document by remember(initial) { mutableStateOf(initial.document.cleanValue()) }
+    var name by remember(initial) { mutableStateOf(initial.name.cleanValue()) }
+    var lastName by remember(initial) { mutableStateOf(initial.lastName.cleanValue()) }
+    var businessName by remember(initial) { mutableStateOf(initial.businessName.cleanValue()) }
+    var phone by remember(initial) { mutableStateOf(initial.phone.cleanValue()) }
+    var address by remember(initial) { mutableStateOf(initial.address.cleanValue()) }
+    var alias by remember(initial) { mutableStateOf(initial.alias.cleanValue()) }
+    var email by remember(initial) { mutableStateOf(initial.email.cleanValue()) }
+    var gender by remember(initial) { mutableStateOf(initial.gender.cleanValue()) }
+    var maritalStatus by remember(initial) { mutableStateOf(initial.maritalStatus.cleanValue()) }
+    var discount by remember(initial) { mutableStateOf(initial.discountPercentage.toString().removeSuffix(".0")) }
+    var observations by remember(initial) { mutableStateOf(initial.observations.cleanValue()) }
     var active by remember(initial) { mutableStateOf(initial.active) }
+    var webAccess by remember(initial) { mutableStateOf(initial.webAccess) }
 
+    val fields: @Composable () -> Unit = {
+        SelectField("Tipo de persona", personType, listOf("Natural", "Juridica")) { personType = it }
+        SelectField("Tipo de documento", documentType, listOf("DNI", "RUC", "CE")) { documentType = it; document = "" }
+        ClientTextField("Nro. de documento", document, { document = it.filter(Char::isLetterOrDigit) }, KeyboardType.Text)
+        ClientTextField("Nombre", name, { name = it })
+        ClientTextField("Apellido", lastName, { lastName = it })
+        if (personType == "Juridica") ClientTextField("Razon social", businessName, { businessName = it })
+        ClientTextField("Telefono", phone, { phone = it.filter(Char::isDigit).take(15) }, KeyboardType.Phone)
+        ClientTextField("Direccion", address, { address = it })
+        ClientTextField("Alias", alias, { alias = it })
+        SelectField("Genero", gender, listOf("", "Masculino", "Femenino", "Otro")) { gender = it }
+        SelectField("Estado civil", maritalStatus, listOf("", "Soltero", "Casado", "Conviviente", "Divorciado", "Viudo")) { maritalStatus = it }
+        ClientTextField("Descuento (%)", discount, { value -> if (value.matches(Regex("^\\d{0,3}([.]\\d{0,2})?$"))) discount = value }, KeyboardType.Decimal)
+        ClientTextField("Correo", email, { email = it }, KeyboardType.Email)
+        OutlinedTextField(observations, { observations = it }, label = { Text("Observaciones") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Estado del cliente: ${if (active) "Activado" else "Inactivo"}", Modifier.weight(1f))
+            Switch(active, { active = it })
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Acceso al sistema (web / app)")
+                if (initial.userId > 0L) Text("Cuenta web vinculada", color = Color(0xFF15803D), style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(webAccess, { webAccess = it }, enabled = initial.userId == 0L)
+        }
+        if (webAccess && initial.userId == 0L) {
+            Text("Se enviara un correo para que el cliente cree su propia contrasena. Si la cuenta ya existe, se conservara su contrasena actual.", color = ClientsMuted, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    val canSave = name.isNotBlank() && document.isNotBlank() && (!webAccess || email.isNotBlank())
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial.id == 0L) "Agregar cliente" else "Editar cliente") },
+        modifier = Modifier.fillMaxWidth(if (compact) .98f else .9f).widthIn(max = 980.dp),
+        title = { Text(if (initial.id == 0L) "Nuevo cliente" else "Editar cliente") },
         text = {
-            Column(
-                Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(email, { email = it }, label = { Text("Correo") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(
-                    password,
-                    { password = it },
-                    label = { Text(if (initial.id == 0L) "Contrasena" else "Nueva contrasena (opcional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (active) "Cliente activo" else "Cliente inactivo", modifier = Modifier.weight(1f))
-                    Switch(checked = active, onCheckedChange = { active = it })
+            Column(Modifier.heightIn(max = if (compact) 610.dp else 720.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (compact) fields() else {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SelectField("Tipo de persona", personType, listOf("Natural", "Juridica")) { personType = it }
+                            SelectField("Tipo de documento", documentType, listOf("DNI", "RUC", "CE")) { documentType = it; document = "" }
+                            ClientTextField("Nro. de documento", document, { document = it.filter(Char::isLetterOrDigit) })
+                            ClientTextField("Nombre", name, { name = it })
+                            ClientTextField("Apellido", lastName, { lastName = it })
+                            if (personType == "Juridica") ClientTextField("Razon social", businessName, { businessName = it })
+                            ClientTextField("Direccion", address, { address = it })
+                            ClientTextField("Alias", alias, { alias = it })
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ClientTextField("Telefono", phone, { phone = it.filter(Char::isDigit).take(15) }, KeyboardType.Phone)
+                            SelectField("Genero", gender, listOf("", "Masculino", "Femenino", "Otro")) { gender = it }
+                            SelectField("Estado civil", maritalStatus, listOf("", "Soltero", "Casado", "Conviviente", "Divorciado", "Viudo")) { maritalStatus = it }
+                            ClientTextField("Descuento (%)", discount, { value -> if (value.matches(Regex("^\\d{0,3}([.]\\d{0,2})?$"))) discount = value }, KeyboardType.Decimal)
+                            ClientTextField("Correo", email, { email = it }, KeyboardType.Email)
+                            OutlinedTextField(observations, { observations = it }, label = { Text("Observaciones") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Cliente ${if (active) "activo" else "inactivo"}", Modifier.weight(1f)); Switch(active, { active = it }) }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(if (initial.userId > 0L) "Cuenta web vinculada" else "Activar acceso web / app", Modifier.weight(1f)); Switch(webAccess, { webAccess = it }, enabled = initial.userId == 0L) }
+                            if (webAccess && initial.userId == 0L) Text("Se enviara una invitacion por correo para crear la contrasena.", color = ClientsMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    onSave(
-                        initial.copy(
-                            name = name.trim(), email = email.trim(), active = active, newPassword = password,
-                        ),
-                    )
+                    onSave(initial.copy(
+                        name = name.trim(), lastName = lastName.trim(), document = document.trim(), phone = phone.trim(),
+                        email = email.trim(), address = address.trim(), businessName = businessName.trim(), alias = alias.trim(),
+                        personType = personType, documentType = documentType, gender = gender, maritalStatus = maritalStatus,
+                        discountPercentage = discount.toDoubleOrNull()?.coerceIn(0.0, 100.0) ?: 0.0,
+                        observations = observations.trim(), active = active, webAccess = webAccess, newPassword = "",
+                    ))
                 },
-                enabled = name.isNotBlank() && email.isNotBlank() && (initial.id > 0L || password.isNotBlank()),
+                enabled = canSave,
                 colors = ButtonDefaults.buttonColors(containerColor = ClientsAccent, contentColor = Color.White),
-            ) { Text(if (initial.id == 0L) "Agregar" else "Guardar") }
+            ) { Text("Guardar") }
         },
         dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancelar") } },
         containerColor = Color.White,
         tonalElevation = 0.dp,
     )
+}
+
+@Composable
+private fun ClientTextField(label: String, value: String, onValueChange: (String) -> Unit, keyboardType: KeyboardType = KeyboardType.Text) {
+    OutlinedTextField(value, onValueChange, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = keyboardType))
+}
+
+@Composable
+private fun SelectField(label: String, value: String, options: List<String>, onSelected: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { IconButton(onClick = { expanded = true }) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null) } },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        DropdownMenu(expanded, { expanded = false }, modifier = Modifier.widthIn(min = 220.dp)) {
+            options.forEach { option -> DropdownMenuItem(text = { Text(option.ifBlank { "No especificado" }) }, onClick = { onSelected(option); expanded = false }) }
+        }
+    }
 }
