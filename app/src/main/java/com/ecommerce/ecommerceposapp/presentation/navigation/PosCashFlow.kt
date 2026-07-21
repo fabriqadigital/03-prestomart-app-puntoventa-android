@@ -46,10 +46,10 @@ private val CashBrand = Color(0xFFFD0505)
 @Composable
 fun CashSessionIndicator(state: PosUiState, onClose: () -> Unit, modifier: Modifier = Modifier) {
     val current = state.cashSession ?: return
-    Row(modifier = modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    /*Row(modifier = modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Caja: ${current.cashRegisterName}", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
         OutlinedButton(onClick = onClose) { Text("Cerrar caja") }
-    }
+    }*/
 }
 
 @Composable

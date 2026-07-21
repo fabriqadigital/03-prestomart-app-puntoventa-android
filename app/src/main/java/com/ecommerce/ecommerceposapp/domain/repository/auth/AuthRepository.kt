@@ -7,5 +7,7 @@ interface AuthRepository {
     fun loginOffline(email: String, password: String): Result<UserSession>
     fun canLoginOffline(email: String): Boolean
     fun getSession(): UserSession?
+    /** Retorna true si existe un token JWT guardado (no implica que sea válido en el servidor). */
+    fun hasStoredToken(): Boolean
     fun logout()
 }

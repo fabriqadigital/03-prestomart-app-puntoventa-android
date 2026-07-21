@@ -21,6 +21,12 @@ import org.koin.core.context.startKoin
 class PosApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+
+        // Detecta si SharedPreferences fueron restauradas desde un backup de Android.
+        // noBackupFilesDir nunca se respalda, por lo que si el marker no existe
+        // es una instalación nueva (o reinstalación) y hay que limpiar la sesión guardada.
+        clearSessionIfRestoredFromBackup()
+
         Realm.init(this)
         val config = RealmConfiguration.Builder()
             .name("ecommerce_pos.realm")
@@ -154,5 +160,40 @@ class PosApplication : Application() {
             koin.get<ProductRepository>(),
             koin.get<CatalogRepository>(),
         ).start()
+    }
+
+    /**
+     * Android Auto-Backup puede restaurar SharedPreferences al reinstalar la app,
+     * lo que hace que el usuario aterrice en el POS con credenciales antiguas en vez
+     * de ver la pantalla de Login.
+     *
+     * Para detectarlo usamos noBackupFilesDir (excluido explícitamente del backup):
+     * si el marker no existe → primera ejecución tras instalación → limpiamos sesión.
+     */
+    private fun clearSessionIfRestoredFromBackup() {
+        val markerFile = java.io.File(noBackupFilesDir, "install.marker")
+        if (!markerFile.exists()) {
+            // Instalación nueva o reinstalación: borrar cualquier sesión restaurada del backup
+            getSharedPreferences("pos_prefs", MODE_PRIVATE).edit()
+                .remove("session_user_id")
+                .remove("session_email")
+                .remove("session_name")
+                .remove("session_role")
+                .remove("session_offline")
+                .remove("session_cashier_id")
+                .remove("session_default_cash_register_id")
+                .remove("session_default_cash_register_name")
+                .remove("api_token")
+                .remove("api_refresh_token")
+                .remove("pos_cash_session_id")
+                .remove("offline_auth_email")
+                .remove("offline_auth_salt")
+                .remove("offline_auth_verifier")
+                .remove("offline_auth_verified_at")
+                .apply()
+            // Crear el marker para futuras ejecuciones normales
+            noBackupFilesDir.mkdirs()
+            markerFile.createNewFile()
+        }
     }
 }

@@ -39,6 +39,7 @@ object ApiConfig {
     const val CASH_SESSION_CLOSE = "$POS_PREFIX/caja/cerrar"
     const val CASH_SALES = "$POS_PREFIX/caja/ventas"
     const val CASH_SALE_DETAIL = "$POS_PREFIX/caja/venta/detalle"
+    const val CASH_FLOW = "$POS_PREFIX/caja/flujo"
 
     const val SUPPLIER_LIST = "$POS_PREFIX/proveedores/listar"
     const val SUPPLIER_GET = "$POS_PREFIX/proveedores/obtener"

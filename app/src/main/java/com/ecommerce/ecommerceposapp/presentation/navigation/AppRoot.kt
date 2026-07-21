@@ -112,6 +112,8 @@ import com.ecommerce.ecommerceposapp.presentation.users.UsersViewModel
 import com.ecommerce.ecommerceposapp.presentation.pos.PosViewModel
 import com.ecommerce.ecommerceposapp.presentation.sales.SalesHistoryScreen
 import com.ecommerce.ecommerceposapp.presentation.sync.SyncViewModel
+import com.ecommerce.ecommerceposapp.presentation.cash.CashModuleScreen
+import com.ecommerce.ecommerceposapp.presentation.cash.CashModuleViewModel
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
@@ -123,7 +125,7 @@ private const val POS = "pos"
 // Paleta de la app — fondo claro con acento rojo de marca
 private val Brand = Color(0xFFfd0505)
 private val BrandDark = Color(0xFFa82024)
-private val AppBg = Color(0xFFF5F7FA)          // fondo principal — blanco ligeramente gris
+private val AppBg = Color(0xFFFFFFFF)          // fondo principal — blanco ligeramente gris
 private val SurfaceWhite = Color(0xFFFFFFFF)   // superficie blanca (tarjetas)
 private val SurfaceAlt = Color(0xFFEEF0F5)     // superficie alternativa más oscura
 private val TextPrimary = Color(0xFF111827)    // texto principal
@@ -165,6 +167,10 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
         if (bootstrapped) return@LaunchedEffect
         bootstrapped = true
         val saved = auth.getSession() ?: return@LaunchedEffect
+        // Para sesiones online se requiere un token guardado; sin él la sesión está corrupta
+        // y debemos ir al Login en lugar de aterrizar en el POS sin autenticación.
+        // Las sesiones offline (offlineSession = true) no usan token JWT, así que las dejamos pasar.
+        if (!saved.offlineSession && !auth.hasStoredToken()) return@LaunchedEffect
         currentUser = saved
         if (syncRepo.hasInitialSync(saved.id)) {
             navController.navigate(POS) {
@@ -209,8 +215,8 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
             }
             val requiresSync = vm.needsSync(user.id)
             LaunchedEffect(user.id) {
-                vm.loadModules()
-                if (vm.needsSync(user.id)) vm.sync(user)
+                vm.loadModules(requiresSync)
+                if (requiresSync) vm.sync(user)
             }
             SyncScreen(
                 user = user,
@@ -218,6 +224,8 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
                 requiresSync = requiresSync,
                 onSync = { syncScope.launch { vm.sync(user) } },
                 onToggleModule = vm::toggleModule,
+                onSelectAll = vm::selectAllModules,
+                onClearSelection = vm::clearSelection,
                 onBack = {
                     if (!navController.popBackStack()) {
                         navController.navigate(POS) {
@@ -246,6 +254,7 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
             val suppliersVm: SuppliersViewModel = koinViewModel()
             val usersVm: UsersViewModel = koinViewModel()
             val posVm: PosViewModel = koinViewModel()
+            val cashModuleVm: CashModuleViewModel = koinViewModel()
             LaunchedEffect(Unit) { posVm.load() }
             PosScreen(
                 session = session,
@@ -255,6 +264,7 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
                 suppliersVm = suppliersVm,
                 usersVm = usersVm,
                 posVm = posVm,
+                cashModuleVm = cashModuleVm,
                 onLogout = {
                     auth.logout()
                     currentUser = null
@@ -511,6 +521,7 @@ private fun LoginScreen(
 private val drawerMenuItems = listOf(
     "Punto de venta",
     "Historial de ventas",
+    "Caja",
     "Productos",
     "Categorías",
     "Clientes",
@@ -633,6 +644,7 @@ private fun PosScreen(
     suppliersVm: SuppliersViewModel,
     usersVm: UsersViewModel,
     posVm: PosViewModel,
+    cashModuleVm: CashModuleViewModel,
     onLogout: () -> Unit,
     onGoSync: () -> Unit,
 ) {
@@ -718,64 +730,69 @@ private fun PosScreen(
     val posContent: @Composable (PaddingValues) -> Unit = { padding ->
         when (selectedModule) {
             "Punto de venta" -> {
-                Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-                    if (responsiveTwoPanels) {
-                        Row(modifier = Modifier.fillMaxSize()) {
-                            CatalogPane(
-                                Modifier.weight(1f).fillMaxHeight(),
-                                state,
-                                posVm::setSearch,
-                                posVm::setCategory,
-                                posVm::setSubcategory,
-                                onAddToCart = posVm::addToCart,
-                                onToggleFeatured = posVm::toggleFeatured,
-                                onNewProduct = { showQuickProductDialog = true },
-                            )
-                            CartPane(
-                                Modifier.width(360.dp),
-                                state,
-                                "${session.name} ${session.lastName}".trim(),
-                                clientsState.clients,
-                                catalog,
-                                posVm::increase,
-                                posVm::decrease,
-                                onPay = { p, idC -> posVm.pay(p, idC) },
-                                onNewClient = { selectedModule = "Clientes" },
-                            )
-                        }
-                    } else {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            CatalogPane(
-                                Modifier.weight(1f).fillMaxWidth().fillMaxHeight(),
-                                state,
-                                posVm::setSearch,
-                                posVm::setCategory,
-                                posVm::setSubcategory,
-                                onAddToCart = posVm::addToCart,
-                                onToggleFeatured = posVm::toggleFeatured,
-                                onNewProduct = { showQuickProductDialog = true },
-                            )
-                            CartPane(
-                                Modifier.fillMaxWidth().height(320.dp),
-                                state,
-                                "${session.name} ${session.lastName}".trim(),
-                                clientsState.clients,
-                                catalog,
-                                posVm::increase,
-                                posVm::decrease,
-                                onPay = { p, idC -> posVm.pay(p, idC) },
-                                onNewClient = { selectedModule = "Clientes" },
+                Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    if (state.cashSession != null) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            CashSessionIndicator(
+                                state = state,
+                                onClose = {
+                                    scope.launch { posVm.loadCashSummary() }
+                                    requestCashClose()
+                                },
                             )
                         }
                     }
-                    CashSessionIndicator(
-                        state = state,
-                        onClose = {
-                            scope.launch { posVm.loadCashSummary() }
-                            requestCashClose()
-                        },
-                        modifier = Modifier.align(Alignment.TopEnd),
-                    )
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        if (responsiveTwoPanels) {
+                            Row(modifier = Modifier.fillMaxSize()) {
+                                CatalogPane(
+                                    Modifier.weight(1f).fillMaxHeight(),
+                                    state,
+                                    posVm::setSearch,
+                                    posVm::setCategory,
+                                    posVm::setSubcategory,
+                                    onAddToCart = posVm::addToCart,
+                                    onToggleFeatured = posVm::toggleFeatured,
+                                    onNewProduct = { showQuickProductDialog = true },
+                                )
+                                CartPane(
+                                    Modifier.width(360.dp),
+                                    state,
+                                    "${session.name} ${session.lastName}".trim(),
+                                    clientsState.clients,
+                                    catalog,
+                                    posVm::increase,
+                                    posVm::decrease,
+                                    onPay = { p, idC -> posVm.pay(p, idC) },
+                                    onNewClient = { selectedModule = "Clientes" },
+                                )
+                            }
+                        } else {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                CatalogPane(
+                                    Modifier.weight(1f).fillMaxWidth().fillMaxHeight(),
+                                    state,
+                                    posVm::setSearch,
+                                    posVm::setCategory,
+                                    posVm::setSubcategory,
+                                    onAddToCart = posVm::addToCart,
+                                    onToggleFeatured = posVm::toggleFeatured,
+                                    onNewProduct = { showQuickProductDialog = true },
+                                )
+                                CartPane(
+                                    Modifier.fillMaxWidth().height(320.dp),
+                                    state,
+                                    "${session.name} ${session.lastName}".trim(),
+                                    clientsState.clients,
+                                    catalog,
+                                    posVm::increase,
+                                    posVm::decrease,
+                                    onPay = { p, idC -> posVm.pay(p, idC) },
+                                    onNewClient = { selectedModule = "Clientes" },
+                                )
+                            }
+                        }
+                    }
                 }
             }
             "Historial de ventas" -> Box(Modifier.fillMaxSize().padding(padding)) { SalesHistoryScreen(catalog, clientsState.clients) }
@@ -795,6 +812,27 @@ private fun PosScreen(
                     session = session,
                     onLogout = onLogout,
                 ) { notice -> scope.launch { snackbarHostState.showSnackbar(notice) } }
+            }
+            "Caja" -> {
+                val cashSession = state.cashSession
+                if (cashSession != null) {
+                    CashModuleScreen(
+                        session = cashSession,
+                        viewModel = cashModuleVm,
+                        onCashClosed = {
+                            // Refresca la sesión de caja en PosViewModel y vuelve al POS
+                            scope.launch { posVm.loadCashSession(session.cashierId) }
+                            selectedModule = "Punto de venta"
+                        },
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("No hay caja abierta", color = Color(0xFF6B7280), fontWeight = FontWeight.SemiBold)
+                            Text("Abre una caja desde el Punto de venta para ver el módulo.", color = Color(0xFF9CA3AF), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
             }
             else -> Box(Modifier.fillMaxSize().padding(padding)) { Text("Seleccione una opción del menú.") }
         }

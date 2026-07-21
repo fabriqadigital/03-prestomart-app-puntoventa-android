@@ -153,6 +153,9 @@ class PosRepositoryImpl(private val context: Context) :
             .apply()
     }
 
+    override fun hasStoredToken(): Boolean =
+        prefs.getString("api_token", "").orEmpty().isNotBlank()
+
     override fun categories(): List<CategoryItem> = realmQuery {
         it.where(CategoryRealm::class.java).equalTo("active", true).findAll()
             .map { c -> CategoryItem(c.id, c.name, c.active) }
@@ -1039,12 +1042,20 @@ class PosRepositoryImpl(private val context: Context) :
         if (tasks.isEmpty()) return
 
         // Fase B: descargar imágenes (sin Realm abierto)
-        val updates = mutableMapOf<Long, String>()
-        tasks.forEach { task ->
-            val target = File(dir, "p_${task.id}.${task.ext}")
-            if (productImagesApi.download(task.sourceUrl, target)) {
-                updates[task.id] = "file://${target.absolutePath}"
+        val updates = java.util.concurrent.ConcurrentHashMap<Long, String>()
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(6, tasks.size))
+        try {
+            val futures = tasks.map { task ->
+                pool.submit {
+                    val target = File(dir, "p_${task.id}.${task.ext}")
+                    if (productImagesApi.download(task.sourceUrl, target)) {
+                        updates[task.id] = "file://${target.absolutePath}"
+                    }
+                }
             }
+            futures.forEach { it.get() }
+        } finally {
+            pool.shutdown()
         }
 
         // Fase C: guardar rutas file:// en Realm con transacción separada
