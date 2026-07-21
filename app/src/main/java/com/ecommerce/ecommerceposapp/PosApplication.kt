@@ -24,7 +24,7 @@ class PosApplication : Application() {
         Realm.init(this)
         val config = RealmConfiguration.Builder()
             .name("ecommerce_pos.realm")
-            .schemaVersion(13)
+            .schemaVersion(14)
             .migration(RealmMigration { realm, oldVersion, _ ->
                 if (oldVersion < 9L) {
                     realm.schema.get("ProductRealm")?.apply {
@@ -115,6 +115,18 @@ class PosApplication : Application() {
                         addField("estado", String::class.java)
                         transform { supplier -> supplier.setString("estado", "Activo") }
                         setRequired("estado", true)
+                    }
+                }
+                if (oldVersion < 14L) {
+                    realm.schema.get("ClientRealm")?.apply {
+                        addField("userId", Long::class.javaPrimitiveType!!)
+                        listOf("personType", "documentType", "alias", "gender", "maritalStatus", "observations").forEach { field ->
+                            addField(field, String::class.java)
+                            transform { client -> client.setString(field, if (field == "personType") "Natural" else if (field == "documentType") "DNI" else "") }
+                            setRequired(field, true)
+                        }
+                        addField("discountPercentage", Double::class.javaPrimitiveType!!)
+                        addField("webAccess", Boolean::class.javaPrimitiveType!!)
                     }
                 }
             })

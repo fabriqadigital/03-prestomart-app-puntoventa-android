@@ -12,4 +12,13 @@ data class ClientRow(
     val businessName: String = "",
     val newPassword: String = "",
     val branchName: String = "",
+    val userId: Long = 0L,
+    val personType: String = "Natural",
+    val documentType: String = "DNI",
+    val alias: String = "",
+    val gender: String = "",
+    val maritalStatus: String = "",
+    val discountPercentage: Double = 0.0,
+    val observations: String = "",
+    val webAccess: Boolean = false,
 )

@@ -86,7 +86,8 @@ fun UsersCrudScreen(vm: UsersViewModel, session: UserSession) {
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Usuarios", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("Usuarios web", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("Todas las cuentas registradas en la web y aplicacion.", style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             ToolbarAddIconButton(onClick = { showCreate = true }, contentDescription = "Nuevo usuario")
@@ -98,7 +99,7 @@ fun UsersCrudScreen(vm: UsersViewModel, session: UserSession) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(row.name, fontWeight = FontWeight.Medium)
-                        Text("${row.email} - ${row.role}", style = MaterialTheme.typography.bodySmall)
+                        Text(row.email, style = MaterialTheme.typography.bodySmall)
                     }
                     CrudEditDeleteIcons(
                         onEdit = { editing = row },
@@ -120,7 +121,7 @@ fun UsersCrudScreen(vm: UsersViewModel, session: UserSession) {
     if (showCreate) {
         UserEditDialog(
             title = "Nuevo usuario",
-            initial = UserRow(0, "", "", "admin", true),
+            initial = UserRow(0, "", "", "Cliente web", true),
             onDismiss = { showCreate = false; vm.clearMessages() },
             onSave = { row, pwd ->
                 vm.save(row, pwd)
@@ -161,7 +162,7 @@ private fun UserEditDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Correo") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = role, onValueChange = { role = it }, label = { Text("Rol") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = role, onValueChange = {}, readOnly = true, label = { Text("Tipo de cuenta") }, modifier = Modifier.fillMaxWidth())
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     FilterChip(selected = active, onClick = { active = !active }, label = { Text("Activo") })
                 }

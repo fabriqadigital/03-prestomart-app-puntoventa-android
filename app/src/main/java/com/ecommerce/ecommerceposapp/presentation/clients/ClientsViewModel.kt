@@ -24,7 +24,15 @@ class ClientsViewModel(private val getClients: GetClientsUseCase, private val sa
         _uiState.update { it.copy(isLoading = true) }
         runCatching { withContext(Dispatchers.IO) { getClients() } }.onSuccess { rows -> _uiState.update { it.copy(clients = rows, isLoading = false) } }.onFailure(::showError)
     }
-    fun save(row: ClientRow) = action("Cliente guardado.") { saveClient(row) }
+    fun save(row: ClientRow) = viewModelScope.launch {
+        _uiState.update { it.copy(isSaving = true, message = null, error = null) }
+        val result: Result<String> = withContext(Dispatchers.IO) { saveClient(row) }
+        result.onSuccess { backendMessage ->
+                _uiState.update { it.copy(isSaving = false, message = backendMessage) }
+                load()
+            }
+            .onFailure(::showError)
+    }
     fun remove(id: Long) = action("Cliente eliminado.") { deleteClient(id) }
     fun clearMessages() = _uiState.update { it.copy(message = null, error = null) }
     private fun action(message: String, block: suspend () -> Result<Unit>) = viewModelScope.launch {
