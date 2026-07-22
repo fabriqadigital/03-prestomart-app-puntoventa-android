@@ -3,6 +3,7 @@ package com.ecommerce.ecommerceposapp.presentation.products
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.products.ProductTypeRow
 import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetCategoriesUseCase
@@ -23,6 +24,7 @@ data class ProductsUiState(
     val products: List<ProductAdminRow> = emptyList(),
     val categories: List<CategoryAdminRow> = emptyList(),
     val subcategories: List<SubcategoryAdminRow> = emptyList(),
+    val productTypes: List<ProductTypeRow> = emptyList(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val message: String? = null,
@@ -45,10 +47,23 @@ class ProductsViewModel(
         runCatching {
             withContext(Dispatchers.IO) {
                 productRepository.syncPendingProducts()
-                Triple(getProducts(), getCategories(), getSubcategories())
+                ProductLoadResult(
+                    products = getProducts(),
+                    categories = getCategories(),
+                    subcategories = getSubcategories(),
+                    productTypes = productRepository.listProductTypes().getOrDefault(emptyList()),
+                )
             }
-        }.onSuccess { (products, categories, subcategories) ->
-            _uiState.update { it.copy(products = products, categories = categories, subcategories = subcategories, isLoading = false) }
+        }.onSuccess { result ->
+            _uiState.update {
+                it.copy(
+                    products = result.products,
+                    categories = result.categories,
+                    subcategories = result.subcategories,
+                    productTypes = result.productTypes,
+                    isLoading = false,
+                )
+            }
         }.onFailure(::showError)
     }
     fun save(row: ProductAdminRow, onSuccess: () -> Unit = {}) = action("Producto guardado.", onSuccess) { saveProduct(row) }
@@ -64,3 +79,10 @@ class ProductsViewModel(
     }
     private fun showError(error: Throwable) { _uiState.update { it.copy(isLoading = false, isSaving = false, error = error.message ?: "Ocurrio un error") } }
 }
+
+private data class ProductLoadResult(
+    val products: List<ProductAdminRow>,
+    val categories: List<CategoryAdminRow>,
+    val subcategories: List<SubcategoryAdminRow>,
+    val productTypes: List<ProductTypeRow>,
+)

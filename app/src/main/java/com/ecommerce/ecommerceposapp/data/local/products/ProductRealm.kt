@@ -23,7 +23,7 @@ open class ProductRealm : RealmObject() {
     var wholesaleOldPrice: Double = 0.0
     var yapePrice: Double = 0.0
     var minimumStock: Double = 0.0
-    var productTypeId: Long = 2L
+    var productTypeId: Long = 0L
     var ratingsEnabled: Boolean = false
     var adminRating: Double = 0.0
     var packageMeasures: String = ""

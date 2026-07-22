@@ -28,6 +28,14 @@ data class CompletedSaleReceipt(
     val lines: List<CartLine>,
     val vendedorNombre: String,
     val idCliente: Long,
+    val clienteNombre: String = "",
+    val clienteDocumento: String = "",
+)
+
+data class ReceiptCustomerInfo(
+    val id: Long = 0L,
+    val name: String = "",
+    val document: String = "",
 )
 
 enum class TipoComprobanteEmision {
@@ -46,6 +54,8 @@ data class ComprobanteEmitidoResult(
     val emisorRazonSocial: String,
     val emisorDireccion: String,
     val totalLetras: String,
+    val receptorNombre: String = "",
+    val receptorDocumento: String = "",
 )
 
 data class SalesHistoryRow(

@@ -2,6 +2,7 @@ package com.ecommerce.ecommerceposapp.data.remote.api
 
 import android.content.Context
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.products.ProductTypeRow
 import java.io.File
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -16,6 +17,31 @@ class ProductApiDataSource(context: Context) {
     private val httpClient = ApiHttpClient(context).client
 
     fun normalizedImageUrl(raw: String): String = urlResolver.normalizeAssetUrl(raw)
+
+    fun listTypes(): Result<List<ProductTypeRow>> = runCatching {
+        val request = Request.Builder()
+            .url(urlResolver.endpoint(ApiConfig.PRODUCT_TYPE_LIST))
+            .get()
+            .header("Accept", "application/json")
+            .build()
+        httpClient.newCall(request).execute().use { response ->
+            val payload = response.body?.string().orEmpty()
+            val json = runCatching { JSONObject(payload) }.getOrNull()
+            if (!response.isSuccessful || json?.optBoolean("success", true) == false) {
+                throw Exception(json?.optString("message")?.takeIf { it.isNotBlank() }
+                    ?: "No se pudieron cargar las etiquetas (${response.code}).")
+            }
+            val rows = json?.optJSONArray("result") ?: return@use emptyList()
+            buildList {
+                for (index in 0 until rows.length()) {
+                    val item = rows.optJSONObject(index) ?: continue
+                    val id = item.optLong("id_producto_tipo")
+                    val name = item.optString("nombre").trim()
+                    if (id > 0L && name.isNotBlank()) add(ProductTypeRow(id, name))
+                }
+            }
+        }
+    }
 
     fun save(row: ProductAdminRow): Result<Long> {
         if (sessionStore.token.isBlank()) return Result.failure(Exception("Inicia sesion en linea para guardar productos en produccion."))
@@ -63,7 +89,7 @@ class ProductApiDataSource(context: Context) {
                 if (ids.isEmpty()) addFormDataPart("id_producto_categoria_sub", "")
                 else ids.distinct().forEach { addFormDataPart("id_producto_categoria_sub[]", it.toString()) }
             }
-            .addFormDataPart("id_producto_tipo", row.productTypeId.toString())
+            .addFormDataPart("id_producto_tipo", row.productTypeId.takeIf { it > 0L }?.toString().orEmpty())
             .addFormDataPart("Activo", if (row.active) "S" else "N")
             .addFormDataPart("codigo_producto_new", row.code.trim())
             .addFormDataPart("codigo_barra", row.barcode.ifBlank { row.code }.trim())

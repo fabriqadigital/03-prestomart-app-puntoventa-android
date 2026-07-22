@@ -1,17 +1,14 @@
 package com.ecommerce.ecommerceposapp.presentation.navigation
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -25,8 +22,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,6 +37,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,14 +54,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.ecommerce.ecommerceposapp.data.remote.api.ReceiptDeliveryApiDataSource
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.presentation.pos.createReceiptPdfForSharing
 import com.ecommerce.ecommerceposapp.presentation.pos.shareReceiptPdfOnWhatsapp
-import java.net.URLEncoder
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -72,7 +71,7 @@ private val CompletionText = Color(0xFF111827)
 private val CompletionMuted = Color(0xFF64748B)
 private val CompletionBorder = Color(0xFFD7DCE3)
 
-private enum class ShareMode { Email, Whatsapp, Copy }
+private enum class ShareMode { Email, Whatsapp }
 
 private fun receiptTypeLabel(type: TipoComprobanteEmision): String = when (type) {
     TipoComprobanteEmision.BOLETA -> "Boleta"
@@ -144,6 +143,8 @@ internal fun SaleCompletedDialog(
     type: TipoComprobanteEmision,
     initialPhone: String,
     onPhoneChanged: (String) -> Unit,
+    clienteNombre: String,
+    clienteDoc: String,
     onPrint: () -> Unit,
     onNewSale: () -> Unit,
 ) {
@@ -155,13 +156,39 @@ internal fun SaleCompletedDialog(
     val scope = rememberCoroutineScope()
     val shareText = remember(receipt, issued) { receiptShareText(receipt, issued) }
 
+    LaunchedEffect(notice) {
+        if (notice.isNotBlank()) {
+            delay(3_500)
+            notice = ""
+        }
+    }
+
     fun share() {
         when (shareMode) {
             ShareMode.Email -> {
-                if (destination.isBlank()) return
-                val uri = Uri.parse("mailto:${Uri.encode(destination.trim())}?subject=${Uri.encode("${receiptTypeLabel(type)} ${issued.numeroCompleto}")}&body=${Uri.encode(shareText)}")
-                runCatching { context.startActivity(Intent(Intent.ACTION_SENDTO, uri)) }
-                    .onFailure { notice = "No se encontró una aplicación de correo." }
+                if (!destination.contains('@') || sharingPdf) return
+                scope.launch {
+                    sharingPdf = true
+                    notice = ""
+                    runCatching {
+                        val pdf = withContext(Dispatchers.IO) {
+                            createReceiptPdfForSharing(context, receipt, issued, clienteNombre, clienteDoc, null)
+                        }
+                        withContext(Dispatchers.IO) {
+                            ReceiptDeliveryApiDataSource(context).sendByEmail(
+                                destination,
+                                issued.numeroCompleto,
+                                clienteNombre.ifBlank { issued.receptorNombre },
+                                pdf,
+                            ).getOrThrow()
+                        }
+                    }.onSuccess {
+                        notice = "Comprobante enviado por correo."
+                    }.onFailure {
+                        notice = it.message ?: "No se pudo enviar el comprobante por correo."
+                    }
+                    sharingPdf = false
+                }
             }
             ShareMode.Whatsapp -> {
                 val digits = destination.filter(Char::isDigit)
@@ -170,17 +197,14 @@ internal fun SaleCompletedDialog(
                     sharingPdf = true
                     runCatching {
                         val pdf = withContext(Dispatchers.IO) {
-                            createReceiptPdfForSharing(context, receipt, issued, null, null, null)
+                            createReceiptPdfForSharing(context, receipt, issued, clienteNombre, clienteDoc, null)
                         }
                         shareReceiptPdfOnWhatsapp(context, pdf, digits)
+                    }.onSuccess {
+                        notice = "Comprobante listo para enviar por WhatsApp."
                     }.onFailure { notice = "No se pudo generar o compartir el PDF." }
                     sharingPdf = false
                 }
-            }
-            ShareMode.Copy -> {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Comprobante ${issued.numeroCompleto}", issued.qrPayload))
-                notice = "Datos del comprobante copiados."
             }
         }
     }
@@ -188,24 +212,24 @@ internal fun SaleCompletedDialog(
     val destinationValid = when (shareMode) {
         ShareMode.Email -> destination.contains('@')
         ShareMode.Whatsapp -> destination.filter(Char::isDigit).length >= 9
-        ShareMode.Copy -> true
     }
 
     Dialog(onDismissRequest = {}, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().padding(18.dp).widthIn(max = 760.dp),
-            shape = RoundedCornerShape(8.dp),
-            color = Color.White,
-            contentColor = CompletionText,
-            shadowElevation = 14.dp,
-        ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 720.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(26.dp),
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(18.dp).widthIn(max = 760.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = Color.White,
+                contentColor = CompletionText,
+                shadowElevation = 14.dp,
             ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 720.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(26.dp),
+                ) {
                 Text("${receiptTypeLabel(type)} guardada", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(24.dp))
                 Surface(
@@ -236,7 +260,6 @@ internal fun SaleCompletedDialog(
                     Spacer(Modifier.width(10.dp))
                     ShareButton(ShareMode.Email, shareMode, Icons.Filled.Email, "Correo") { shareMode = it; destination = ""; notice = "" }
                     ShareButton(ShareMode.Whatsapp, shareMode, Icons.AutoMirrored.Filled.Chat, "WhatsApp") { shareMode = it; destination = initialPhone; notice = "" }
-                    ShareButton(ShareMode.Copy, shareMode, Icons.Filled.ContentCopy, "Copiar") { shareMode = it; destination = ""; notice = "" }
                 }
                 Spacer(Modifier.height(10.dp))
                 when (shareMode) {
@@ -252,7 +275,6 @@ internal fun SaleCompletedDialog(
                         prefix = { Text("+51 ") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     )
-                    ShareMode.Copy -> Text("Copia los datos verificables del comprobante para compartirlos.", color = CompletionMuted)
                 }
                 Spacer(Modifier.height(10.dp))
                 OutlinedButton(
@@ -261,11 +283,10 @@ internal fun SaleCompletedDialog(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(8.dp),
                 ) {
-                    Icon(if (shareMode == ShareMode.Copy) Icons.Filled.ContentCopy else if (shareMode == ShareMode.Email) Icons.Filled.Email else Icons.AutoMirrored.Filled.Chat, null)
+                    Icon(if (shareMode == ShareMode.Email) Icons.Filled.Email else Icons.AutoMirrored.Filled.Chat, null)
                     Spacer(Modifier.width(7.dp))
-                    Text(if (sharingPdf) "Preparando PDF..." else if (shareMode == ShareMode.Copy) "Copiar comprobante" else "Enviar")
+                    Text(if (sharingPdf) "Preparando PDF..." else "Enviar")
                 }
-                if (notice.isNotBlank()) Text(notice, color = CompletionBrand, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(22.dp))
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     val compact = maxWidth < 360.dp
@@ -283,7 +304,41 @@ internal fun SaleCompletedDialog(
                         }
                     }
                 }
+                }
             }
+            if (notice.isNotBlank()) {
+                CompletionNotice(
+                    message = notice,
+                    isError = notice.startsWith("No ", ignoreCase = true),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 24.dp, vertical = 28.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompletionNotice(message: String, isError: Boolean, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.widthIn(max = 520.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = if (isError) Color(0xFF991B1B) else Color(0xFF166534),
+        contentColor = Color.White,
+        shadowElevation = 16.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                if (isError) Icons.Filled.ErrorOutline else Icons.Filled.Check,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(message, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
         }
     }
 }

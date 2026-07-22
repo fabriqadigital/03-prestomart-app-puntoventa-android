@@ -16,4 +16,6 @@ data class UserSession(
     val lastName: String = "",
     val documentType: String = "DNI",
     val cashierState: String = "Activo",
+    val avatar: String = "",
+    val avatarBase64: String = "",
 )

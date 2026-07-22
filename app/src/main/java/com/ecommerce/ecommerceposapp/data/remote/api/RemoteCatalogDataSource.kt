@@ -29,7 +29,7 @@ data class RemoteProductSeed(
     val wholesaleOldPrice: Double = 0.0,
     val yapePrice: Double = 0.0,
     val minimumStock: Double = 0.0,
-    val productTypeId: Long = 2L,
+    val productTypeId: Long = 0L,
     val ratingsEnabled: Boolean = false,
     val adminRating: Double = 0.0,
     val packageMeasures: String = "",
@@ -66,13 +66,13 @@ data class RemoteCatalogSeed(
 
 class RemoteCatalogDataSource(context: Context) {
     private val prefs = context.getSharedPreferences(ApiConfig.PREFS_NAME, Context.MODE_PRIVATE)
-    private val candidates = listOf(ApiBaseCandidate(ApiConfig.PRODUCTION_BASE_URL))
+    private val candidates = listOf(ApiBaseCandidate(ApiConfig.DEFAULT_BASE_URL))
 
     fun fetchBestEffort(): RemoteCatalogSeed {
-        val preferredBase = prefs.getString("api_base_url", null)
-        val preferredHost = prefs.getString("api_host_header", null)?.takeIf { it.isNotBlank() }
-        val preferred = preferredBase?.let { ApiBaseCandidate(it, preferredHost) }
-        val bases = listOfNotNull(preferred) + candidates.filter { it.baseUrl != preferredBase }
+        val preferredBase = ApiConfig.configuredBaseUrl(prefs.getString("api_base_url", null))
+        val preferredHost = ApiConfig.configuredHostHeader(prefs.getString("api_host_header", null)).ifBlank { null }
+        val preferred = ApiBaseCandidate(preferredBase, preferredHost)
+        val bases = listOf(preferred) + candidates.filter { it.baseUrl != preferredBase }
         for (base in bases) {
             val catalog = runCatching {
                 fetchCatalogFromEndpoint("${base.baseUrl}/api${ApiConfig.SYNC_CATALOG}", base)
@@ -264,7 +264,7 @@ class RemoteCatalogDataSource(context: Context) {
                 wholesaleOldPrice = optAnyDouble(obj, listOf("precio_mayorista_old")),
                 yapePrice = optAnyDouble(obj, listOf("precio_yape")),
                 minimumStock = optAnyDouble(obj, listOf("stock_minimo")),
-                productTypeId = optAnyLong(obj, listOf("id_producto_tipo")).takeIf { it > 0L } ?: 2L,
+                productTypeId = optAnyLong(obj, listOf("id_producto_tipo")).takeIf { it > 0L } ?: 0L,
                 ratingsEnabled = obj.optBooleanFlexible("ratings_enabled"),
                 adminRating = optAnyDouble(obj, listOf("admin_rating", "numero_estrellas")),
                 packageMeasures = optAnyString(obj, listOf("paquete_medidas")),

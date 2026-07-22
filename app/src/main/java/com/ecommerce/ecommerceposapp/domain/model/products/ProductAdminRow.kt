@@ -1,5 +1,10 @@
 package com.ecommerce.ecommerceposapp.domain.model.products
 
+data class ProductTypeRow(
+    val id: Long,
+    val name: String,
+)
+
 data class ProductAdminRow(
     val id: Long,
     val categoryId: Long,
@@ -20,7 +25,7 @@ data class ProductAdminRow(
     val yapePrice: Double = 0.0,
     val stock: Double,
     val minimumStock: Double = 0.0,
-    val productTypeId: Long = 2L,
+    val productTypeId: Long = 0L,
     val salesChannel: String = "ambos",
     val ratingsEnabled: Boolean = false,
     val adminRating: Double = 0.0,

@@ -29,8 +29,17 @@ class CashApiDataSource(context: Context) {
                 id = id,
                 code = item.cleanString("codigo"),
                 name = item.cleanString("nombre"),
-                branch = item.cleanString("sucursal"),
-                active = item.cleanString("estado").equals("Activa", true) && item.cleanString("Activo").ifBlank { "S" }.equals("S", true),
+                branch = item.firstString("sucursal", "sucursal_nombre", "nombre_sucursal", "branch_name", "branch", "tienda", "local", "sede")
+                    .ifBlank { item.nestedFirstString("sucursal", "nombre", "name", "descripcion", "nombre_sucursal") },
+                active = item.optBooleanFlexible("status", true),
+                ruc = item.firstString("ruc", "empresa_ruc", "emisor_ruc")
+                    .ifBlank { item.nestedFirstString("tienda", "ruc", "empresa_ruc", "emisor_ruc") },
+                businessName = item.firstString("razon_social", "empresa_razon_social", "emisor_razon_social", "nombre_comercial")
+                    .ifBlank { item.nestedFirstString("tienda", "razon_social", "nombre_comercial") },
+                address = item.firstString("direccion_fiscal", "empresa_direccion", "emisor_direccion")
+                    .ifBlank { item.nestedFirstString("tienda", "direccion_fiscal", "direccion", "address") }
+                    .ifBlank { item.nestedFirstString("sucursal", "direccion", "address") }
+                    .ifBlank { item.firstString("direccion") },
             )
         }
     }
@@ -72,12 +81,25 @@ class CashApiDataSource(context: Context) {
         Unit
     }
 
+    fun cancelSale(saleId: Long, comment: String, restoreStock: Boolean): Result<Unit> = runCatching {
+        require(saleId > 0L) { "Venta invalida." }
+        require(comment.trim().length >= 5) { "Ingrese un motivo de anulacion." }
+        executePost(
+            ApiConfig.CASH_SALE_CANCEL,
+            JSONObject()
+                .put("id_venta", saleId)
+                .put("comentario", comment.trim())
+                .put("actualizar_stock", restoreStock),
+        )
+        Unit
+    }
+
     fun listSales(sessionId: Long): Result<List<SalesHistoryRow>> = runCatching {
         executeGet(ApiConfig.CASH_SALES, mapOf("id_caja_sesion" to sessionId.toString())).resultArray().map { item ->
             SalesHistoryRow(
                 ventaId = item.optLong("id_venta"),
                 numeroComprobante = item.cleanString("numero"),
-                tipoComprobante = "TICK",
+                tipoComprobante = item.cleanString("tipo_comprobante").ifBlank { "TICK" },
                 fechaMillis = parseDate(item.cleanString("fecha")),
                 clienteNombre = item.cleanString("cliente_nombre"),
                 cajeroNombre = item.cleanString("usuario_nombre"),
@@ -114,12 +136,16 @@ class CashApiDataSource(context: Context) {
             igv = total - subtotal,
             total = total,
             tipoPago = firstPayment?.cleanString("metodo").orEmpty(),
-            montoRecibido = firstPayment?.optDoubleFlexible("monto") ?: total,
-            vuelto = 0.0,
+            montoRecibido = sale.optDoubleFlexible("monto_recibido").takeIf { it > 0.0 }
+                ?: firstPayment?.optDoubleFlexible("monto")
+                ?: total,
+            vuelto = sale.optDoubleFlexible("vuelto").coerceAtLeast(0.0),
             fechaMillis = parseDate(sale.cleanString("fecha")),
             lines = lines,
             vendedorNombre = sale.cleanString("cajero_nombre").ifBlank { sale.cleanString("usuario_nombre") },
             idCliente = sale.optLong("id_cliente"),
+            clienteNombre = sale.cleanString("cliente_nombre"),
+            clienteDocumento = sale.cleanString("cliente_documento"),
         )
     }
 
@@ -161,12 +187,36 @@ class CashApiDataSource(context: Context) {
         return (0 until array.length()).mapNotNull(array::optJSONObject)
     }
 
-    private fun JSONObject.cleanString(key: String): String = opt(key).takeUnless { it == null || it == JSONObject.NULL }?.toString()?.trim().orEmpty()
+    private fun JSONObject.cleanString(key: String): String {
+        val raw = opt(key).takeUnless { it == null || it == JSONObject.NULL || it is JSONObject || it is JSONArray }
+        val value = raw?.toString()?.trim().orEmpty()
+        return value.takeUnless { it.equals("null", ignoreCase = true) }.orEmpty()
+    }
+
+    private fun JSONObject.firstString(vararg keys: String): String {
+        keys.forEach { key ->
+            val value = cleanString(key)
+            if (value.isNotBlank()) return value
+        }
+        return ""
+    }
+
+    private fun JSONObject.nestedFirstString(containerKey: String, vararg keys: String): String {
+        val nested = optJSONObject(containerKey) ?: return ""
+        return nested.firstString(*keys)
+    }
 
     private fun JSONObject.optDoubleFlexible(key: String): Double = when (val value = opt(key)) {
         is Number -> value.toDouble()
         is String -> value.replace(",", ".").toDoubleOrNull() ?: 0.0
         else -> 0.0
+    }
+
+    private fun JSONObject.optBooleanFlexible(key: String, fallback: Boolean = false): Boolean = when (val value = opt(key)) {
+        is Boolean -> value
+        is Number -> value.toInt() != 0
+        is String -> value.equals("true", true) || value.equals("s", true) || value == "1" || value.equals("activa", true)
+        else -> fallback
     }
 
     private fun parseDate(value: String): Long {

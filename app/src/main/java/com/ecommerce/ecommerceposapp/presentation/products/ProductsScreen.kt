@@ -3,6 +3,7 @@ package com.ecommerce.ecommerceposapp.presentation.products
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.products.ProductTypeRow
 import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
@@ -121,6 +123,7 @@ fun ProductsCrudScreen(
             ),
             categories = state.categories,
             subcategories = state.subcategories,
+            productTypes = state.productTypes,
             onBack = {
                 creatingAdvanced = false
                 editing = null
@@ -394,6 +397,7 @@ private fun ProductAdvancedEditorView(
     initial: ProductAdminRow,
     categories: List<CategoryAdminRow>,
     subcategories: List<SubcategoryAdminRow>,
+    productTypes: List<ProductTypeRow>,
     onBack: () -> Unit,
     onSave: (ProductAdminRow) -> Unit,
 ) {
@@ -409,6 +413,8 @@ private fun ProductAdvancedEditorView(
     }
     var categoryExpanded by remember { mutableStateOf(false) }
     var subcategoryExpanded by remember { mutableStateOf(false) }
+    var productTypeId by remember(initial) { mutableStateOf(initial.productTypeId) }
+    var productTypeExpanded by remember { mutableStateOf(false) }
     var price by remember(initial) { mutableStateOf(initial.price.toString()) }
     var stock by remember(initial) { mutableStateOf(initial.stock.toString()) }
     var costPrice by remember(initial) { mutableStateOf(initial.costPrice.toString()) }
@@ -437,8 +443,9 @@ private fun ProductAdvancedEditorView(
     val selectedCategoryName = activeCategories.firstOrNull { it.id == categoryId }?.name ?: "Seleccionar"
     val selectedSubcategoryName = availableSubcategories.filter { it.id in selectedSubcategoryIds }
         .joinToString { it.name }.ifBlank { "Sin subcategoria" }
+    val selectedProductTypeName = productTypes.firstOrNull { it.id == productTypeId }?.name ?: "Sin etiqueta"
     val canSaveProduct = name.isNotBlank() && categoryId > 0L && parseDouble(price, 0.0) > 0.0 &&
-        parseDouble(stock, -1.0) >= 0.0 && metaTitle.isNotBlank() && metaDescription.isNotBlank()
+        parseDouble(stock, -1.0) >= 0.0
     val compactEditor = LocalConfiguration.current.screenWidthDp < 900
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) imageUrl = copyPickedProductImage(context, uri)
@@ -457,7 +464,8 @@ private fun ProductAdvancedEditorView(
             offerMaxQuantity = parseDouble(offerMaxQuantity, initial.offerMaxQuantity),
             offerMaxQuantityPrice = parseDouble(offerMaxQuantityPrice, initial.offerMaxQuantityPrice),
             ratingsEnabled = ratingsEnabled, adminRating = parseDouble(adminRating, initial.adminRating),
-            metaTitle = metaTitle, metaDescription = metaDescription, salesChannel = salesChannel, active = active,
+            productTypeId = productTypeId, metaTitle = metaTitle, metaDescription = metaDescription,
+            salesChannel = salesChannel, active = active,
         )
     }
 
@@ -492,7 +500,11 @@ private fun ProductAdvancedEditorView(
                         OutlinedTextField(barcode, { barcode = it }, label = { Text("Código Barra") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
                     OutlinedTextField(name, { name = it }, label = { Text("Nombre *") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    FilterChip(ratingsEnabled, { ratingsEnabled = !ratingsEnabled }, { Text("Permitir calificación por usuarios") })
+                    ProductCheckboxField(
+                        checked = ratingsEnabled,
+                        label = "Permitir calificación por usuarios",
+                        onCheckedChange = { ratingsEnabled = it },
+                    )
                     OutlinedTextField(description, { description = it }, label = { Text("Descripción") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
 
                     Text("Precios", fontWeight = FontWeight.Bold)
@@ -509,53 +521,43 @@ private fun ProductAdvancedEditorView(
                     Text("Inventario y Categorías", fontWeight = FontWeight.Bold)
                     OutlinedTextField(stock, { stock = it }, label = { Text("Stock *") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 2, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.weight(1f)) {
-                            Column {
-                                Text("Categoría *", color = Color(0xFF475569), fontWeight = FontWeight.Medium)
-                                OutlinedButton(onClick = { categoryExpanded = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                                    Text(selectedCategoryName, modifier = Modifier.weight(1f)); Icon(Icons.Filled.KeyboardArrowDown, null)
-                                }
-                            }
-                            DropdownMenu(categoryExpanded, { categoryExpanded = false }) {
-                                activeCategories.forEach { item -> DropdownMenuItem({ Text(item.name) }, {
-                                    categoryId = item.id; subcategoryId = 0L; selectedSubcategoryIds = emptySet(); categoryExpanded = false
-                                }) }
-                            }
-                        }
-                        Box(Modifier.weight(1f)) {
-                            Column {
-                                Text("Sub categoría", color = Color(0xFF475569), fontWeight = FontWeight.Medium)
-                                OutlinedButton(onClick = { subcategoryExpanded = availableSubcategories.isNotEmpty() }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                                    Text(selectedSubcategoryName, modifier = Modifier.weight(1f)); Icon(Icons.Filled.KeyboardArrowDown, null)
-                                }
-                            }
-                            DropdownMenu(subcategoryExpanded, { subcategoryExpanded = false }) {
-                                DropdownMenuItem({ Text("Sin subcategoria") }, {
-                                    subcategoryId = 0L; selectedSubcategoryIds = emptySet(); subcategoryExpanded = false
-                                })
-                                availableSubcategories.forEach { item ->
-                                    DropdownMenuItem(
-                                        text = { Text(if (item.id in selectedSubcategoryIds) "✓ ${item.name}" else item.name) },
-                                        onClick = {
-                                            selectedSubcategoryIds = if (item.id in selectedSubcategoryIds) {
-                                                selectedSubcategoryIds - item.id
-                                            } else {
-                                                selectedSubcategoryIds + item.id
-                                            }
-                                            subcategoryId = selectedSubcategoryIds.firstOrNull() ?: 0L
-                                        },
-                                    )
-                                }
-                            }
-                        }
+                        ProductSelectField(
+                            label = "Categoría", value = selectedCategoryName, expanded = categoryExpanded,
+                            onExpandedChange = { categoryExpanded = it }, required = true,
+                            options = activeCategories.map { ProductSelectOption(it.id, it.name) },
+                            onSelect = { categoryId = it; subcategoryId = 0L; selectedSubcategoryIds = emptySet() },
+                            modifier = Modifier.weight(1f),
+                        )
+                        ProductMultiSelectField(
+                            label = "Subcategorías", value = selectedSubcategoryName, expanded = subcategoryExpanded,
+                            onExpandedChange = { subcategoryExpanded = it },
+                            options = availableSubcategories.map { ProductSelectOption(it.id, it.name) },
+                            selectedIds = selectedSubcategoryIds,
+                            onToggle = { id ->
+                                selectedSubcategoryIds = if (id in selectedSubcategoryIds) selectedSubcategoryIds - id else selectedSubcategoryIds + id
+                                subcategoryId = selectedSubcategoryIds.firstOrNull() ?: 0L
+                            },
+                            onClear = { subcategoryId = 0L; selectedSubcategoryIds = emptySet() },
+                            enabled = categoryId > 0L && availableSubcategories.isNotEmpty(),
+                            modifier = Modifier.weight(1f),
+                        )
                     }
-                    Text("Etiqueta", color = Color(0xFF475569), fontWeight = FontWeight.Medium)
-                    Surface(color = Color(0xFFF8FAFC), shape = RoundedCornerShape(10.dp)) { Text("Home - Nuestros Productos", Modifier.fillMaxWidth().padding(16.dp)) }
-                    FilterChip(active, { active = !active }, { Text("Estado: ${if (active) "ACTIVO" else "INACTIVO"}") })
+                    ProductSelectField(
+                        label = "Etiqueta", value = selectedProductTypeName, expanded = productTypeExpanded,
+                        onExpandedChange = { productTypeExpanded = it },
+                        options = productTypes.map { ProductSelectOption(it.id, it.name) },
+                        onSelect = { productTypeId = it }, clearLabel = "Sin etiqueta",
+                        enabled = productTypes.isNotEmpty(), modifier = Modifier.fillMaxWidth(),
+                    )
+                    ProductCheckboxField(
+                        checked = active,
+                        label = "Producto activo",
+                        onCheckedChange = { active = it },
+                    )
 
                     Text("SEO descripción", fontWeight = FontWeight.Bold)
-                    OutlinedTextField(metaTitle, { metaTitle = it }, label = { Text("Meta Titulo Producto *") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(metaDescription, { metaDescription = it }, label = { Text("Meta Descripcion Producto *") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+                    OutlinedTextField(metaTitle, { metaTitle = it }, label = { Text("Meta título del producto (opcional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    OutlinedTextField(metaDescription, { metaDescription = it }, label = { Text("Meta descripción del producto (opcional)") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                     if (compactEditor) {
                         OutlinedButton(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                             Icon(Icons.Filled.Image, contentDescription = null); Spacer(Modifier.width(8.dp)); Text("Seleccionar imagen")
@@ -571,7 +573,12 @@ private fun ProductAdvancedEditorView(
             }
             if (!compactEditor) Surface(modifier = Modifier.width(360.dp).fillMaxSize(), color = Color.White) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.fillMaxWidth().height(210.dp).background(Color(0xFFF8FAFC)).clickable { imagePicker.launch("image/*") }, contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.fillMaxWidth().height(210.dp).background(Color.White)
+                            .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp))
+                            .clickable { imagePicker.launch("image/*") },
+                        contentAlignment = Alignment.Center,
+                    ) {
                         if (imageUrl.isBlank()) Icon(Icons.Filled.Image, contentDescription = "Seleccionar imagen", modifier = Modifier.size(44.dp))
                         else AsyncImage(imageUrl, contentDescription = name, modifier = Modifier.fillMaxSize())
                     }
@@ -610,6 +617,7 @@ private fun ProductAdvancedEditorView(
                                         offerMaxQuantityPrice = parseDouble(offerMaxQuantityPrice, initial.offerMaxQuantityPrice),
                                         ratingsEnabled = ratingsEnabled,
                                         adminRating = parseDouble(adminRating, initial.adminRating),
+                                        productTypeId = productTypeId,
                                         metaTitle = metaTitle,
                                         metaDescription = metaDescription,
                                         salesChannel = salesChannel,
@@ -641,5 +649,17 @@ private fun RowScope.SalesChannelChip(
         onClick = { onSelect(value) },
         label = { Text(label) },
         modifier = Modifier.weight(1f),
+        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+            containerColor = Color.White,
+            selectedContainerColor = Color.White,
+            labelColor = Color(0xFF111827),
+            selectedLabelColor = Color(0xFFFD0505),
+        ),
+        border = androidx.compose.material3.FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = selectedValue == value,
+            borderColor = Color(0xFFCBD5E1),
+            selectedBorderColor = Color(0xFFFD0505),
+        ),
     )
 }

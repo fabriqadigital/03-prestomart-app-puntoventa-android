@@ -1,116 +1,729 @@
 package com.ecommerce.ecommerceposapp.presentation.profile
 
-import android.content.Context
 import android.net.Uri
+import android.util.Base64
+import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.BusinessCenter
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Store
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.ecommerce.ecommerceposapp.data.remote.api.CashApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.CashierProfileApiDataSource
 import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
-import java.io.File
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private val Brand = Color(0xFFFD0505)
+private val BrandDark = Color(0xFFA82024)
+private val TextPrimary = Color(0xFF111827)
+private val Muted = Color(0xFF64748B)
+private val Border = Color(0xFFE6DADA)
+
+private enum class ProfileMode { View, Edit, Security }
+
+private data class ProfileCashStats(
+    val salesCount: Int = 0,
+    val openedHours: Double = 0.0,
+    val totalCollected: Double = 0.0,
+    val currentCashBalance: Double = 0.0,
+    val income: Double = 0.0,
+    val expenses: Double = 0.0,
+)
 
 @Composable
-fun ProfileScreen(session: UserSession, onLogout: () -> Unit, onNotice: (String) -> Unit = {}) {
+fun ProfileScreen(
+    session: UserSession,
+    onSessionUpdated: (UserSession) -> Unit,
+    onNotice: (String) -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var resolvedSession by remember(session) { mutableStateOf(session) }
-    var editing by remember { mutableStateOf(false) }
+    var mode by remember { mutableStateOf(ProfileMode.View) }
     var saving by remember { mutableStateOf(false) }
-    var name by remember(session) { mutableStateOf(session.name) }
-    var lastName by remember(session) { mutableStateOf(session.lastName) }
-    var email by remember(session) { mutableStateOf(session.email) }
-    var document by remember(session) { mutableStateOf(session.document) }
-    var phone by remember(session) { mutableStateOf(session.phone) }
-    var address by remember(session) { mutableStateOf(session.address) }
+    var name by remember(session) { mutableStateOf(session.name.cleanDisplay()) }
+    var lastName by remember(session) { mutableStateOf(session.lastName.cleanDisplay()) }
+    var email by remember(session) { mutableStateOf(session.email.cleanDisplay()) }
+    var document by remember(session) { mutableStateOf(session.document.cleanDisplay()) }
+    var phone by remember(session) { mutableStateOf(session.phone.cleanDisplay()) }
+    var address by remember(session) { mutableStateOf(session.address.cleanDisplay()) }
+    var currentPassword by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
+    var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var cashStats by remember { mutableStateOf(ProfileCashStats()) }
+
+    fun resetForm(source: UserSession = resolvedSession) {
+        name = source.name.cleanDisplay()
+        lastName = source.lastName.cleanDisplay()
+        email = source.email.cleanDisplay()
+        document = source.document.cleanDisplay()
+        phone = source.phone.cleanDisplay()
+        address = source.address.cleanDisplay()
+        currentPassword = ""
+        password = ""
+        confirmation = ""
+        pendingPhotoUri = null
+    }
+
     LaunchedEffect(session.cashierId) {
         if (session.offlineSession) return@LaunchedEffect
         withContext(Dispatchers.IO) { CashierProfileApiDataSource(context).fetch(session) }
             .onSuccess { fresh ->
-                resolvedSession = fresh; name = fresh.name; lastName = fresh.lastName; email = fresh.email
-                document = fresh.document; phone = fresh.phone; address = fresh.address
+                resolvedSession = fresh
+                resetForm(fresh)
+                onSessionUpdated(fresh)
             }
             .onFailure { onNotice(it.message ?: "No se pudo cargar la ficha completa del cajero.") }
     }
-    val photoKey = "profile_photo_${session.id}"
-    var photo by remember(session.id) { mutableStateOf(context.getSharedPreferences("profile_preferences", Context.MODE_PRIVATE).getString(photoKey, "").orEmpty()) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        runCatching { savePhoto(context, session.id, uri) }.onSuccess {
-            photo = it; context.getSharedPreferences("profile_preferences", Context.MODE_PRIVATE).edit().putString(photoKey, it).apply(); onNotice("Foto actualizada.")
-        }.onFailure { onNotice("No se pudo guardar la foto.") }
+
+    LaunchedEffect(resolvedSession.cashierId) {
+        if (resolvedSession.cashierId <= 0L || resolvedSession.offlineSession) return@LaunchedEffect
+        val cash = CashApiDataSource(context)
+        while (isActive) {
+            val stats = withContext(Dispatchers.IO) {
+                runCatching {
+                    val open = cash.findOpenSession(resolvedSession.cashierId).getOrThrow()
+                        ?: return@runCatching ProfileCashStats()
+                    val summary = cash.summary(open.id).getOrThrow()
+                    val sales = cash.listSales(open.id).getOrDefault(emptyList())
+                        .filter { !it.estado.equals("Anulada", ignoreCase = true) }
+                    val hours = ((System.currentTimeMillis() - open.openedAt).coerceAtLeast(0L) / 3_600_000.0)
+                    ProfileCashStats(
+                        salesCount = sales.size,
+                        openedHours = hours,
+                        totalCollected = summary.totalSales,
+                        currentCashBalance = summary.expectedCash,
+                        income = summary.income,
+                        expenses = summary.expenses,
+                    )
+                }
+            }
+            stats.onSuccess { cashStats = it }
+            delay(15_000)
+        }
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column { Text("Mi perfil", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text("Información de tu cuenta de cajero", color = Color(0xFF64748B)) }
-            if (!editing) Button(onClick = { editing = true }, colors = ButtonDefaults.buttonColors(Brand), shape = RoundedCornerShape(10.dp)) { Icon(Icons.Filled.Edit, null); Spacer(Modifier.width(6.dp)); Text("Editar") }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        pendingPhotoUri = uri
+    }
+
+    val persistedAvatar = remember(resolvedSession.avatar, resolvedSession.avatarBase64) {
+        resolvedSession.avatarModel()
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.White)) {
+        val compact = maxWidth < 600.dp
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(if (compact) 12.dp else 24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Text("Mi perfil", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = TextPrimary)
+
+        ProfileHeader(
+            session = resolvedSession,
+            name = name,
+            lastName = lastName,
+            avatar = pendingPhotoUri ?: persistedAvatar,
+            photoEditable = mode == ProfileMode.Edit,
+            onPickPhoto = { picker.launch("image/*") },
+            onEdit = { mode = ProfileMode.Edit },
+            onSecurity = { mode = ProfileMode.Security },
+        )
+
+        when (mode) {
+            ProfileMode.View -> ProfileReadOnly(name, lastName, email, document, phone, address, resolvedSession, cashStats)
+            ProfileMode.Edit -> ProfileEditForm(
+                name = name,
+                lastName = lastName,
+                email = email,
+                document = document,
+                phone = phone,
+                address = address,
+                session = resolvedSession,
+                saving = saving,
+                onName = { name = it },
+                onLastName = { lastName = it },
+                onEmail = { email = it },
+                onDocument = { document = it },
+                onPhone = { phone = it },
+                onAddress = { address = it },
+                onCancel = {
+                    mode = ProfileMode.View
+                    resetForm()
+                },
+                onSave = {
+                    scope.launch {
+                        saving = true
+                        val result = withContext(Dispatchers.IO) {
+                            CashierProfileApiDataSource(context).update(
+                                resolvedSession,
+                                name,
+                                lastName,
+                                email,
+                                document,
+                                phone,
+                                address,
+                                currentPassword = "",
+                                password = "",
+                                passwordConfirmation = "",
+                                imageUri = pendingPhotoUri,
+                            )
+                        }
+                        saving = false
+                        result.onSuccess { fresh ->
+                            resolvedSession = fresh
+                            resetForm(fresh)
+                            onSessionUpdated(fresh)
+                            mode = ProfileMode.View
+                            onNotice("Perfil actualizado correctamente.")
+                        }.onFailure { onNotice(it.message ?: "No se pudo actualizar el perfil.") }
+                    }
+                },
+            )
+            ProfileMode.Security -> SecurityForm(
+                currentPassword = currentPassword,
+                password = password,
+                confirmation = confirmation,
+                saving = saving,
+                onCurrentPassword = { currentPassword = it },
+                onPassword = { password = it },
+                onConfirmation = { confirmation = it },
+                onCancel = {
+                    mode = ProfileMode.View
+                    resetForm()
+                },
+                onSave = {
+                    if (currentPassword.isBlank() || password.isBlank()) {
+                        onNotice("Ingrese la contrasena actual y la nueva contrasena.")
+                        return@SecurityForm
+                    }
+                    if (password != confirmation) {
+                        onNotice("Las contrasenas no coinciden.")
+                        return@SecurityForm
+                    }
+                    scope.launch {
+                        saving = true
+                        val result = withContext(Dispatchers.IO) {
+                            CashierProfileApiDataSource(context).update(
+                                resolvedSession,
+                                name,
+                                lastName,
+                                email,
+                                document,
+                                phone,
+                                address,
+                                currentPassword = currentPassword,
+                                password = password,
+                                passwordConfirmation = confirmation,
+                            )
+                        }
+                        saving = false
+                        result.onSuccess { fresh ->
+                            resolvedSession = fresh
+                            resetForm(fresh)
+                            onSessionUpdated(fresh)
+                            mode = ProfileMode.View
+                            onNotice("Contrasena actualizada correctamente.")
+                        }.onFailure { onNotice(it.message ?: "No se pudo actualizar la contrasena.") }
+                    }
+                },
+            )
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            Box(contentAlignment = Alignment.BottomEnd) {
-                Surface(Modifier.size(112.dp), shape = CircleShape, color = Color(0xFFFFE4E6)) {
-                    if (photo.isNotBlank()) AsyncImage(photo, "Foto", Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
-                    else Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Person, null, Modifier.size(60.dp), tint = Brand) }
+    }
+    }
+}
+
+@Composable
+private fun ProfileHeader(
+    session: UserSession,
+    name: String,
+    lastName: String,
+    avatar: Any?,
+    photoEditable: Boolean,
+    onPickPhoto: () -> Unit,
+    onEdit: () -> Unit,
+    onSecurity: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border),
+        shadowElevation = 1.dp,
+    ) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val compact = maxWidth < 600.dp
+            if (compact) {
+                Column(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    ProfileAvatar(name, avatar, photoEditable, onPickPhoto, 88.dp)
+                    ProfileIdentity(session, name, lastName, Alignment.CenterHorizontally)
+                    ProfileHeaderActions(onEdit, onSecurity, Modifier.fillMaxWidth(), horizontal = true)
                 }
-                if (editing) IconButton(onClick = { picker.launch("image/*") }, modifier = Modifier.size(40.dp), colors = IconButtonDefaults.iconButtonColors(containerColor = Brand, contentColor = Color.White)) { Icon(Icons.Filled.CameraAlt, "Cambiar foto") }
-            }
-            Column { Text("$name $lastName".trim(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text(resolvedSession.role, color = Color(0xFF64748B)); Text(resolvedSession.defaultCashRegisterName.ifBlank { "Sin caja asignada" }, color = Brand) }
-        }
-        HorizontalDivider(color = Color(0xFFE2E8F0))
-        if (!editing) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                ReadRow("Nombres", name); ReadRow("Apellidos", lastName); ReadRow("Correo electrónico", email); ReadRow("Tipo de documento", resolvedSession.documentType); ReadRow("Número de documento", document); ReadRow("Número de celular", phone); ReadRow("Dirección", address); ReadRow("Sucursal", resolvedSession.branchName); ReadRow("Caja asignada", resolvedSession.defaultCashRegisterName); ReadRow("Rol", resolvedSession.role)
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Información personal", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                OutlinedTextField(name, { name = it }, label = { Text("Nombre completo") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(lastName, { lastName = it }, label = { Text("Apellidos") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                OutlinedTextField(email, { email = it }, label = { Text("Correo electrónico") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { OutlinedTextField(document, { document = it }, label = { Text("Documento") }, modifier = Modifier.weight(1f), singleLine = true); OutlinedTextField(phone, { phone = it }, label = { Text("Celular") }, modifier = Modifier.weight(1f), singleLine = true) }
-                OutlinedTextField(address, { address = it }, label = { Text("Dirección") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                ReadRow("Sucursal", resolvedSession.branchName); ReadRow("Caja asignada", resolvedSession.defaultCashRegisterName)
-                Text("Cambiar contraseña", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                OutlinedTextField(password, { password = it }, label = { Text("Nueva contraseña (opcional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
-                OutlinedTextField(confirmation, { confirmation = it }, label = { Text("Confirmar contraseña") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { editing = false; name = resolvedSession.name; lastName = resolvedSession.lastName; email = resolvedSession.email; document = resolvedSession.document; phone = resolvedSession.phone; address = resolvedSession.address }) { Text("Cancelar") }
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = {
-                        if (password.isNotBlank() && password != confirmation) { onNotice("Las contraseñas no coinciden."); return@Button }
-                        scope.launch { saving = true; val result = withContext(Dispatchers.IO) { CashierProfileApiDataSource(context).update(resolvedSession, name, lastName, email, document, phone, address, password) }; saving = false; result.onSuccess { editing = false; password = ""; confirmation = ""; onNotice("Perfil actualizado correctamente.") }.onFailure { onNotice(it.message ?: "No se pudo actualizar el perfil.") } }
-                    }, enabled = !saving && name.isNotBlank() && email.isNotBlank(), colors = ButtonDefaults.buttonColors(Brand)) { if (saving) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp) else Text("Guardar cambios") }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth().padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    ProfileAvatar(name, avatar, photoEditable, onPickPhoto, 96.dp)
+                    ProfileIdentity(session, name, lastName, Alignment.Start, Modifier.weight(1f))
+                    ProfileHeaderActions(onEdit, onSecurity)
                 }
             }
         }
     }
 }
 
-@Composable private fun ReadRow(label: String, value: String) { Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalArrangement = Arrangement.SpaceBetween) { Text(label, color = Color(0xFF64748B)); Text(value.ifBlank { "No registrado" }, fontWeight = FontWeight.SemiBold) }; HorizontalDivider(color = Color(0xFFF1F5F9)) }
-private fun savePhoto(context: Context, userId: Long, uri: Uri): String { val dir = File(context.filesDir, "profile_photos").apply { mkdirs() }; val target = File(dir, "cashier_$userId.jpg"); context.contentResolver.openInputStream(uri)?.use { i -> target.outputStream().use(i::copyTo) } ?: error("Imagen inválida"); return "file://${target.absolutePath}" }
+@Composable
+private fun ProfileAvatar(name: String, avatar: Any?, editable: Boolean, onPickPhoto: () -> Unit, size: androidx.compose.ui.unit.Dp) {
+    Box(contentAlignment = Alignment.BottomEnd) {
+        Surface(Modifier.size(size), shape = CircleShape, color = Color(0xFFFFE4E6)) {
+            if (avatar != null) {
+                if (avatar is ImageBitmap) {
+                    Image(avatar, "Foto de perfil", Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                } else {
+                    AsyncImage(avatar, "Foto de perfil", Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                }
+            } else {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(name.firstInitial(), color = Brand, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium)
+                }
+            }
+        }
+        if (editable) {
+            IconButton(
+                onClick = onPickPhoto,
+                modifier = Modifier.size(34.dp),
+                colors = IconButtonDefaults.iconButtonColors(containerColor = Brand, contentColor = Color.White),
+            ) { Icon(Icons.Filled.CameraAlt, "Cambiar foto", Modifier.size(18.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun ProfileIdentity(
+    session: UserSession,
+    name: String,
+    lastName: String,
+    alignment: Alignment.Horizontal,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, horizontalAlignment = alignment, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            "$name $lastName".trim().ifBlank { "-" },
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            StatusChip(session.role.cleanDisplay().ifBlank { "-" }, Color(0xFFEFF6FF), Color(0xFF475569))
+            StatusChip(session.defaultCashRegisterName.cleanDisplay().ifBlank { "-" }, Color(0xFFFFE4E6), BrandDark)
+        }
+    }
+}
+
+@Composable
+private fun ProfileHeaderActions(
+    onEdit: () -> Unit,
+    onSecurity: () -> Unit,
+    modifier: Modifier = Modifier,
+    horizontal: Boolean = false,
+) {
+    val editButton: @Composable (Modifier) -> Unit = { buttonModifier ->
+        Button(onClick = onEdit, modifier = buttonModifier, colors = ButtonDefaults.buttonColors(Brand), shape = RoundedCornerShape(8.dp)) {
+            Icon(Icons.Filled.Edit, null, Modifier.size(17.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Editar perfil", maxLines = 1)
+        }
+    }
+    val securityButton: @Composable (Modifier) -> Unit = { buttonModifier ->
+        OutlinedButton(onClick = onSecurity, modifier = buttonModifier, shape = RoundedCornerShape(8.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
+            Icon(Icons.Filled.Lock, null, Modifier.size(17.dp), tint = Muted)
+            Spacer(Modifier.width(6.dp))
+            Text("Seguridad", color = Muted, maxLines = 1)
+        }
+    }
+    if (horizontal) {
+        Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            editButton(Modifier.weight(1f))
+            securityButton(Modifier.weight(1f))
+        }
+    } else {
+        Column(modifier, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            editButton(Modifier)
+            securityButton(Modifier)
+        }
+    }
+}
+
+@Composable
+private fun ProfileReadOnly(name: String, lastName: String, email: String, document: String, phone: String, address: String, session: UserSession, stats: ProfileCashStats) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val wide = maxWidth >= 760.dp
+            if (wide) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    InfoCard("Informacion personal", Icons.Filled.Person, Modifier.weight(1f)) {
+                        InfoGrid(
+                            listOf(
+                                "Nombres" to name,
+                                "Apellidos" to lastName,
+                                "Correo electronico" to email,
+                                "Tipo de documento" to session.documentType,
+                                "Numero de documento" to document,
+                                "Numero de celular" to phone,
+                            ),
+                        )
+                    }
+                    InfoCard("Datos laborales", Icons.Filled.BusinessCenter, Modifier.weight(1f)) {
+                        InfoGrid(
+                            listOf(
+                                "Rol en el sistema" to session.role,
+                                "Caja asignada" to session.defaultCashRegisterName,
+                                "Sucursal" to session.branchName,
+                                "Direccion residencial" to address,
+                            ),
+                        )
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    InfoCard("Informacion personal", Icons.Filled.Person, Modifier.fillMaxWidth()) {
+                        InfoGrid(listOf("Nombres" to name, "Apellidos" to lastName, "Correo electronico" to email, "Tipo de documento" to session.documentType, "Numero de documento" to document, "Numero de celular" to phone))
+                    }
+                    InfoCard("Datos laborales", Icons.Filled.BusinessCenter, Modifier.fillMaxWidth()) {
+                        InfoGrid(listOf("Rol en el sistema" to session.role, "Caja asignada" to session.defaultCashRegisterName, "Sucursal" to session.branchName, "Direccion residencial" to address))
+                    }
+                }
+            }
+        }
+        StatsRow(stats)
+    }
+}
+
+@Composable
+private fun ProfileEditForm(
+    name: String,
+    lastName: String,
+    email: String,
+    document: String,
+    phone: String,
+    address: String,
+    session: UserSession,
+    saving: Boolean,
+    onName: (String) -> Unit,
+    onLastName: (String) -> Unit,
+    onEmail: (String) -> Unit,
+    onDocument: (String) -> Unit,
+    onPhone: (String) -> Unit,
+    onAddress: (String) -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
+    InfoCard("Editar informacion", Icons.Filled.Edit, Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(name, onName, label = { Text("Nombres") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(lastName, onLastName, label = { Text("Apellidos") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(email, onEmail, label = { Text("Correo electronico") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth < 480.dp) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(document, onDocument, label = { Text("Documento") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        OutlinedTextField(phone, onPhone, label = { Text("Celular") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(document, onDocument, label = { Text("Documento") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(phone, onPhone, label = { Text("Celular") }, modifier = Modifier.weight(1f), singleLine = true)
+                    }
+                }
+            }
+            OutlinedTextField(address, onAddress, label = { Text("Direccion") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            InfoLine("Sucursal", session.branchName, Icons.Filled.Store)
+            InfoLine("Caja asignada", session.defaultCashRegisterName, Icons.Filled.Badge)
+            ActionRow(saving, "Guardar cambios", onCancel, onSave)
+        }
+    }
+}
+
+@Composable
+private fun SecurityForm(
+    currentPassword: String,
+    password: String,
+    confirmation: String,
+    saving: Boolean,
+    onCurrentPassword: (String) -> Unit,
+    onPassword: (String) -> Unit,
+    onConfirmation: (String) -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
+    var currentVisible by remember { mutableStateOf(false) }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmationVisible by remember { mutableStateOf(false) }
+    InfoCard("Seguridad", Icons.Filled.Lock, Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            PasswordField(currentPassword, onCurrentPassword, "Contrasena actual", currentVisible) { currentVisible = !currentVisible }
+            PasswordField(password, onPassword, "Nueva contrasena", passwordVisible) { passwordVisible = !passwordVisible }
+            PasswordField(confirmation, onConfirmation, "Confirmar nueva contrasena", confirmationVisible) { confirmationVisible = !confirmationVisible }
+            Text("Al guardar, el backend recibira la senal para enviar la confirmacion al correo del cajero.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            ActionRow(saving, "Guardar seguridad", onCancel, onSave)
+        }
+    }
+}
+
+@Composable
+private fun PasswordField(value: String, onValueChange: (String) -> Unit, label: String, visible: Boolean, onToggleVisible: () -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = onToggleVisible) {
+                Icon(
+                    if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = if (visible) "Ocultar contrasena" else "Mostrar contrasena",
+                )
+            }
+        },
+    )
+}
+
+@Composable
+private fun StatsRow(stats: ProfileCashStats) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val wide = maxWidth >= 760.dp
+        val cards = listOf(
+            Triple(Icons.Filled.Badge, stats.salesCount.toString(), "Ventas hasta cierre"),
+            Triple(Icons.Filled.Timer, String.format(Locale.US, "%.1fh", stats.openedHours), "Horas de caja"),
+            Triple(Icons.Filled.Store, "S/ ${String.format(Locale.US, "%.2f", stats.totalCollected)}", "Total recaudado"),
+            Triple(Icons.Filled.AccountBalanceWallet, "S/ ${String.format(Locale.US, "%.2f", stats.currentCashBalance)}", "Saldo actual de caja"),
+            Triple(Icons.AutoMirrored.Filled.TrendingUp, "S/ ${String.format(Locale.US, "%.2f", stats.income)}", "Ingresos de caja"),
+            Triple(Icons.AutoMirrored.Filled.TrendingDown, "S/ ${String.format(Locale.US, "%.2f", stats.expenses)}", "Salidas de caja"),
+        )
+        if (wide) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                cards.chunked(3).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { (icon, value, label) -> StatCard(icon, value, label, Modifier.weight(1f)) }
+                    }
+                }
+            }
+        } else if (maxWidth < 420.dp) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                cards.forEach { (icon, value, label) -> StatCard(icon, value, label, Modifier.fillMaxWidth()) }
+            }
+        } else {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                cards.chunked(2).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { (icon, value, label) -> StatCard(icon, value, label, Modifier.weight(1f)) }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatCard(icon: ImageVector, value: String, label: String, modifier: Modifier) {
+    Surface(
+        modifier = modifier.height(92.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border),
+        shadowElevation = 1.dp,
+    ) {
+        Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Icon(icon, null, tint = Brand, modifier = Modifier.size(20.dp))
+            Column {
+                Text(value, color = TextPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(label, color = Muted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoCard(title: String, icon: ImageVector, modifier: Modifier, content: @Composable () -> Unit) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border),
+        shadowElevation = 1.dp,
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().background(Color(0xFFFFFBFB)).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, tint = Brand, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(title, fontWeight = FontWeight.Bold, color = TextPrimary)
+            }
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoGrid(rows: List<Pair<String, String>>) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = if (maxWidth < 480.dp) 1 else 2
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            rows.chunked(columns).forEach { pair ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    pair.forEach { (label, value) ->
+                        InfoText(label, value, Modifier.weight(1f))
+                    }
+                    if (columns == 2 && pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoText(label: String, value: String, modifier: Modifier) {
+    Column(modifier.heightIn(min = 48.dp)) {
+        Text(label.uppercase(), color = Muted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        Text(value.cleanDisplay().ifBlank { "-" }, color = TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun InfoLine(label: String, value: String, icon: ImageVector) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Icon(icon, null, tint = Muted, modifier = Modifier.size(18.dp))
+        Column(Modifier.weight(1f)) {
+            Text(label, color = Muted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            Text(value.cleanDisplay().ifBlank { "-" }, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun ActionRow(saving: Boolean, primaryText: String, onCancel: () -> Unit, onSave: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = onCancel, enabled = !saving) { Text("Cancelar", color = Muted) }
+        Spacer(Modifier.width(8.dp))
+        Button(onClick = onSave, enabled = !saving, colors = ButtonDefaults.buttonColors(Brand), shape = RoundedCornerShape(8.dp)) {
+            if (saving) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp) else Text(primaryText)
+        }
+    }
+}
+
+@Composable
+private fun StatusChip(text: String, bg: Color, fg: Color) {
+    Surface(shape = RoundedCornerShape(50), color = bg) {
+        Text(text.cleanDisplay().ifBlank { "-" }, color = fg, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+    }
+}
+
+private fun String.cleanDisplay(): String {
+    val value = trim()
+    return value.takeUnless { it.isBlank() || it.equals("null", ignoreCase = true) }.orEmpty()
+}
+
+private fun String.firstInitial(): String = cleanDisplay().firstOrNull()?.uppercase() ?: "C"
+
+private fun UserSession.avatarModel(): Any? {
+    val encoded = avatarBase64.cleanDisplay().ifBlank {
+        avatar.cleanDisplay().takeIf { it.startsWith("data:image/") }?.substringAfter("base64,").orEmpty()
+    }
+    if (encoded.isNotBlank()) {
+        return runCatching {
+            val bytes = Base64.decode(encoded, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
+    val value = avatar.cleanDisplay()
+    if (value.startsWith("http://") || value.startsWith("https://") || value.startsWith("content://")) return value
+    return null
+}

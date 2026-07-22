@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -52,7 +54,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import java.util.Locale
@@ -84,20 +88,39 @@ private fun money(value: Double): String = "S/" + String.format(Locale.US, "%.2f
 internal fun CobrarVentaDialog(
     total: Double,
     cashierName: String,
+    clients: List<ClientRow>,
+    initialClient: ClientRow?,
     onDismiss: () -> Unit,
-    onCobroExitoso: (CompletedSaleReceipt, TipoComprobanteEmision) -> Unit,
-    onPay: suspend (SalePaymentInfo) -> Result<CompletedSaleReceipt>,
+    onCobroExitoso: (CompletedSaleReceipt, TipoComprobanteEmision, ReceiptCustomerInfo) -> Unit,
+    onPay: suspend (SalePaymentInfo, ReceiptCustomerInfo, TipoComprobanteEmision) -> Result<CompletedSaleReceipt>,
 ) {
     var step by remember { mutableStateOf(PaymentStep.Methods) }
     var method by remember { mutableStateOf<PaymentMethod?>(null) }
-    var receiptType by remember { mutableStateOf(TipoComprobanteEmision.BOLETA) }
+    var receiptType by remember { mutableStateOf(TipoComprobanteEmision.SOLO_TICKET) }
+    var selectedClient by remember(initialClient) { mutableStateOf(initialClient) }
+    var customerName by remember(initialClient) { mutableStateOf(initialClient?.let { it.businessName.ifBlank { it.name } }.orEmpty()) }
+    var customerDoc by remember(initialClient) { mutableStateOf(initialClient?.document.orEmpty()) }
     var receivedText by remember(total) { mutableStateOf("") }
     var processing by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val received = receivedText.replace(',', '.').toDoubleOrNull() ?: 0.0
     val change = (received - total).coerceAtLeast(0.0)
-    val canContinue = !processing && method != null && (method != PaymentMethod.Cash || received >= total)
+    val customerInfo = if (receiptType == TipoComprobanteEmision.SOLO_TICKET) {
+        ReceiptCustomerInfo()
+    } else {
+        ReceiptCustomerInfo(
+            id = selectedClient?.id ?: 0L,
+            name = customerName.trim(),
+            document = customerDoc.filter(Char::isDigit),
+        )
+    }
+    val customerValid = when (receiptType) {
+        TipoComprobanteEmision.BOLETA -> customerInfo.name.isNotBlank() && customerInfo.document.length == 8
+        TipoComprobanteEmision.FACTURA -> customerInfo.name.isNotBlank() && customerInfo.document.length == 11
+        TipoComprobanteEmision.SOLO_TICKET -> true
+    }
+    val canContinue = !processing && customerValid && method != null && (method != PaymentMethod.Cash || received >= total)
 
     fun selectMethod(selected: PaymentMethod) {
         method = selected
@@ -117,10 +140,10 @@ internal fun CobrarVentaDialog(
                 montoRecibido = if (selected == PaymentMethod.Cash) received else total,
                 vuelto = if (selected == PaymentMethod.Cash) change else 0.0,
             )
-            onPay(payment).fold(
+            onPay(payment, customerInfo, receiptType).fold(
                 onSuccess = {
                     processing = false
-                    onCobroExitoso(it, receiptType)
+                    onCobroExitoso(it, receiptType, customerInfo)
                     onDismiss()
                 },
                 onFailure = {
@@ -155,7 +178,62 @@ internal fun CobrarVentaDialog(
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.height(16.dp))
-                ReceiptTypeSelector(selected = receiptType, onSelect = { receiptType = it })
+                ReceiptTypeSelector(
+                    selected = receiptType,
+                    onSelect = { selectedType ->
+                        if (selectedType != receiptType) {
+                            receiptType = selectedType
+                            val requiredLength = if (selectedType == TipoComprobanteEmision.FACTURA) 11 else 8
+                            val compatibleClient = initialClient?.takeIf {
+                                selectedType != TipoComprobanteEmision.SOLO_TICKET && it.document.filter(Char::isDigit).length == requiredLength
+                            }
+                            selectedClient = compatibleClient
+                            customerName = compatibleClient?.let { it.businessName.ifBlank { it.name } }.orEmpty()
+                            customerDoc = compatibleClient?.document?.filter(Char::isDigit).orEmpty()
+                            errorText = ""
+                        }
+                    },
+                )
+                if (receiptType != TipoComprobanteEmision.SOLO_TICKET) {
+                    Spacer(Modifier.height(14.dp))
+                    ReceiptCustomerSection(
+                        receiptType = receiptType,
+                        clients = clients,
+                        selectedClient = selectedClient,
+                        customerName = customerName,
+                        customerDoc = customerDoc,
+                        onClientSelected = { client ->
+                            selectedClient = client
+                            customerName = client?.let { it.businessName.ifBlank { it.name } }.orEmpty()
+                            customerDoc = client?.document.orEmpty()
+                            errorText = ""
+                        },
+                        onNameChange = {
+                            selectedClient = null
+                            customerName = it
+                            errorText = ""
+                        },
+                        onDocChange = { value ->
+                            val maxLength = if (receiptType == TipoComprobanteEmision.FACTURA) 11 else 8
+                            val document = value.filter(Char::isDigit).take(maxLength)
+                            val matchingClient = clients.firstOrNull {
+                                it.active && it.document.filter(Char::isDigit) == document && document.length == maxLength
+                            }
+                            selectedClient = matchingClient
+                            customerDoc = document
+                            customerName = matchingClient?.let { it.businessName.ifBlank { it.name } }.orEmpty()
+                            errorText = ""
+                        },
+                    )
+                }
+                if (!customerValid) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        if (receiptType == TipoComprobanteEmision.FACTURA) "Ingrese RUC de 11 digitos y razon social." else "Ingrese DNI de 8 digitos y nombre del cliente.",
+                        color = PaymentBrand,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 Spacer(Modifier.height(22.dp))
 
                 if (step == PaymentStep.Methods) {
@@ -223,9 +301,9 @@ private fun ReceiptTypeSelector(
     Spacer(Modifier.height(7.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(
+            TipoComprobanteEmision.SOLO_TICKET to "Ticket",
             TipoComprobanteEmision.BOLETA to "Boleta",
             TipoComprobanteEmision.FACTURA to "Factura",
-            TipoComprobanteEmision.SOLO_TICKET to "Solo ticket",
         ).forEach { (type, label) ->
             val active = selected == type
             OutlinedButton(
@@ -240,6 +318,86 @@ private fun ReceiptTypeSelector(
             ) { Text(label, maxLines = 1) }
         }
     }
+}
+
+@Composable
+private fun ReceiptCustomerSection(
+    receiptType: TipoComprobanteEmision,
+    clients: List<ClientRow>,
+    selectedClient: ClientRow?,
+    customerName: String,
+    customerDoc: String,
+    onClientSelected: (ClientRow?) -> Unit,
+    onNameChange: (String) -> Unit,
+    onDocChange: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val activeClients = remember(clients) { clients.filter { it.active } }
+    val isInvoice = receiptType == TipoComprobanteEmision.FACTURA
+
+    Text("Cliente del comprobante", color = PaymentMuted, fontWeight = FontWeight.SemiBold)
+    Spacer(Modifier.height(7.dp))
+    Box(Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth().height(46.dp),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, PaymentBorder),
+        ) {
+            Text(
+                selectedClient?.let { it.businessName.ifBlank { it.name } } ?: "Cliente manual o general",
+                modifier = Modifier.weight(1f),
+                color = PaymentText,
+                maxLines = 1,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.widthIn(min = 260.dp, max = 420.dp).heightIn(max = 280.dp),
+        ) {
+            DropdownMenuItem(
+                text = { Text("Cliente manual o general") },
+                onClick = {
+                    onClientSelected(null)
+                    expanded = false
+                },
+            )
+            activeClients.forEach { client ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(client.businessName.ifBlank { client.name })
+                            if (client.document.isNotBlank()) Text(client.document, color = PaymentMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    },
+                    onClick = {
+                        onClientSelected(client)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = customerDoc,
+        onValueChange = onDocChange,
+        label = { Text(if (isInvoice) "RUC" else "DNI") },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = customerName,
+        onValueChange = onNameChange,
+        label = { Text(if (isInvoice) "Razon social" else "Nombre del cliente") },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        singleLine = true,
+    )
 }
 
 @Composable

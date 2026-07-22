@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
+import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.domain.model.catalog.CategoryItem
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
 import com.ecommerce.ecommerceposapp.domain.model.catalog.SubcategoryItem
@@ -147,10 +149,17 @@ class PosViewModel(
         }
     }
 
-    suspend fun pay(payment: SalePaymentInfo, idCliente: Long = 0L): Result<CompletedSaleReceipt> {
+    suspend fun pay(
+        payment: SalePaymentInfo,
+        idCliente: Long = 0L,
+        customerInfo: ReceiptCustomerInfo = ReceiptCustomerInfo(),
+        receiptType: TipoComprobanteEmision = TipoComprobanteEmision.SOLO_TICKET,
+    ): Result<CompletedSaleReceipt> {
         if (_uiState.value.cashSession == null) return Result.failure(Exception("Abre una caja antes de registrar ventas."))
         val lines = _uiState.value.cart
-        val result = withContext(Dispatchers.IO) { catalogRepository.registerSale(lines, payment, idCliente) }
+        val result = withContext(Dispatchers.IO) {
+            catalogRepository.registerSale(lines, payment, idCliente, customerInfo, receiptType)
+        }
         if (result.isSuccess) {
             val products = withContext(Dispatchers.IO) { catalogRepository.products() }
             _uiState.update { it.copy(cart = emptyList(), products = products) }

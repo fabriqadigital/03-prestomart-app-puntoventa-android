@@ -6,6 +6,9 @@ data class CashRegister(
     val name: String,
     val branch: String,
     val active: Boolean,
+    val ruc: String = "",
+    val businessName: String = "",
+    val address: String = "",
 )
 
 data class CashSession(

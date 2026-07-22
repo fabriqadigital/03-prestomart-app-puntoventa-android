@@ -2,7 +2,9 @@ package com.ecommerce.ecommerceposapp.data.remote.api
 
 import android.content.Context
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
+import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
+import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -15,7 +17,14 @@ class PosSaleApiDataSource(context: Context) {
     private val client = ApiHttpClient(context).client
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
-    fun registerSale(lines: List<CartLine>, payment: SalePaymentInfo, clientId: Long, cashSessionId: Long): Result<RegisteredPosSale> {
+    fun registerSale(
+        lines: List<CartLine>,
+        payment: SalePaymentInfo,
+        clientId: Long,
+        cashSessionId: Long,
+        customerInfo: ReceiptCustomerInfo,
+        receiptType: TipoComprobanteEmision,
+    ): Result<RegisteredPosSale> {
         if (session.token.isBlank()) {
             return Result.failure(Exception("Se necesita conexion autenticada para actualizar el stock del backend."))
         }
@@ -24,6 +33,9 @@ class PosSaleApiDataSource(context: Context) {
             val total = lines.sumOf { it.lineTotal }
             val payload = JSONObject().apply {
                 put("id_cliente", clientId.coerceAtLeast(0L))
+                put("cliente_nombre", customerInfo.name.trim())
+                put("cliente_documento", customerInfo.document.filter(Char::isDigit))
+                put("tipo_comprobante", receiptType.name)
                 put("id_caja_sesion", cashSessionId)
                 put("tipo_pago", payment.tipoPago)
                 put("monto_recibido", payment.montoRecibido)

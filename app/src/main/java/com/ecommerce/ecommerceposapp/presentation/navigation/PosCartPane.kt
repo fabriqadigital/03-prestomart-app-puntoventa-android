@@ -65,6 +65,7 @@ import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
+import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
@@ -373,7 +374,7 @@ internal fun CartPane(
     catalog: CatalogRepository,
     onIncrease: (CartLine) -> Unit,
     onDecrease: (CartLine) -> Unit,
-    onPay: suspend (SalePaymentInfo, Long) -> Result<CompletedSaleReceipt>,
+    onPay: suspend (SalePaymentInfo, Long, ReceiptCustomerInfo, TipoComprobanteEmision) -> Result<CompletedSaleReceipt>,
     onNewClient: () -> Unit = {},
 ) {
     var message by remember { mutableStateOf("") }
@@ -384,6 +385,7 @@ internal fun CartPane(
     var showPreview by remember { mutableStateOf(false) }
     var comprobanteEmitido by remember { mutableStateOf<ComprobanteEmitidoResult?>(null) }
     var selectedReceiptType by remember { mutableStateOf(TipoComprobanteEmision.BOLETA) }
+    var receiptCustomerInfo by remember { mutableStateOf(ReceiptCustomerInfo()) }
     var showGeneratingReceipt by remember { mutableStateOf(false) }
     var showSaleCompleted by remember { mutableStateOf(false) }
     var receiptPhone by remember { mutableStateOf("") }
@@ -572,11 +574,15 @@ internal fun CartPane(
         CobrarVentaDialog(
             total = state.total,
             cashierName = cashierName,
+            clients = clients,
+            initialClient = selectedCliente,
             onDismiss = { showCobrarVenta = false },
-            onCobroExitoso = { receipt, receiptType ->
+            onCobroExitoso = { receipt, receiptType, customerInfo ->
                 message = "Venta registrada."
                 pendingReceipt = receipt
                 selectedReceiptType = receiptType
+                receiptCustomerInfo = customerInfo
+                selectedCliente = clients.firstOrNull { it.id == customerInfo.id }
                 postSaleDismissed = false
                 showGeneratingReceipt = true
                 scope.launch {
@@ -584,7 +590,8 @@ internal fun CartPane(
                         catalog.emitComprobanteForVenta(
                             receipt.ventaId,
                             receiptType,
-                            selectedCliente?.id ?: receipt.idCliente,
+                            customerInfo.id.takeIf { it > 0L } ?: selectedCliente?.id ?: receipt.idCliente,
+                            customerInfo,
                         )
                     }
                     delay(900)
@@ -603,7 +610,10 @@ internal fun CartPane(
                     )
                 }
             },
-            onPay = { payment -> onPay(payment, selectedCliente?.id ?: 0L) },
+            onPay = { payment, customerInfo, receiptType ->
+                val customerId = customerInfo.id.takeIf { it > 0L } ?: selectedCliente?.id ?: 0L
+                onPay(payment, customerId, customerInfo, receiptType)
+            },
         )
     }
 
@@ -630,6 +640,7 @@ internal fun CartPane(
                 pendingReceipt = null
                 comprobanteEmitido = null
                 selectedCliente = null
+                receiptCustomerInfo = ReceiptCustomerInfo()
             },
         )
     }
@@ -643,12 +654,15 @@ internal fun CartPane(
             type = selectedReceiptType,
             initialPhone = selectedCliente?.phone.orEmpty(),
             onPhoneChanged = { receiptPhone = it },
+            clienteNombre = receiptCustomerInfo.name,
+            clienteDoc = receiptCustomerInfo.document,
             onPrint = { showPreview = true },
             onNewSale = {
                 showSaleCompleted = false
                 pendingReceipt = null
                 comprobanteEmitido = null
                 selectedCliente = null
+                receiptCustomerInfo = ReceiptCustomerInfo()
                 message = ""
             },
         )
@@ -658,7 +672,13 @@ internal fun CartPane(
         val pr = pendingReceipt!!
         val em = comprobanteEmitido!!
         val cid = (selectedCliente?.id ?: pr.idCliente).coerceAtLeast(0L)
-        val cdisp = if (cid > 0L) catalog.getClienteDisplay(cid) else null
+        val cdisp = if (receiptCustomerInfo.document.isNotBlank() || receiptCustomerInfo.name.isNotBlank()) {
+            receiptCustomerInfo.name to receiptCustomerInfo.document
+        } else if (cid > 0L) {
+            catalog.getClienteDisplay(cid)
+        } else {
+            null
+        }
         VistaPreviaReciboDialog(
             receipt = pr,
             emitido = em,

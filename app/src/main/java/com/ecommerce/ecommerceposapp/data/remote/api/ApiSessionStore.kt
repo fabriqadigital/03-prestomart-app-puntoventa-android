@@ -6,8 +6,7 @@ class ApiSessionStore(context: Context) {
     private val prefs = context.getSharedPreferences(ApiConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
     val baseUrl: String
-        get() = prefs.getString("api_base_url", null)?.trim().takeUnless { it.isNullOrBlank() }
-            ?: ApiConfig.PRODUCTION_BASE_URL
+        get() = ApiConfig.configuredBaseUrl(prefs.getString("api_base_url", null))
 
     val token: String
         get() = prefs.getString("api_token", "")?.trim().orEmpty()
@@ -23,5 +22,5 @@ class ApiSessionStore(context: Context) {
     }
 
     val hostHeader: String
-        get() = prefs.getString("api_host_header", "")?.trim().orEmpty()
+        get() = ApiConfig.configuredHostHeader(prefs.getString("api_host_header", ""))
 }

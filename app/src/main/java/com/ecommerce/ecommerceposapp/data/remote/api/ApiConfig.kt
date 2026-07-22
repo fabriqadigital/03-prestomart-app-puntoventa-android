@@ -1,8 +1,11 @@
 package com.ecommerce.ecommerceposapp.data.remote.api
 
+import com.ecommerce.ecommerceposapp.BuildConfig
+
 object ApiConfig {
     const val PREFS_NAME = "pos_prefs"
     const val PRODUCTION_BASE_URL = "https://prestomartperu.com"
+    val DEFAULT_BASE_URL: String = BuildConfig.API_BASE_URL
 
     // En el backend el bloque "Punto de Venta" vive hoy bajo /post.
     // Si lo renombran a /pos, solo cambia esta constante.
@@ -18,6 +21,7 @@ object ApiConfig {
     const val PRODUCT_DELETE = "$POS_PREFIX/producto/eliminar"
     const val PRODUCT_LIST = "$POS_PREFIX/producto/listar"
     const val CATEGORY_LIST = "$POS_PREFIX/producto_categoria/listar"
+    const val PRODUCT_TYPE_LIST = "$POS_PREFIX/producto_categoria/listar_tipo"
     const val CATEGORY_CREATE = "$POS_PREFIX/producto_categoria/crear"
     const val CATEGORY_UPDATE = "$POS_PREFIX/producto_categoria/actualizar"
     const val CATEGORY_DELETE = "$POS_PREFIX/producto_categoria/eliminar"
@@ -39,6 +43,8 @@ object ApiConfig {
     const val CASH_SESSION_CLOSE = "$POS_PREFIX/caja/cerrar"
     const val CASH_SALES = "$POS_PREFIX/caja/ventas"
     const val CASH_SALE_DETAIL = "$POS_PREFIX/caja/venta/detalle"
+    const val CASH_SALE_CANCEL = "$POS_PREFIX/caja/venta/anular"
+    const val RECEIPT_SEND_EMAIL = "$POS_PREFIX/finanza/comprobantes/enviar-correo"
 
     const val SUPPLIER_LIST = "$POS_PREFIX/proveedores/listar"
     const val SUPPLIER_GET = "$POS_PREFIX/proveedores/obtener"
@@ -46,4 +52,22 @@ object ApiConfig {
     const val SUPPLIER_UPDATE = "$POS_PREFIX/proveedores/actualizar"
     const val SUPPLIER_UPDATE_ESTADO = "$POS_PREFIX/proveedores/actualizar_estado"
     const val SUPPLIER_DELETE = "$POS_PREFIX/proveedores/eliminar"
+
+    fun normalizeBaseUrl(baseUrl: String): String {
+        return if (BuildConfig.DEBUG && baseUrl == "http://10.0.3.2:5555") {
+            "http://10.0.3.2:8000"
+        } else {
+            baseUrl
+        }
+    }
+
+    fun configuredBaseUrl(savedBaseUrl: String?): String {
+        val selected = if (BuildConfig.DEBUG) DEFAULT_BASE_URL else savedBaseUrl?.trim().takeUnless { it.isNullOrBlank() }
+            ?: DEFAULT_BASE_URL
+        return normalizeBaseUrl(selected)
+    }
+
+    fun configuredHostHeader(savedHostHeader: String?): String {
+        return if (BuildConfig.DEBUG) BuildConfig.API_HOST_HEADER else savedHostHeader?.trim().orEmpty()
+    }
 }

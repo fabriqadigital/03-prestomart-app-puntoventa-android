@@ -11,14 +11,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,6 +39,7 @@ import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.presentation.pos.VistaPreviaReciboDialog
@@ -55,9 +61,9 @@ private fun mapPago(code: String): String = when (code) {
     else -> code
 }
 
-private fun mapTipoForReissue(tipoComprobante: String): TipoComprobanteEmision = when (tipoComprobante) {
-    "01" -> TipoComprobanteEmision.FACTURA
-    "03" -> TipoComprobanteEmision.BOLETA
+private fun mapTipoForReissue(tipoComprobante: String): TipoComprobanteEmision = when (tipoComprobante.uppercase()) {
+    "01", "FACTURA" -> TipoComprobanteEmision.FACTURA
+    "03", "BOLETA" -> TipoComprobanteEmision.BOLETA
     else -> TipoComprobanteEmision.SOLO_TICKET
 }
 
@@ -72,6 +78,10 @@ fun SalesHistoryScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var previewReceipt by remember { mutableStateOf<CompletedSaleReceipt?>(null) }
     var previewComp by remember { mutableStateOf<ComprobanteEmitidoResult?>(null) }
+    var saleToCancel by remember { mutableStateOf<SalesHistoryRow?>(null) }
+    var cancelComment by remember { mutableStateOf("") }
+    var restoreStock by remember { mutableStateOf(true) }
+    var cancelling by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun reload() {
@@ -131,6 +141,15 @@ fun SalesHistoryScreen(
                         }
                         Text(mapPago(row.tipoPago), modifier = Modifier.padding(end = 12.dp))
                         Text("S/ ${"%.2f".format(row.total)}", fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 8.dp))
+                        if (!row.estado.equals("Anulada", ignoreCase = true)) {
+                            IconButton(onClick = {
+                                saleToCancel = row
+                                cancelComment = ""
+                                restoreStock = true
+                            }) {
+                                Icon(Icons.Filled.Cancel, contentDescription = "Anular venta")
+                            }
+                        }
                         IconButton(
                             onClick = {
                                 scope.launch {
@@ -139,7 +158,17 @@ fun SalesHistoryScreen(
                                     val rec = withContext(Dispatchers.IO) { catalog.getSaleReceipt(row.ventaId) }
                                     val tipo = mapTipoForReissue(row.tipoComprobante)
                                     val em = withContext(Dispatchers.IO) {
-                                        catalog.emitComprobanteForVenta(row.ventaId, tipo, row.idCliente)
+                                        val receipt = rec.getOrNull()
+                                        catalog.emitComprobanteForVenta(
+                                            row.ventaId,
+                                            tipo,
+                                            row.idCliente,
+                                            ReceiptCustomerInfo(
+                                                id = row.idCliente,
+                                                name = receipt?.clienteNombre.orEmpty(),
+                                                document = receipt?.clienteDocumento.orEmpty(),
+                                            ),
+                                        )
                                     }
                                     loading = false
                                     if (rec.isSuccess && em.isSuccess) {
@@ -162,7 +191,13 @@ fun SalesHistoryScreen(
     if (previewReceipt != null && previewComp != null) {
         val receipt = previewReceipt!!
         val comp = previewComp!!
-        val cdisp = if (receipt.idCliente > 0L) catalog.getClienteDisplay(receipt.idCliente) else null
+        val cdisp = if (receipt.clienteNombre.isNotBlank() || receipt.clienteDocumento.isNotBlank()) {
+            receipt.clienteNombre to receipt.clienteDocumento
+        } else if (receipt.idCliente > 0L) {
+            catalog.getClienteDisplay(receipt.idCliente)
+        } else {
+            null
+        }
         VistaPreviaReciboDialog(
             receipt = receipt,
             emitido = comp,
@@ -172,6 +207,52 @@ fun SalesHistoryScreen(
             onDismiss = {
                 previewReceipt = null
                 previewComp = null
+            },
+        )
+    }
+
+    saleToCancel?.let { row ->
+        AlertDialog(
+            onDismissRequest = { if (!cancelling) saleToCancel = null },
+            title = { Text("Anular venta ${row.numeroComprobante}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Indica el motivo. Esta accion se registra en el backend.")
+                    OutlinedTextField(
+                        value = cancelComment,
+                        onValueChange = { cancelComment = it.take(1000) },
+                        label = { Text("Motivo de anulacion") },
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = restoreStock, onCheckedChange = { restoreStock = it })
+                        Text("Devolver productos al stock")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !cancelling && cancelComment.trim().length >= 5,
+                    onClick = {
+                        scope.launch {
+                            cancelling = true
+                            error = null
+                            withContext(Dispatchers.IO) {
+                                catalog.cancelSale(row.ventaId, cancelComment, restoreStock)
+                            }.onSuccess {
+                                saleToCancel = null
+                                reload()
+                            }.onFailure {
+                                error = it.message ?: "No se pudo anular la venta."
+                            }
+                            cancelling = false
+                        }
+                    },
+                ) { Text(if (cancelling) "Anulando..." else "Anular venta") }
+            },
+            dismissButton = {
+                TextButton(enabled = !cancelling, onClick = { saleToCancel = null }) { Text("Cancelar") }
             },
         )
     }

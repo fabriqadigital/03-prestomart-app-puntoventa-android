@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -50,6 +51,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.products.ProductTypeRow
 import com.ecommerce.ecommerceposapp.presentation.common.parseDouble
 
 private val ProductBrand = Color(0xFFFD0505)
@@ -61,6 +63,7 @@ fun ProductEditDialog(
     initial: ProductAdminRow,
     categories: List<CategoryAdminRow>,
     subcategories: List<SubcategoryAdminRow>,
+    productTypes: List<ProductTypeRow>,
     onDismiss: () -> Unit,
     onSave: (ProductAdminRow) -> Unit,
     quickMode: Boolean = true,
@@ -72,24 +75,27 @@ fun ProductEditDialog(
     var categoryId by remember(initial) { mutableStateOf(initial.categoryId) }
     var subcategoryId by remember(initial) { mutableStateOf(initial.subcategoryId) }
     var price by remember(initial) { mutableStateOf(initial.price.toString()) }
-    var costPrice by remember(initial) { mutableStateOf(initial.costPrice.toString()) }
+    var yapePrice by remember(initial) { mutableStateOf(initial.yapePrice.toString()) }
+    var productTypeId by remember(initial) { mutableStateOf(initial.productTypeId) }
     var stock by remember(initial) { mutableStateOf(initial.stock.toString()) }
     var salesChannel by remember(initial) { mutableStateOf(initial.salesChannel.ifBlank { "ambos" }) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var subcategoryExpanded by remember { mutableStateOf(false) }
+    var productTypeExpanded by remember { mutableStateOf(false) }
 
     val activeCategories = categories.filter { it.active }
     val availableSubcategories = subcategories.filter { it.active && it.categoryId == categoryId }
     val categoryName = activeCategories.firstOrNull { it.id == categoryId }?.name ?: "Seleccionar categoria"
     val subcategoryName = availableSubcategories.firstOrNull { it.id == subcategoryId }?.name ?: "Sin subcategoria"
-    val canSave = name.isNotBlank() && categoryId > 0L && parseDouble(price, 0.0) >= 0.0
+    val productTypeName = productTypes.firstOrNull { it.id == productTypeId }?.name ?: "Sin etiqueta"
+    val canSave = name.isNotBlank() && categoryId > 0L && parseDouble(price, 0.0) > 0.0
 
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth().padding(16.dp).widthIn(max = 820.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp).widthIn(max = 820.dp).heightIn(max = 820.dp),
             shape = RoundedCornerShape(8.dp),
             color = Color.White,
             contentColor = ProductText,
@@ -104,7 +110,7 @@ fun ProductEditDialog(
                 }
                 Spacer(Modifier.height(12.dp))
                 Column(
-                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text("Canal de venta", fontWeight = FontWeight.SemiBold)
@@ -123,40 +129,31 @@ fun ProductEditDialog(
                         OutlinedTextField(code, { code = it }, label = { Text("Codigo de producto") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
                     ResponsiveFieldRow {
-                        SelectionField(categoryName, Modifier.weight(1f), { categoryExpanded = true }) {
-                            MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
-                                DropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
-                                    activeCategories.forEach { category ->
-                                        DropdownMenuItem(text = { Text(category.name) }, onClick = {
-                                            categoryId = category.id
-                                            subcategoryId = 0L
-                                            categoryExpanded = false
-                                        })
-                                    }
-                                }
-                            }
-                        }
-                        SelectionField(subcategoryName, Modifier.weight(1f), { subcategoryExpanded = availableSubcategories.isNotEmpty() }) {
-                            MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
-                                DropdownMenu(expanded = subcategoryExpanded, onDismissRequest = { subcategoryExpanded = false }) {
-                                    DropdownMenuItem(text = { Text("Sin subcategoria") }, onClick = {
-                                        subcategoryId = 0L
-                                        subcategoryExpanded = false
-                                    })
-                                    availableSubcategories.forEach { subcategory ->
-                                        DropdownMenuItem(text = { Text(subcategory.name) }, onClick = {
-                                            subcategoryId = subcategory.id
-                                            subcategoryExpanded = false
-                                        })
-                                    }
-                                }
-                            }
-                        }
+                        ProductSelectField(
+                            label = "Categoría", value = categoryName, expanded = categoryExpanded,
+                            onExpandedChange = { categoryExpanded = it }, required = true,
+                            options = activeCategories.map { ProductSelectOption(it.id, it.name) },
+                            onSelect = { categoryId = it; subcategoryId = 0L }, modifier = Modifier.weight(1f),
+                        )
+                        ProductSelectField(
+                            label = "Subcategoría", value = subcategoryName, expanded = subcategoryExpanded,
+                            onExpandedChange = { subcategoryExpanded = it },
+                            options = availableSubcategories.map { ProductSelectOption(it.id, it.name) },
+                            onSelect = { subcategoryId = it }, clearLabel = "Sin subcategoría",
+                            enabled = categoryId > 0L && availableSubcategories.isNotEmpty(), modifier = Modifier.weight(1f),
+                        )
+                        ProductSelectField(
+                            label = "Etiqueta", value = productTypeName, expanded = productTypeExpanded,
+                            onExpandedChange = { productTypeExpanded = it },
+                            options = productTypes.map { ProductSelectOption(it.id, it.name) },
+                            onSelect = { productTypeId = it }, clearLabel = "Sin etiqueta",
+                            enabled = productTypes.isNotEmpty(), modifier = Modifier.weight(1f),
+                        )
                     }
                     ResponsiveFieldRow {
                         OutlinedTextField(stock, { stock = it }, label = { Text("Cantidad *") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(costPrice, { costPrice = it }, label = { Text("Costo inicial por unidad") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(price, { price = it }, label = { Text("Precio de venta *") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(price, { price = it }, label = { Text("Precio público *") }, prefix = { Text("S/ ") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(yapePrice, { yapePrice = it }, label = { Text("Precio Yape") }, prefix = { Text("S/ ") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
                 }
                 Spacer(Modifier.height(20.dp))
@@ -182,7 +179,8 @@ fun ProductEditDialog(
                                     name = name.trim(),
                                     code = code.trim(),
                                     price = parseDouble(price, initial.price),
-                                    costPrice = parseDouble(costPrice, initial.costPrice),
+                                    yapePrice = parseDouble(yapePrice, initial.yapePrice),
+                                    productTypeId = productTypeId,
                                     stock = parseDouble(stock, initial.stock),
                                     salesChannel = salesChannel,
                                 ),
@@ -207,7 +205,9 @@ private fun RowScope.ChannelChip(value: String, label: String, selected: String,
         label = { Text(label) },
         modifier = Modifier.weight(1f),
         colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = Color(0xFFF3F4F6),
+            containerColor = Color.White,
+            selectedContainerColor = Color.White,
+            labelColor = ProductText,
             selectedLabelColor = ProductBrand,
         ),
         border = FilterChipDefaults.filterChipBorder(
@@ -229,19 +229,5 @@ private fun ResponsiveFieldRow(content: @Composable FlowRowScope.() -> Unit) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
             content = content,
         )
-    }
-}
-
-@Composable
-private fun SelectionField(label: String, modifier: Modifier, onClick: () -> Unit, menu: @Composable () -> Unit) {
-    Box(modifier) {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(4.dp),
-            border = BorderStroke(1.dp, ProductBorder),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = ProductText),
-        ) { Text(label, modifier = Modifier.weight(1f)) }
-        menu()
     }
 }

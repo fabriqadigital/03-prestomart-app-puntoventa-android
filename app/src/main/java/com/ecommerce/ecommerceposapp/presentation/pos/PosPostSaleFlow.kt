@@ -101,6 +101,16 @@ private fun tituloComprobante(tipoSunat: String): String = when (tipoSunat) {
     else -> "TICKET DE VENTA"
 }
 
+private fun resolveReceiptCustomer(
+    emitido: ComprobanteEmitidoResult,
+    clienteNombre: String?,
+    clienteDoc: String?,
+): Pair<String, String> {
+    val name = clienteNombre?.trim().takeUnless { it.isNullOrBlank() } ?: emitido.receptorNombre.trim()
+    val document = clienteDoc?.trim().takeUnless { it.isNullOrBlank() } ?: emitido.receptorDocumento.trim()
+    return name to document
+}
+
 private fun sanitizePhone51(input: String): String? {
     val d = input.filter { it.isDigit() }
     if (d.length < 9) return null
@@ -117,14 +127,15 @@ private fun buildReceiptShareText(
     clienteNombre: String?,
     clienteDoc: String?,
 ): String = buildString {
+    val (customerName, customerDocument) = resolveReceiptCustomer(emitido, clienteNombre, clienteDoc)
     appendLine(emitido.emisorRazonSocial)
     appendLine("RUC: ${emitido.emisorRuc}")
     appendLine()
     appendLine("${tituloComprobante(emitido.tipoSunat)} ${emitido.numeroCompleto}")
     appendLine("F. Emisión: ${formatFechaHoraPeru(receipt.fechaMillis).first}")
     appendLine("TOTAL: S/ ${"%.2f".format(Locale.US, receipt.total)}")
-    if (!clienteNombre.isNullOrBlank()) appendLine("Cliente: $clienteNombre")
-    if (!clienteDoc.isNullOrBlank()) appendLine("Doc.: $clienteDoc")
+    if (customerName.isNotBlank()) appendLine("Cliente: $customerName")
+    if (customerDocument.isNotBlank()) appendLine("Doc.: $customerDocument")
 }
 
 private fun openWhatsapp(context: android.content.Context, phone51: String, message: String) {
@@ -134,7 +145,7 @@ private fun openWhatsapp(context: android.content.Context, phone51: String, mess
     context.startActivity(intent)
 }
 
-private suspend fun encodeQrBitmap(text: String, size: Int = 240): Bitmap = withContext(Dispatchers.Default) {
+private fun encodeQrBitmapNow(text: String, size: Int = 240): Bitmap {
     val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size)
     val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     for (x in 0 until size) {
@@ -142,7 +153,11 @@ private suspend fun encodeQrBitmap(text: String, size: Int = 240): Bitmap = with
             bmp.setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
         }
     }
-    bmp
+    return bmp
+}
+
+private suspend fun encodeQrBitmap(text: String, size: Int = 240): Bitmap = withContext(Dispatchers.Default) {
+    encodeQrBitmapNow(text, size)
 }
 
 internal fun createReceiptPdfForSharing(
@@ -153,6 +168,9 @@ internal fun createReceiptPdfForSharing(
     clienteDoc: String?,
     qrBitmap: Bitmap?,
 ): File {
+    val (customerName, customerDocument) = resolveReceiptCustomer(emitido, clienteNombre, clienteDoc)
+    val resolvedQrBitmap = qrBitmap ?: emitido.qrPayload.takeIf { it.isNotBlank() }
+        ?.let { runCatching { encodeQrBitmapNow(it) }.getOrNull() }
     val folder = File(context.cacheDir, "shared_receipts").apply { mkdirs() }
     folder.listFiles()?.sortedByDescending { it.lastModified() }?.drop(30)?.forEach { it.delete() }
     val safeNumber = emitido.numeroCompleto.replace(Regex("[^A-Za-z0-9_-]"), "_")
@@ -160,45 +178,129 @@ internal fun createReceiptPdfForSharing(
     val document = PdfDocument()
     val page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
     val canvas = page.canvas
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.BLACK; textSize = 11f }
-    var y = 42f
-    fun line(text: String, bold: Boolean = false, center: Boolean = false, gap: Float = 17f) {
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val pageWidth = 595f
+    val left = 48f
+    val right = 547f
+    val brand = android.graphics.Color.rgb(168, 32, 36)
+    val ink = android.graphics.Color.rgb(24, 24, 27)
+    val muted = android.graphics.Color.rgb(100, 116, 139)
+    val softRed = android.graphics.Color.rgb(255, 244, 244)
+
+    fun drawText(
+        value: String,
+        x: Float,
+        baseline: Float,
+        size: Float = 10f,
+        color: Int = ink,
+        bold: Boolean = false,
+        align: Paint.Align = Paint.Align.LEFT,
+    ) {
+        paint.style = Paint.Style.FILL
+        paint.textSize = size
+        paint.color = color
         paint.isFakeBoldText = bold
-        paint.textAlign = if (center) Paint.Align.CENTER else Paint.Align.LEFT
-        canvas.drawText(text, if (center) 297.5f else 48f, y, paint)
-        y += gap
+        paint.textAlign = align
+        canvas.drawText(value, x, baseline, paint)
     }
-    paint.textSize = 14f
-    line(emitido.emisorRazonSocial.uppercase(Locale("es", "PE")), bold = true, center = true, gap = 20f)
-    paint.textSize = 10f
-    line("RUC: ${emitido.emisorRuc}", center = true)
-    if (emitido.emisorDireccion.isNotBlank()) line(emitido.emisorDireccion.take(85), center = true)
-    y += 8f
-    paint.textSize = 12f
-    line(tituloComprobante(emitido.tipoSunat), bold = true, center = true)
-    line(emitido.numeroCompleto, bold = true, center = true, gap = 24f)
-    paint.textSize = 10f
+
+    fun fitText(value: String, maxWidth: Float, size: Float = 10f): String {
+        paint.textSize = size
+        if (paint.measureText(value) <= maxWidth) return value
+        var shortened = value
+        while (shortened.length > 3 && paint.measureText("$shortened...") > maxWidth) shortened = shortened.dropLast(1)
+        return "$shortened..."
+    }
+
+    fun rule(y: Float, color: Int = android.graphics.Color.rgb(226, 232, 240)) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1f
+        paint.color = color
+        canvas.drawLine(left, y, right, y, paint)
+    }
+
+    canvas.drawColor(android.graphics.Color.WHITE)
+    paint.color = brand
+    paint.style = Paint.Style.FILL
+    canvas.drawRect(0f, 0f, pageWidth, 118f, paint)
+    val company = emitido.emisorRazonSocial.trim().ifBlank { "EMISOR NO CONFIGURADO" }.uppercase(Locale("es", "PE"))
+    drawText(fitText(company, 475f, 18f), pageWidth / 2f, 42f, 18f, android.graphics.Color.WHITE, true, Paint.Align.CENTER)
+    drawText("RUC: ${emitido.emisorRuc.ifBlank { "—" }}", pageWidth / 2f, 66f, 11f, android.graphics.Color.WHITE, false, Paint.Align.CENTER)
+    if (emitido.emisorDireccion.isNotBlank()) {
+        drawText(fitText(emitido.emisorDireccion, 475f, 10f), pageWidth / 2f, 88f, 10f, android.graphics.Color.WHITE, false, Paint.Align.CENTER)
+    }
+
+    paint.style = Paint.Style.STROKE
+    paint.strokeWidth = 1.5f
+    paint.color = brand
+    canvas.drawRoundRect(android.graphics.RectF(left, 136f, right, 196f), 8f, 8f, paint)
+    drawText(tituloComprobante(emitido.tipoSunat), pageWidth / 2f, 160f, 12f, brand, true, Paint.Align.CENTER)
+    drawText(emitido.numeroCompleto, pageWidth / 2f, 183f, 15f, ink, true, Paint.Align.CENTER)
+
     val (fecha, hora) = formatFechaHoraPeru(receipt.fechaMillis)
-    line("Fecha de emisión: $fecha   Hora: $hora")
-    line("Cliente: ${clienteNombre?.ifBlank { "—" } ?: "—"}")
-    line("Documento: ${clienteDoc?.ifBlank { "—" } ?: "—"}", gap = 22f)
-    line("CANT.    DESCRIPCIÓN                                      IMPORTE", bold = true)
+    var y = 226f
+    drawText("EMISIÓN", left, y, 8f, muted, true)
+    drawText("$fecha  $hora", left, y + 16f, 10f)
+    drawText("CLIENTE", 300f, y, 8f, muted, true)
+    drawText(fitText(customerName.ifBlank { "—" }, 240f), 300f, y + 16f, 10f, ink, true)
+    y += 38f
+    drawText("DOCUMENTO", left, y, 8f, muted, true)
+    drawText(customerDocument.ifBlank { "—" }, left, y + 16f, 10f)
+    drawText("CAJERO", 300f, y, 8f, muted, true)
+    drawText(fitText(receipt.vendedorNombre, 240f), 300f, y + 16f, 10f)
+    y += 34f
+
+    paint.style = Paint.Style.FILL
+    paint.color = softRed
+    canvas.drawRoundRect(android.graphics.RectF(left, y, right, y + 26f), 5f, 5f, paint)
+    drawText("CANT.", 58f, y + 17f, 9f, brand, true)
+    drawText("DESCRIPCIÓN", 108f, y + 17f, 9f, brand, true)
+    drawText("IMPORTE", 535f, y + 17f, 9f, brand, true, Paint.Align.RIGHT)
+    y += 40f
     receipt.lines.forEach { item ->
-        line("${item.quantity.toString().padEnd(8)} ${item.productName.take(42).padEnd(45)} S/ ${"%.2f".format(Locale.US, item.lineTotal)}")
+        drawText(item.quantity.toString(), 72f, y, 10f, ink, true, Paint.Align.CENTER)
+        drawText(fitText(item.productName, 330f, 10f), 108f, y, 10f)
+        drawText("S/ ${"%.2f".format(Locale.US, item.lineTotal)}", 535f, y, 10f, ink, true, Paint.Align.RIGHT)
+        y += 18f
+        rule(y)
+        y += 10f
     }
-    y += 8f
-    line("OP. GRAVADAS: S/ ${"%.2f".format(Locale.US, receipt.subtotal)}")
-    line("IGV (18%): S/ ${"%.2f".format(Locale.US, receipt.igv)}")
-    paint.textSize = 13f
-    line("TOTAL: S/ ${"%.2f".format(Locale.US, receipt.total)}", bold = true, gap = 20f)
-    paint.textSize = 9f
-    line(emitido.totalLetras.take(90))
-    line("Forma de pago: ${mapTipoPagoEtiqueta(receipt.tipoPago)}")
-    line("Cajero: ${receipt.vendedorNombre}")
-    qrBitmap?.let { qr ->
-        val top = (y + 8f).coerceAtMost(670f)
-        canvas.drawBitmap(qr, null, android.graphics.RectF(227f, top, 367f, top + 140f), paint)
+
+    y += 4f
+    drawText("OP. GRAVADAS", 390f, y, 9f, muted, false, Paint.Align.RIGHT)
+    drawText("S/ ${"%.2f".format(Locale.US, receipt.subtotal)}", 535f, y, 10f, ink, false, Paint.Align.RIGHT)
+    y += 18f
+    drawText("IGV (18%)", 390f, y, 9f, muted, false, Paint.Align.RIGHT)
+    drawText("S/ ${"%.2f".format(Locale.US, receipt.igv)}", 535f, y, 10f, ink, false, Paint.Align.RIGHT)
+    y += 25f
+    drawText("TOTAL", 390f, y, 13f, brand, true, Paint.Align.RIGHT)
+    drawText("S/ ${"%.2f".format(Locale.US, receipt.total)}", 535f, y, 16f, brand, true, Paint.Align.RIGHT)
+    y += 24f
+    drawText(fitText(emitido.totalLetras, 485f, 9f), left, y, 9f, muted)
+    y += 24f
+
+    paint.style = Paint.Style.STROKE
+    paint.strokeWidth = 1f
+    paint.color = android.graphics.Color.rgb(226, 232, 240)
+    canvas.drawRoundRect(android.graphics.RectF(left, y, right, y + 70f), 7f, 7f, paint)
+    drawText("PAGO", left + 12f, y + 18f, 8f, muted, true)
+    drawText(mapTipoPagoEtiqueta(receipt.tipoPago), left + 12f, y + 38f, 10f, ink, true)
+    drawText("RECIBIDO", 280f, y + 18f, 8f, muted, true)
+    drawText("S/ ${"%.2f".format(Locale.US, receipt.montoRecibido)}", 280f, y + 38f, 10f)
+    drawText("VUELTO", 430f, y + 18f, 8f, muted, true)
+    drawText("S/ ${"%.2f".format(Locale.US, receipt.vuelto)}", 430f, y + 38f, 11f, brand, true)
+    y += 84f
+
+    resolvedQrBitmap?.let { qr ->
+        val available = (790f - y).coerceAtLeast(0f)
+        val qrSize = minOf(118f, available)
+        if (qrSize >= 72f) {
+            val qrLeft = (pageWidth - qrSize) / 2f
+            canvas.drawBitmap(qr, null, android.graphics.RectF(qrLeft, y, qrLeft + qrSize, y + qrSize), paint)
+            y += qrSize + 12f
+        }
     }
+    drawText("Gracias por su compra", pageWidth / 2f, y.coerceAtMost(812f), 9f, muted, false, Paint.Align.CENTER)
     document.finishPage(page)
     output.outputStream().use(document::writeTo)
     document.close()
@@ -211,7 +313,7 @@ internal fun shareReceiptPdfOnWhatsapp(context: android.content.Context, pdf: Fi
     val baseIntent = Intent(Intent.ACTION_SEND).apply {
         type = "application/pdf"
         putExtra(Intent.EXTRA_STREAM, uri)
-        putExtra(Intent.EXTRA_TEXT, "Comprobante de pago PrestoMart")
+        putExtra(Intent.EXTRA_TEXT, "Comprobante de pago")
         normalizedPhone?.let { putExtra("jid", "$it@s.whatsapp.net") }
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
     }
@@ -380,15 +482,12 @@ fun VistaPreviaReciboDialog(
     whatsappPhone: String,
     onDismiss: () -> Unit,
 ) {
-    val context = LocalContext.current
     val (fecha, hora) = formatFechaHoraPeru(receipt.fechaMillis)
+    val (customerName, customerDocument) = resolveReceiptCustomer(emitido, clienteNombre, clienteDoc)
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(emitido.qrPayload) {
         qrBitmap = encodeQrBitmap(emitido.qrPayload)
     }
-    var shareError by remember { mutableStateOf("") }
-    var sharingPdf by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -472,8 +571,8 @@ fun VistaPreviaReciboDialog(
                         Text("F. Emisión: $fecha", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
                         Text("H. Emisión: $hora", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
                         Text("F. Vencimiento: $fecha", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
-                        Text("Cliente: ${clienteNombre?.ifBlank { "—" } ?: "—"}", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
-                        Text("Doc.: ${clienteDoc?.ifBlank { "—" } ?: "—"}", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                        Text("Cliente: ${customerName.ifBlank { "—" }}", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                        Text("Doc.: ${customerDocument.ifBlank { "—" }}", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
                         HorizontalDivider(Modifier.padding(vertical = 6.dp))
                         Text(
                             "CANT  UND  DESCRIPCIÓN          PRECIO",
@@ -519,6 +618,19 @@ fun VistaPreviaReciboDialog(
                             fontSize = 8.sp,
                             modifier = Modifier.padding(top = 4.dp),
                         )
+                        Spacer(Modifier.height(6.dp))
+                        Text("CONDICIÓN DE PAGO: Contado", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
+                        Text(
+                            "PAGOS: ${mapTipoPagoEtiqueta(receipt.tipoPago)} S/ ${"%.2f".format(Locale.US, receipt.montoRecibido)}",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                        )
+                        Text(
+                            "VUELTO: S/ ${"%.2f".format(Locale.US, receipt.vuelto)}",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                        )
+                        Text("Cajero: ${receipt.vendedorNombre}", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
                         qrBitmap?.let { bmp ->
                             Spacer(Modifier.height(8.dp))
                             Image(
@@ -527,14 +639,6 @@ fun VistaPreviaReciboDialog(
                                 modifier = Modifier.size(140.dp).align(Alignment.CenterHorizontally),
                             )
                         }
-                        Spacer(Modifier.height(6.dp))
-                        Text("CONDICIÓN DE PAGO: Contado", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
-                        Text(
-                            "PAGOS: ${mapTipoPagoEtiqueta(receipt.tipoPago)} S/ ${"%.2f".format(Locale.US, receipt.montoRecibido)}",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 9.sp,
-                        )
-                        Text("Cajero: ${receipt.vendedorNombre}", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
                         Text("Gracias por su compra / Vuelva pronto", fontFamily = FontFamily.Monospace, fontSize = 8.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     }
                 }
@@ -543,29 +647,6 @@ fun VistaPreviaReciboDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(Color(0xFF25D366), RoundedCornerShape(8.dp))
-                            .clickable(enabled = !sharingPdf) {
-                                scope.launch {
-                                    sharingPdf = true
-                                    shareError = ""
-                                    runCatching {
-                                        val pdf = withContext(Dispatchers.IO) {
-                                            createReceiptPdfForSharing(context, receipt, emitido, clienteNombre, clienteDoc, qrBitmap)
-                                        }
-                                        shareReceiptPdfOnWhatsapp(context, pdf, whatsappPhone)
-                                    }.onFailure { shareError = "No se pudo generar o compartir el PDF." }
-                                    sharingPdf = false
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (sharingPdf) CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
-                        else Icon(Icons.AutoMirrored.Filled.Chat, "Enviar por WhatsApp", tint = Color.White, modifier = Modifier.size(22.dp))
-                    }
-                    if (shareError.isNotBlank()) Text(shareError, color = Color(0xFFFD0505), style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick = onDismiss) { Text("Cancelar") }
                     Button(
                         onClick = { /* impresión térmica: integrar en fase siguiente */ },

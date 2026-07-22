@@ -9,6 +9,7 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
 import com.ecommerce.ecommerceposapp.domain.model.catalog.SubcategoryItem
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
+import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashRegister
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashSession
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashSummary
@@ -19,8 +20,14 @@ interface CatalogRepository {
     fun products(): List<ProductItem>
     fun refreshCatalog(): Result<Unit>
     fun setProductFeatured(productId: Long, featured: Boolean)
-    fun registerSale(lines: List<CartLine>, payment: SalePaymentInfo, idCliente: Long = 0L): Result<CompletedSaleReceipt>
-    fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long = 0L): Result<ComprobanteEmitidoResult>
+    fun registerSale(
+        lines: List<CartLine>,
+        payment: SalePaymentInfo,
+        idCliente: Long = 0L,
+        customerInfo: ReceiptCustomerInfo = ReceiptCustomerInfo(),
+        receiptType: TipoComprobanteEmision = TipoComprobanteEmision.SOLO_TICKET,
+    ): Result<CompletedSaleReceipt>
+    fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long = 0L, customerInfo: ReceiptCustomerInfo = ReceiptCustomerInfo()): Result<ComprobanteEmitidoResult>
     fun getClienteDisplay(idCliente: Long): Pair<String, String>?
     fun getClienteTelefono(idCliente: Long): String?
     fun actualizarClienteEnVenta(ventaId: Long, idCliente: Long): Result<Unit>
@@ -31,4 +38,5 @@ interface CatalogRepository {
     fun openCashSession(cashRegisterId: Long, cashierId: Long, openingAmount: Double): Result<CashSession>
     fun cashSummary(sessionId: Long): Result<CashSummary>
     fun closeCashSession(sessionId: Long, countedCash: Double, observations: String): Result<Unit>
+    fun cancelSale(ventaId: Long, comment: String, restoreStock: Boolean): Result<Unit>
 }

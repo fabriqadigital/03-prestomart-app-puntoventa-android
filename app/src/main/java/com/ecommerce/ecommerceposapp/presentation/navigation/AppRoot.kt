@@ -1,5 +1,7 @@
 package com.ecommerce.ecommerceposapp.presentation.navigation
 
+import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -71,14 +73,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.res.painterResource
 import com.ecommerce.ecommerceposapp.R
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
-import java.io.File
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -233,7 +235,7 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
             )
         }
         composable(POS) {
-            val session = auth.getSession()
+            val session = currentUser ?: auth.getSession()?.also { currentUser = it }
             if (session == null) {
                 navController.navigate(LOGIN) {
                     popUpTo(POS) { inclusive = true }
@@ -255,6 +257,7 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
                 suppliersVm = suppliersVm,
                 usersVm = usersVm,
                 posVm = posVm,
+                onSessionUpdated = { currentUser = it },
                 onLogout = {
                     auth.logout()
                     currentUser = null
@@ -528,9 +531,7 @@ private fun PosNavigationDrawerContent(
     onItemClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val photoPath = context.getSharedPreferences("profile_preferences", android.content.Context.MODE_PRIVATE)
-        .getString("profile_photo_${session.id}", "").orEmpty()
+    val avatarModel = remember(session.avatar, session.avatarBase64) { session.avatarModel() }
     Column(
         modifier = modifier
             .fillMaxHeight()
@@ -554,8 +555,12 @@ private fun PosNavigationDrawerContent(
                     .background(Color(0xFFFFE4E6)),
                 contentAlignment = Alignment.Center,
             ) {
-                if (photoPath.isNotBlank() && File(photoPath.removePrefix("file://")).exists()) {
-                    AsyncImage(model = photoPath, contentDescription = "Foto de ${session.name}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                if (avatarModel != null) {
+                    if (avatarModel is ImageBitmap) {
+                        Image(bitmap = avatarModel, contentDescription = "Foto de ${session.name}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    } else {
+                        AsyncImage(model = avatarModel, contentDescription = "Foto de ${session.name}", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
                 } else {
                     Text(session.name.trim().firstOrNull()?.uppercase() ?: "C", color = Brand, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
                 }
@@ -567,13 +572,6 @@ private fun PosNavigationDrawerContent(
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    cashRegisterName.ifBlank { session.defaultCashRegisterName }.ifBlank { "Sin caja asignada" },
-                    color = TextSecondary,
-                    style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -633,6 +631,7 @@ private fun PosScreen(
     suppliersVm: SuppliersViewModel,
     usersVm: UsersViewModel,
     posVm: PosViewModel,
+    onSessionUpdated: (UserSession) -> Unit,
     onLogout: () -> Unit,
     onGoSync: () -> Unit,
 ) {
@@ -739,7 +738,7 @@ private fun PosScreen(
                                 catalog,
                                 posVm::increase,
                                 posVm::decrease,
-                                onPay = { p, idC -> posVm.pay(p, idC) },
+                                onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
                                 onNewClient = { selectedModule = "Clientes" },
                             )
                         }
@@ -763,7 +762,7 @@ private fun PosScreen(
                                 catalog,
                                 posVm::increase,
                                 posVm::decrease,
-                                onPay = { p, idC -> posVm.pay(p, idC) },
+                                onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
                                 onNewClient = { selectedModule = "Clientes" },
                             )
                         }
@@ -793,7 +792,7 @@ private fun PosScreen(
             "Mi perfil" -> Box(Modifier.fillMaxSize().padding(padding)) {
                 ProfileScreen(
                     session = session,
-                    onLogout = onLogout,
+                    onSessionUpdated = onSessionUpdated,
                 ) { notice -> scope.launch { snackbarHostState.showSnackbar(notice) } }
             }
             else -> Box(Modifier.fillMaxSize().padding(padding)) { Text("Seleccione una opción del menú.") }
@@ -916,6 +915,7 @@ private fun PosScreen(
             ),
             categories = productsState.categories,
             subcategories = productsState.subcategories,
+            productTypes = productsState.productTypes,
             onDismiss = {
                 showQuickProductDialog = false
                 productsVm.clearMessages()
@@ -938,4 +938,18 @@ private fun PosScreen(
         )
     }
     CashFlowHost(session, state, posVm)
+}
+
+private fun UserSession.avatarModel(): Any? {
+    val encoded = avatarBase64.ifBlank {
+        avatar.takeIf { it.startsWith("data:image/") }?.substringAfter("base64,").orEmpty()
+    }
+    if (encoded.isNotBlank()) {
+        return runCatching {
+            val bytes = Base64.decode(encoded, Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
+    if (avatar.startsWith("http://") || avatar.startsWith("https://")) return avatar
+    return null
 }

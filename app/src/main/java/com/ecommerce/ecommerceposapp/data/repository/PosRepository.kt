@@ -17,6 +17,8 @@ import com.ecommerce.ecommerceposapp.data.local.suppliers.SupplierRealm
 import com.ecommerce.ecommerceposapp.data.local.sync.SyncModuleStateRealm
 import com.ecommerce.ecommerceposapp.data.local.sync.SyncStateRealm
 import com.ecommerce.ecommerceposapp.data.local.users.UserRealm
+import com.ecommerce.ecommerceposapp.data.remote.api.ApiConfig
+import com.ecommerce.ecommerceposapp.data.remote.api.ApiSessionStore
 import com.ecommerce.ecommerceposapp.data.remote.api.AuthApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.ClientApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.CashApiDataSource
@@ -29,6 +31,7 @@ import com.ecommerce.ecommerceposapp.data.security.OfflineCredentialVerifier
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
 import com.ecommerce.ecommerceposapp.domain.model.sync.SyncModuleStatus
@@ -81,6 +84,7 @@ class PosRepositoryImpl(private val context: Context) :
     private val remoteSale = PosSaleApiDataSource(context)
     private val productImagesApi = ProductImageApiDataSource(context)
     private val pendingProducts = ProductRepositoryImpl(context)
+    private var lastCashRegisters: List<CashRegister> = emptyList()
     private val allSyncModules = listOf("productos", "imagenes_productos", "categorias", "subcategorias", "clientes", "proveedores", "usuarios", "ventas")
 
     override fun login(email: String, password: String): Result<UserSession> {
@@ -133,6 +137,8 @@ class PosRepositoryImpl(private val context: Context) :
             lastName = prefs.getString("session_last_name", "") ?: "",
             documentType = prefs.getString("session_document_type", "DNI") ?: "DNI",
             cashierState = prefs.getString("session_cashier_state", "Activo") ?: "Activo",
+            avatar = prefs.getString("session_avatar", "") ?: "",
+            avatarBase64 = prefs.getString("session_avatar_base64", "") ?: "",
         )
     }
 
@@ -150,6 +156,8 @@ class PosRepositoryImpl(private val context: Context) :
             .remove("api_token")
             .remove("api_refresh_token")
             .remove("pos_cash_session_id")
+            .remove("session_avatar")
+            .remove("session_avatar_base64")
             .apply()
     }
 
@@ -211,11 +219,24 @@ class PosRepositoryImpl(private val context: Context) :
         return syncModules(session, setOf("categorias", "subcategorias", "productos"))
     }
 
-    override fun registerSale(lines: List<CartLine>, payment: SalePaymentInfo, idCliente: Long): Result<CompletedSaleReceipt> {
+    override fun registerSale(
+        lines: List<CartLine>,
+        payment: SalePaymentInfo,
+        idCliente: Long,
+        customerInfo: ReceiptCustomerInfo,
+        receiptType: TipoComprobanteEmision,
+    ): Result<CompletedSaleReceipt> {
         if (lines.isEmpty()) return Result.failure(Exception("El carrito está vacío."))
         val session = getSession() ?: return Result.failure(Exception("Sin sesión de usuario."))
         val cashSessionId = prefs.getLong("pos_cash_session_id", 0L)
-        val registered = remoteSale.registerSale(lines, payment, idCliente, cashSessionId).getOrElse { return Result.failure(it) }
+        val registered = remoteSale.registerSale(
+            lines,
+            payment,
+            idCliente,
+            cashSessionId,
+            customerInfo,
+            receiptType,
+        ).getOrElse { return Result.failure(it) }
         val linesCopy = lines.map { it.copy() }
         val fechaMillis = System.currentTimeMillis()
         lateinit var receipt: CompletedSaleReceipt
@@ -279,12 +300,14 @@ class PosRepositoryImpl(private val context: Context) :
                 lines = linesCopy,
                 vendedorNombre = session.name,
                 idCliente = idCliente.coerceAtLeast(0L),
+                clienteNombre = customerInfo.name.trim(),
+                clienteDocumento = customerInfo.document.filter(Char::isDigit),
             )
         }
         return Result.success(receipt)
     }
 
-    override fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long): Result<ComprobanteEmitidoResult> {
+    override fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long, customerInfo: ReceiptCustomerInfo): Result<ComprobanteEmitidoResult> {
         if (tipo == TipoComprobanteEmision.SOLO_TICKET) {
             return realmQuery { realm ->
                 val venta = realm.where(FinanzaVentaRealm::class.java).equalTo("id", ventaId).findFirst()
@@ -294,6 +317,9 @@ class PosRepositoryImpl(private val context: Context) :
                 val ruc = emisor?.ruc ?: ""
                 val rs = emisor?.razonSocial ?: ""
                 val dir = emisor?.direccion ?: ""
+                val client = venta.idCliente.takeIf { it > 0L }?.let { clientId ->
+                    realm.where(ClientRealm::class.java).equalTo("id", clientId).findFirst()
+                }
                 val letras = AmountInWordsFormatter.soles(venta.total)
                 val qr = buildQrPayload(
                     ruc = ruc,
@@ -316,6 +342,8 @@ class PosRepositoryImpl(private val context: Context) :
                         emisorRazonSocial = rs,
                         emisorDireccion = dir,
                         totalLetras = letras,
+                        receptorNombre = client?.name.orEmpty(),
+                        receptorDocumento = client?.document.orEmpty(),
                     ),
                 )
             }
@@ -343,12 +371,14 @@ class PosRepositoryImpl(private val context: Context) :
                 out = Result.failure(Exception("Falta configuración del emisor."))
                 return@realmWrite
             }
-            val idCli = (if (idCliente > 0L) idCliente else venta.idCliente).coerceAtLeast(0L)
+            val idCli = (if (customerInfo.id > 0L) customerInfo.id else if (idCliente > 0L) idCliente else venta.idCliente).coerceAtLeast(0L)
             val client = if (idCli > 0L) {
                 realm.where(ClientRealm::class.java).equalTo("id", idCli).findFirst()
             } else {
                 null
             }
+            val manualDoc = customerInfo.document.trim()
+            val manualName = customerInfo.name.trim()
             serieRow.correlativoActual = serieRow.correlativoActual + 1
             val corr = serieRow.correlativoActual
             val serie = serieRow.serie
@@ -356,6 +386,8 @@ class PosRepositoryImpl(private val context: Context) :
             val fechaSunat = formatFechaSunat(venta.fechaVenta)
             val letras = AmountInWordsFormatter.soles(venta.total)
             val (receptorTipo, receptorNum, receptorNombre) = when {
+                manualDoc.length == 11 -> Triple("6", manualDoc, manualName.ifBlank { "CLIENTE" })
+                manualDoc.isNotBlank() -> Triple("1", manualDoc, manualName.ifBlank { "CLIENTE" })
                 client == null -> Triple("0", "", "CLIENTE VARIOS")
                 client.document.trim().length == 11 -> Triple("6", client.document.trim(), client.name.ifBlank { "CLIENTE" })
                 else -> Triple("1", client.document.trim().ifBlank { "00000000" }, client.name.ifBlank { "CLIENTE" })
@@ -459,6 +491,8 @@ class PosRepositoryImpl(private val context: Context) :
                     emisorRazonSocial = emisor.razonSocial,
                     emisorDireccion = emisor.direccion,
                     totalLetras = letras,
+                    receptorNombre = receptorNombre,
+                    receptorDocumento = receptorNum,
                 ),
             )
         }
@@ -496,22 +530,49 @@ class PosRepositoryImpl(private val context: Context) :
         return cashApi.listSales(sessionId).getOrThrow()
     }
 
-    override fun getSaleReceipt(ventaId: Long): Result<CompletedSaleReceipt> = cashApi.getSaleReceipt(ventaId)
-
-    override fun listCashRegisters(): Result<List<CashRegister>> = cashApi.listCashRegisters().recoverCatching { error ->
-        if (error !is IOException) throw error
-        val session = getSession() ?: throw error
-        listOf(CashRegister(session.defaultCashRegisterId, "", session.defaultCashRegisterName, "", true))
-            .filter { it.id > 0L }
+    override fun getSaleReceipt(ventaId: Long): Result<CompletedSaleReceipt> = cashApi.getSaleReceipt(ventaId).map { remote ->
+        realmQuery { realm ->
+            val localSale = realm.where(FinanzaVentaRealm::class.java).equalTo("id", ventaId).findFirst()
+            val localReceipt = realm.where(FinanzaComprobanteRealm::class.java)
+                .equalTo("idVenta", ventaId)
+                .sort("id", io.realm.Sort.DESCENDING)
+                .findFirst()
+            remote.copy(
+                subtotal = localSale?.subtotal?.takeIf { it > 0.0 } ?: remote.subtotal,
+                igv = localSale?.igv?.takeIf { it > 0.0 } ?: remote.igv,
+                montoRecibido = localSale?.montoRecibido?.takeIf { it > 0.0 } ?: remote.montoRecibido,
+                vuelto = localSale?.vuelto?.takeIf { it > 0.0 } ?: remote.vuelto,
+                clienteNombre = remote.clienteNombre.ifBlank { localReceipt?.receptorRazonSocial.orEmpty() },
+                clienteDocumento = remote.clienteDocumento.ifBlank { localReceipt?.receptorNumDoc.orEmpty() },
+            )
+        }
     }
 
+    override fun listCashRegisters(): Result<List<CashRegister>> = cashApi.listCashRegisters()
+        .onSuccess { registers ->
+            lastCashRegisters = registers
+            val preferredId = prefs.getLong("pos_cash_register_id", 0L).takeIf { it > 0L }
+                ?: getSession()?.defaultCashRegisterId?.takeIf { it > 0L }
+            cacheEmitterFromCashRegisters(registers, preferredId)
+        }
+        .recoverCatching { error ->
+            if (error !is IOException) throw error
+            val session = getSession() ?: throw error
+            listOf(CashRegister(session.defaultCashRegisterId, "", session.defaultCashRegisterName, "", true))
+                .filter { it.id > 0L }
+        }
+
     override fun findOpenCashSession(cashierId: Long): Result<CashSession?> = cashApi.findOpenSession(cashierId)
-        .onSuccess(::cacheCashSession)
+        .onSuccess { session ->
+            cacheCashSession(session)
+            session?.let { cacheEmitterFromCashRegisters(lastCashRegisters, it.cashRegisterId) }
+        }
         .recoverCatching { error -> if (error is IOException) cachedCashSession(cashierId) else throw error }
 
     override fun openCashSession(cashRegisterId: Long, cashierId: Long, openingAmount: Double): Result<CashSession> =
         cashApi.openSession(cashRegisterId, cashierId, openingAmount).onSuccess {
             cacheCashSession(it)
+            cacheEmitterFromCashRegisters(lastCashRegisters, it.cashRegisterId)
         }
 
     override fun cashSummary(sessionId: Long): Result<CashSummary> = cashApi.summary(sessionId)
@@ -520,6 +581,9 @@ class PosRepositoryImpl(private val context: Context) :
         cashApi.closeSession(sessionId, countedCash, observations).onSuccess {
             cacheCashSession(null)
         }
+
+    override fun cancelSale(ventaId: Long, comment: String, restoreStock: Boolean): Result<Unit> =
+        cashApi.cancelSale(ventaId, comment, restoreStock)
 
     private fun cacheCashSession(session: CashSession?) {
         prefs.edit().apply {
@@ -578,10 +642,10 @@ class PosRepositoryImpl(private val context: Context) :
         val remoteClients = if ("clientes" in selected) clientApi.list().getOrNull() else null
         val now = System.currentTimeMillis()
         if ("categorias" in selected && remote.categories.isEmpty()) {
-            return Result.failure(Exception("No se recibieron categorias desde https://prestomartperu.com."))
+            return Result.failure(Exception("No se recibieron categorías desde ${ApiSessionStore(context).baseUrl}."))
         }
         if ("productos" in selected && remote.products.isEmpty()) {
-            return Result.failure(Exception("No se recibieron productos desde https://prestomartperu.com."))
+            return Result.failure(Exception("No se recibieron productos desde ${ApiSessionStore(context).baseUrl}."))
         }
 
         // Fase 1: escribir datos en Realm (sin I/O de red dentro de la transacción)
@@ -763,18 +827,6 @@ class PosRepositoryImpl(private val context: Context) :
                 },
             )
         }
-        if (realm.where(FinanzaEmisorConfigRealm::class.java).count() == 0L) {
-            realm.insertOrUpdate(
-                FinanzaEmisorConfigRealm().apply {
-                    id = 1
-                    ruc = "20123456789"
-                    razonSocial = "Minimarket Demo SAC"
-                    direccion = "Av. Demo 123 — Lima"
-                    ubigeo = "150101"
-                    activo = true
-                },
-            )
-        }
         if (realm.where(FinanzaComprobanteSerieRealm::class.java).count() == 0L) {
             realm.insertOrUpdate(
                 FinanzaComprobanteSerieRealm().apply {
@@ -793,6 +845,28 @@ class PosRepositoryImpl(private val context: Context) :
                     tipoComprobante = "01"
                     serie = "F001"
                     correlativoActual = 0
+                    activo = true
+                },
+            )
+        }
+    }
+
+    private fun cacheEmitterFromCashRegisters(registers: List<CashRegister>, preferredCashRegisterId: Long? = null) {
+        val validRegisters = registers.filter { it.ruc.isNotBlank() && it.businessName.isNotBlank() }
+        val emitter = validRegisters.firstOrNull { it.id == preferredCashRegisterId } ?: validRegisters.firstOrNull()
+        realmWrite { realm ->
+            if (emitter == null) {
+                realm.where(FinanzaEmisorConfigRealm::class.java).findAll().deleteAllFromRealm()
+                return@realmWrite
+            }
+            realm.where(FinanzaEmisorConfigRealm::class.java).findAll().forEach { it.activo = false }
+            realm.insertOrUpdate(
+                FinanzaEmisorConfigRealm().apply {
+                    id = 1
+                    ruc = emitter.ruc
+                    razonSocial = emitter.businessName
+                    direccion = emitter.address
+                    ubigeo = ""
                     activo = true
                 },
             )
@@ -883,6 +957,8 @@ class PosRepositoryImpl(private val context: Context) :
             lastName = apiSession.lastName,
             documentType = apiSession.documentType,
             cashierState = apiSession.cashierState,
+            avatar = apiSession.avatar,
+            avatarBase64 = apiSession.avatarBase64,
         )
         prefs.edit()
             .putString("api_base_url", apiSession.baseUrl)
@@ -912,6 +988,8 @@ class PosRepositoryImpl(private val context: Context) :
             .putString("session_last_name", user.lastName)
             .putString("session_document_type", user.documentType)
             .putString("session_cashier_state", user.cashierState)
+            .putString("session_avatar", user.avatar)
+            .putString("session_avatar_base64", user.avatarBase64)
             .apply()
     }
 
@@ -993,7 +1071,7 @@ class PosRepositoryImpl(private val context: Context) :
         if (input.startsWith("file://")) return input
 
         val preferredBase = prefs.getString("api_base_url", null)
-            ?: "https://prestomartperu.com"
+            ?: ApiConfig.DEFAULT_BASE_URL
 
         // Construir URL completa si es ruta relativa
         val fullUrl = when {

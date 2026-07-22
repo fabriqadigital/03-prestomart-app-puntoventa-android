@@ -1,25 +1,50 @@
 package com.ecommerce.ecommerceposapp.data.repository.products
 
 import android.content.Context
+import com.ecommerce.ecommerceposapp.BuildConfig
 import com.ecommerce.ecommerceposapp.data.local.categories.CategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.categories.SubcategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.products.ProductRealm
 import com.ecommerce.ecommerceposapp.data.remote.api.ProductApiDataSource
+import com.ecommerce.ecommerceposapp.data.remote.api.ApiConfig
+import com.ecommerce.ecommerceposapp.data.remote.api.ApiSessionStore
 import com.ecommerce.ecommerceposapp.data.remote.api.RemoteCatalogDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.RemoteProductSeed
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.products.ProductTypeRow
 import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
 import java.io.IOException
 
 class ProductRepositoryImpl(context: Context) : ProductRepository {
     private val db = RealmDataSource(context)
+    private val prefs = context.getSharedPreferences(ApiConfig.PREFS_NAME, Context.MODE_PRIVATE)
     private val remote = ProductApiDataSource(context)
     private val remoteCatalog = RemoteCatalogDataSource(context)
+
+    init {
+        val savedBase = prefs.getString("api_base_url", null)?.trim().orEmpty()
+        val activeBase = ApiSessionStore(context).baseUrl
+        if (BuildConfig.DEBUG && savedBase.isNotBlank() && ApiConfig.normalizeBaseUrl(savedBase) != activeBase) {
+            db.write { realm ->
+                realm.where(ProductRealm::class.java).findAll().deleteAllFromRealm()
+                realm.where(SubcategoryRealm::class.java).findAll().deleteAllFromRealm()
+                realm.where(CategoryRealm::class.java).findAll().deleteAllFromRealm()
+            }
+        }
+        if (BuildConfig.DEBUG) {
+            prefs.edit()
+                .putString("api_base_url", activeBase)
+                .putString("api_host_header", ApiConfig.configuredHostHeader(null))
+                .apply()
+        }
+    }
 
     override fun listProductsAdmin(): List<ProductAdminRow> = db.query { realm ->
         realm.where(ProductRealm::class.java).findAll().map(::toRow).sortedByDescending { it.id }
     }
+
+    override fun listProductTypes(): Result<List<ProductTypeRow>> = remote.listTypes()
 
     override fun upsertProduct(row: ProductAdminRow): Result<Unit> {
         validate(row).getOrElse { return Result.failure(it) }
