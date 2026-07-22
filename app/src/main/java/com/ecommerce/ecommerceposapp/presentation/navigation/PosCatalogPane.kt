@@ -81,7 +81,7 @@ import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
 import com.ecommerce.ecommerceposapp.presentation.pos.PosUiState
 
 private val PosBrand = Color(0xFFfd0505)
-private val PosBg = Color(0xFFF5F7FA)
+private val PosBg = Color(0xFFFFFFFF)
 private val PosTextPrimary = Color(0xFF111827)
 private val PosTextSecondary = Color(0xFF64748B)
 

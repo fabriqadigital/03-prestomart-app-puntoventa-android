@@ -65,11 +65,23 @@ class CashApiDataSource(context: Context) {
     fun summary(sessionId: Long): Result<CashSummary> = runCatching {
         val item = executeGet(ApiConfig.CASH_SESSION_SUMMARY, mapOf("id_caja_sesion" to sessionId.toString()))
             .optJSONObject("result") ?: JSONObject()
+        val totalesPago = item.optJSONObject("totales_pago") ?: JSONObject()
+        val totalVentas = item.optDoubleFlexible("total_ventas")
+        val ingresos = item.optDoubleFlexible("ingresos")
+        val egresos = item.optDoubleFlexible("egresos")
         CashSummary(
-            totalSales = item.optDoubleFlexible("total_ventas"),
+            openingAmount = item.optDoubleFlexible("monto_inicial"),
+            totalSales = totalVentas,
+            cashAmount = totalesPago.optDoubleFlexible("efectivo"),
+            deposit = totalesPago.optDoubleFlexible("tarjeta") +
+                    totalesPago.optDoubleFlexible("transferencia") +
+                    totalesPago.optDoubleFlexible("yape") +
+                    totalesPago.optDoubleFlexible("plin") +
+                    totalesPago.optDoubleFlexible("otros"),
             expectedCash = item.optDoubleFlexible("efectivo_esperado"),
-            income = item.optDoubleFlexible("ingresos"),
-            expenses = item.optDoubleFlexible("egresos"),
+            totalFlow = totalVentas + ingresos - egresos,
+            income = ingresos,
+            expenses = egresos,
         )
     }
 
@@ -149,6 +161,33 @@ class CashApiDataSource(context: Context) {
         )
     }
 
+    fun cashFlow(
+        sessionId: Long? = null,
+        fechaInicio: String? = null,
+        fechaFin: String? = null,
+    ): Result<List<com.ecommerce.ecommerceposapp.domain.model.cash.CashFlowItem>> = runCatching {
+        val params = buildMap {
+            sessionId?.let { put("id_caja_sesion", it.toString()) }
+            fechaInicio?.let { put("fecha_inicio", it) }
+            fechaFin?.let { put("fecha_fin", it) }
+        }
+        executeGet(ApiConfig.CASH_FLOW, params).resultArray().map { item ->
+            com.ecommerce.ecommerceposapp.domain.model.cash.CashFlowItem(
+                flujoId = item.cleanString("flujo_id"),
+                fecha = parseDate(item.cleanString("fecha")),
+                razonSocial = item.cleanString("tienda_razon_social"),
+                tipoMovimiento = item.cleanString("tipo_movimiento"),
+                tipoTransaccion = item.cleanString("tipo_transaccion"),
+                origen = item.cleanString("origen"),
+                tipoPago = item.cleanString("tipo_pago"),
+                comentario = item.cleanString("comentario"),
+                importe = item.optDoubleFlexible("importe"),
+                cajaNombre = item.cleanString("caja_nombre"),
+                sucursal = item.cleanString("sucursal"),
+                cajeroNombre = item.cleanString("cajero_nombre"),
+            )
+        }
+    }
     private fun executeGet(path: String, params: Map<String, String> = emptyMap()): JSONObject {
         val url = resolver.endpoint(path).toHttpUrl().newBuilder().apply {
             params.forEach { (key, value) -> addQueryParameter(key, value) }

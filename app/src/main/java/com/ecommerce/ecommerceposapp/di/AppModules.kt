@@ -24,6 +24,8 @@ import com.ecommerce.ecommerceposapp.presentation.categories.CategoriesViewModel
 import com.ecommerce.ecommerceposapp.presentation.clients.ClientsViewModel
 import com.ecommerce.ecommerceposapp.presentation.products.ProductsViewModel
 import com.ecommerce.ecommerceposapp.presentation.pos.PosViewModel
+import com.ecommerce.ecommerceposapp.presentation.cash.CashModuleViewModel
+import com.ecommerce.ecommerceposapp.data.remote.api.CashApiDataSource
 import com.ecommerce.ecommerceposapp.presentation.sync.SyncViewModel
 import com.ecommerce.ecommerceposapp.presentation.suppliers.SuppliersViewModel
 import com.ecommerce.ecommerceposapp.presentation.users.UsersViewModel
@@ -45,6 +47,7 @@ val appModules = module {
     viewModel { LoginViewModel(get()) }
     viewModel { SyncViewModel(get()) }
     viewModel { PosViewModel(get()) }
+    viewModel { CashModuleViewModel(get(), CashApiDataSource(androidContext())) }
     factory { GetCategoriesUseCase(get()) }
     factory { SaveCategoryUseCase(get()) }
     factory { DeleteCategoryUseCase(get()) }

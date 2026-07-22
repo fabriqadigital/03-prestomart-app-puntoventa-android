@@ -29,10 +29,10 @@ class ClientRepositoryImpl(context: Context) : ClientRepository {
         )
     }
 
-    override fun upsertClient(row: ClientRow): Result<Unit> {
+    override fun upsertClient(row: ClientRow): Result<String> {
         if (row.name.isBlank()) return Result.failure(Exception("Nombre obligatorio."))
-        if (row.email.isBlank()) return Result.failure(Exception("Correo obligatorio."))
-        if (row.id == 0L && row.newPassword.isBlank()) return Result.failure(Exception("Contrasena obligatoria para un usuario nuevo."))
+        if (row.document.isBlank()) return Result.failure(Exception("Numero de documento obligatorio."))
+        if (row.webAccess && row.email.isBlank()) return Result.failure(Exception("Correo obligatorio para activar el acceso web."))
         return api.save(row).onSuccess {
             api.list().onSuccess { rows ->
                 replaceCache(rows)
@@ -61,6 +61,15 @@ class ClientRepositoryImpl(context: Context) : ClientRepository {
                 address = it.address.cleanNullableText(),
                 businessName = it.businessName.cleanNullableText(),
                 branchName = it.branchName.cleanNullableText(),
+                userId = it.userId,
+                personType = it.personType.cleanNullableText().ifBlank { "Natural" },
+                documentType = it.documentType.cleanNullableText().ifBlank { "DNI" },
+                alias = it.alias.cleanNullableText(),
+                gender = it.gender.cleanNullableText(),
+                maritalStatus = it.maritalStatus.cleanNullableText(),
+                discountPercentage = it.discountPercentage,
+                observations = it.observations.cleanNullableText(),
+                webAccess = it.webAccess,
             )
         }
     }
@@ -79,6 +88,15 @@ class ClientRepositoryImpl(context: Context) : ClientRepository {
                     address = row.address
                     businessName = row.businessName
                     branchName = row.branchName
+                    userId = row.userId
+                    personType = row.personType
+                    documentType = row.documentType
+                    alias = row.alias
+                    gender = row.gender
+                    maritalStatus = row.maritalStatus
+                    discountPercentage = row.discountPercentage
+                    observations = row.observations
+                    webAccess = row.webAccess
                     active = row.active
                 })
             }

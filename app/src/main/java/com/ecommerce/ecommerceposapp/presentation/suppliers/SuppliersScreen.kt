@@ -28,8 +28,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -59,7 +57,7 @@ import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
 
 // Paleta consistente con el resto de la app
 private val Brand = Color(0xFFFD0505)
-private val AppBg = Color(0xFFF5F7FA)
+private val AppBg = Color(0xFFFFFFFF)
 private val SurfaceWhite = Color(0xFFFFFFFF)
 private val TextPrimary = Color(0xFF111827)
 private val TextSecondary = Color(0xFF6B7280)
@@ -213,16 +211,17 @@ fun SuppliersCrudScreen(vm: SuppliersViewModel) {
 @Composable
 private fun SupplierCard(row: SupplierRow, onEdit: () -> Unit, onDelete: () -> Unit) {
     var menuExpanded by remember { mutableStateOf(false) }
-    Card(
-        Modifier.fillMaxWidth(),
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
+        color = Color.White,
+        shadowElevation = 1.dp,
+        tonalElevation = 0.dp,
         border = BorderStroke(1.dp, DividerColor),
-        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         row.businessName.ifBlank { "-" },
                         style = MaterialTheme.typography.titleSmall,
@@ -239,6 +238,7 @@ private fun SupplierCard(row: SupplierRow, onEdit: () -> Unit, onDelete: () -> U
                         )
                     }
                 }
+                Spacer(Modifier.width(8.dp))
                 StatusPill(row.estado.ifBlank { "Activo" })
                 Box {
                     IconButton(onClick = { menuExpanded = true }, modifier = Modifier.width(36.dp)) {
@@ -250,11 +250,13 @@ private fun SupplierCard(row: SupplierRow, onEdit: () -> Unit, onDelete: () -> U
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            InfoLine("RUC", row.ruc)
-            InfoLine("Teléfono", row.phone)
-            if (row.correo.isNotBlank()) InfoLine("Correo", row.correo)
-            if (row.fechaRegistro.isNotBlank()) InfoLine("Registrado", row.fechaRegistro)
+            Spacer(Modifier.height(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                InfoLine("RUC", row.ruc)
+                InfoLine("Teléfono", row.phone)
+                if (row.correo.isNotBlank()) InfoLine("Correo", row.correo)
+                if (row.fechaRegistro.isNotBlank()) InfoLine("Registrado", row.fechaRegistro)
+            }
         }
     }
 }
@@ -267,7 +269,8 @@ private fun InfoLine(label: String, value: String) {
             "$label:",
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary,
-            modifier = Modifier.width(72.dp),
+            modifier = Modifier.width(80.dp),
+            fontWeight = FontWeight.Medium,
         )
         Text(
             value,

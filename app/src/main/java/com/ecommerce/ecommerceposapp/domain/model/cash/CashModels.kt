@@ -23,8 +23,27 @@ data class CashSession(
 )
 
 data class CashSummary(
+    val openingAmount: Double,
     val totalSales: Double,
+    val cashAmount: Double,
+    val deposit: Double,
     val expectedCash: Double,
+    val totalFlow: Double,
     val income: Double,
     val expenses: Double,
+)
+
+data class CashFlowItem(
+    val flujoId: String,
+    val fecha: Long,
+    val razonSocial: String,
+    val sucursal: String,
+    val cajaNombre: String,
+    val cajeroNombre: String,
+    val tipoMovimiento: String,
+    val tipoTransaccion: String,
+    val origen: String,
+    val tipoPago: String,
+    val comentario: String,
+    val importe: Double,
 )

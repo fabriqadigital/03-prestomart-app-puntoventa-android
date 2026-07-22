@@ -118,11 +118,19 @@ class RemoteCatalogDataSource(context: Context) {
             fetchSubcategoriesFromEndpoint("${base.baseUrl}/api${ApiConfig.SUBCATEGORY_LIST}", base)
         }.getOrDefault(emptyList())
         if (authenticatedList.isNotEmpty()) return authenticatedList
-
-        return categories.flatMap { category ->
-            val url = "${base.baseUrl}/api${ApiConfig.SUBCATEGORY_LIST_BY_CATEGORY}?id_producto_categoria=${category.id}&solo_activos=true"
-            runCatching { fetchSubcategoriesFromEndpoint(url, base) }.getOrDefault(emptyList())
-        }.distinctBy { it.id }
+        if (categories.isEmpty()) return emptyList()
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(6, categories.size))
+        return try {
+            val futures = categories.map { category ->
+                pool.submit<List<RemoteSubcategorySeed>> {
+                    val url = "${base.baseUrl}/api${ApiConfig.SUBCATEGORY_LIST_BY_CATEGORY}?id_producto_categoria=${category.id}&solo_activos=true"
+                    runCatching { fetchSubcategoriesFromEndpoint(url, base) }.getOrDefault(emptyList())
+                }
+            }
+            futures.flatMap { it.get() }.distinctBy { it.id }
+        } finally {
+            pool.shutdown()
+        }
     }
 
     private fun openJson(url: String, base: ApiBaseCandidate): String {

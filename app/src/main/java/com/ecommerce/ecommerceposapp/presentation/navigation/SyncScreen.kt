@@ -65,12 +65,20 @@ internal fun SyncScreen(
     requiresSync: Boolean,
     onSync: () -> Unit,
     onToggleModule: (String) -> Unit,
+    onSelectAll: () -> Unit,
+    onClearSelection: () -> Unit,
     onBack: () -> Unit,
     onContinue: () -> Unit,
 ) {
     fun formatLastSync(millis: Long): String {
         if (millis <= 0L) return "Nunca"
         return SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("es", "PE")).format(Date(millis))
+    }
+
+    fun formatElapsed(seconds: Int): String {
+        val m = seconds / 60
+        val s = seconds % 60
+        return if (m > 0) "%d:%02d".format(m, s) else "${s}s"
     }
 
     // El diálogo aparece apenas empieza a sincronizar y se mantiene abierto
@@ -160,12 +168,27 @@ internal fun SyncScreen(
                 shadowElevation = 4.dp,
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text(
-                        "Módulos de sincronización",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Módulos de sincronización",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary,
+                        )
+                        // Solo tiene sentido ofrecer el atajo cuando no es
+                        // la primera sync (ahí ya viene todo marcado).
+                        if (!requiresSync) {
+                            val allSelected = state.modules.isNotEmpty() &&
+                                    state.selectedModules.size == state.modules.size
+                            TextButton(onClick = if (allSelected) onClearSelection else onSelectAll) {
+                                Text(if (allSelected) "Quitar todo" else "Elegir todo", color = Brand)
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(12.dp))
                     state.modules.forEach { m ->
                         Row(
@@ -203,6 +226,7 @@ internal fun SyncScreen(
     if (showSyncDialog) {
         SyncProgressDialog(
             state = state,
+            formatElapsed = ::formatElapsed,
             onDismiss = { showSyncDialog = false },
             onContinue = {
                 showSyncDialog = false
@@ -215,6 +239,7 @@ internal fun SyncScreen(
 @Composable
 private fun SyncProgressDialog(
     state: SyncUiState,
+    formatElapsed: (Int) -> String,
     onDismiss: () -> Unit,
     onContinue: () -> Unit,
 ) {
@@ -265,6 +290,14 @@ private fun SyncProgressDialog(
                             .clip(RoundedCornerShape(3.dp)),
                         color = Brand,
                         trackColor = SurfaceAlt,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    // Tiempo transcurrido: evita que el usuario piense que
+                    // la app se colgó cuando la sync demora.
+                    Text(
+                        "Tiempo transcurrido: ${formatElapsed(state.elapsedSeconds)}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextSecondary,
                     )
                     Spacer(Modifier.height(16.dp))
                 }

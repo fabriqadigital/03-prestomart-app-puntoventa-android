@@ -21,7 +21,7 @@ val BlueLight = Color(0xFF3B82F6)
 val BluePale = Color(0xFF60A5FA)
 
 // Grays
-val GrayLight = Color(0xFFF5F5F5)
+val GrayLight = Color(0xFFFFFFFF)
 val GrayMedium = Color(0xFFE0E0E0)
 val GrayMuted = Color(0xFF9E9E9E)
 val GrayDark = Color(0xFF424242)

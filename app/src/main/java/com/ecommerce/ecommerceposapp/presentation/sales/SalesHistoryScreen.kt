@@ -49,6 +49,8 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 
 private fun formatVentaFecha(millis: Long): String =
     SimpleDateFormat("dd/MM HH:mm", Locale.US).format(Date(millis))
@@ -105,7 +107,7 @@ fun SalesHistoryScreen(
             it.cajeroNombre.contains(search, ignoreCase = true)
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(Modifier.fillMaxSize().background(Color.White).padding(16.dp)) {
         Text("Historial de Ventas", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(
             "Consulta y vuelve a imprimir comprobantes",
@@ -126,7 +128,8 @@ fun SalesHistoryScreen(
             items(filtered, key = { it.ventaId }) { row ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
