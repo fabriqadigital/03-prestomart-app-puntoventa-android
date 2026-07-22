@@ -1,7 +1,6 @@
 package com.ecommerce.ecommerceposapp.data.repository.products
 
 import android.content.Context
-import com.ecommerce.ecommerceposapp.BuildConfig
 import com.ecommerce.ecommerceposapp.data.local.categories.CategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.categories.SubcategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.products.ProductRealm
@@ -25,19 +24,17 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
     init {
         val savedBase = prefs.getString("api_base_url", null)?.trim().orEmpty()
         val activeBase = ApiSessionStore(context).baseUrl
-        if (BuildConfig.DEBUG && savedBase.isNotBlank() && ApiConfig.normalizeBaseUrl(savedBase) != activeBase) {
+        if (savedBase.isNotBlank() && !savedBase.trimEnd('/').equals(activeBase.trimEnd('/'), ignoreCase = true)) {
             db.write { realm ->
                 realm.where(ProductRealm::class.java).findAll().deleteAllFromRealm()
                 realm.where(SubcategoryRealm::class.java).findAll().deleteAllFromRealm()
                 realm.where(CategoryRealm::class.java).findAll().deleteAllFromRealm()
             }
         }
-        if (BuildConfig.DEBUG) {
-            prefs.edit()
-                .putString("api_base_url", activeBase)
-                .putString("api_host_header", ApiConfig.configuredHostHeader(null))
-                .apply()
-        }
+        prefs.edit()
+            .putString("api_base_url", activeBase)
+            .putString("api_host_header", "")
+            .apply()
     }
 
     override fun listProductsAdmin(): List<ProductAdminRow> = db.query { realm ->

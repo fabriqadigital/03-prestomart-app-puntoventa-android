@@ -37,6 +37,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +72,10 @@ import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
 import com.ecommerce.ecommerceposapp.presentation.common.copyPickedProductImage
 import com.ecommerce.ecommerceposapp.presentation.common.parseDouble
 import com.ecommerce.ecommerceposapp.presentation.products.ProductsViewModel
+import com.ecommerce.ecommerceposapp.ui.theme.BrandRed
+import com.ecommerce.ecommerceposapp.ui.theme.BorderDefault
+import com.ecommerce.ecommerceposapp.ui.theme.SurfaceMuted
+import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 
 @Composable
 fun ProductsCrudScreen(
@@ -242,6 +247,8 @@ private fun ProductsTable(
                             selected = selectedCategoryId == null,
                             onClick = { onCategory(null) },
                             label = { Text("Todos") },
+                            colors = productFilterChipColors(),
+                            border = productFilterChipBorder(selectedCategoryId == null),
                         )
                     }
                     items(categories, key = { it.id }) { category ->
@@ -249,6 +256,8 @@ private fun ProductsTable(
                             selected = selectedCategoryId == category.id,
                             onClick = { onCategory(category.id) },
                             label = { Text(category.name) },
+                            colors = productFilterChipColors(),
+                            border = productFilterChipBorder(selectedCategoryId == category.id),
                         )
                     }
                     if (subcategories.isNotEmpty()) {
@@ -257,6 +266,8 @@ private fun ProductsTable(
                                 selected = selectedSubcategoryId == null,
                                 onClick = { onSubcategory(null) },
                                 label = { Text("Todas") },
+                                colors = productFilterChipColors(),
+                                border = productFilterChipBorder(selectedSubcategoryId == null),
                             )
                         }
                         items(subcategories, key = { it.id }) { subcategory ->
@@ -264,6 +275,8 @@ private fun ProductsTable(
                                 selected = selectedSubcategoryId == subcategory.id,
                                 onClick = { onSubcategory(subcategory.id) },
                                 label = { Text(subcategory.name) },
+                                colors = productFilterChipColors(),
+                                border = productFilterChipBorder(selectedSubcategoryId == subcategory.id),
                             )
                         }
                     }
@@ -341,6 +354,24 @@ private fun ProductsTable(
         }
     }
 }
+
+@Composable
+private fun productFilterChipColors() = FilterChipDefaults.filterChipColors(
+    selectedContainerColor = BrandRed,
+    selectedLabelColor = Color.White,
+    containerColor = SurfaceMuted,
+    labelColor = TextSecondary,
+)
+
+@Composable
+private fun productFilterChipBorder(selected: Boolean) = FilterChipDefaults.filterChipBorder(
+    enabled = true,
+    selected = selected,
+    selectedBorderColor = BrandRed,
+    borderColor = BorderDefault,
+    selectedBorderWidth = 1.dp,
+    borderWidth = 1.dp,
+)
 
 @Composable
 private fun ProductTableRow(

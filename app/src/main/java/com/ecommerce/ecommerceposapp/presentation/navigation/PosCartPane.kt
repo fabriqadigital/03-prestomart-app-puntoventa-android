@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -26,22 +27,26 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.outlined.ShoppingBasket
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,8 +60,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,20 +78,29 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.presentation.pos.PosUiState
 import com.ecommerce.ecommerceposapp.presentation.pos.VistaPreviaReciboDialog
+import com.ecommerce.ecommerceposapp.ui.theme.AppBackground
+import com.ecommerce.ecommerceposapp.ui.theme.BorderDefault
+import com.ecommerce.ecommerceposapp.ui.theme.BrandRed
+import com.ecommerce.ecommerceposapp.ui.theme.BrandRedDark
+import com.ecommerce.ecommerceposapp.ui.theme.BrandRedLight
+import com.ecommerce.ecommerceposapp.ui.theme.BrandYellow
+import com.ecommerce.ecommerceposapp.ui.theme.GrayLight
+import com.ecommerce.ecommerceposapp.ui.theme.GrayMedium
+import com.ecommerce.ecommerceposapp.ui.theme.GreenSuccess
+import com.ecommerce.ecommerceposapp.ui.theme.Radius
+import com.ecommerce.ecommerceposapp.ui.theme.Spacing
+import com.ecommerce.ecommerceposapp.ui.theme.SurfaceMuted
+import com.ecommerce.ecommerceposapp.ui.theme.SurfaceSubtle
+import com.ecommerce.ecommerceposapp.ui.theme.SurfaceWhite
+import com.ecommerce.ecommerceposapp.ui.theme.TextPrimary
+import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
+import com.ecommerce.ecommerceposapp.ui.theme.TextTertiary
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val Brand = Color(0xFFfd0505)
-private val BrandDark = Color(0xFFa82024)
-private val AppBg = Color(0xFFF5F7FA)
-private val SurfaceWhite = Color(0xFFFFFFFF)
-private val SurfaceAlt = Color(0xFFEEF0F5)
-private val TextPrimary = Color(0xFF111827)
-private val TextSecondary = Color(0xFF6B7280)
-private val Divider = Color(0xFFE5E7EB)
 private enum class PosPaymentMethod { Efectivo, Tarjeta, Yape, Plin }
 
 private fun appendMontoRecibido(current: String, key: String): String {
@@ -102,269 +118,179 @@ private fun appendMontoRecibido(current: String, key: String): String {
 
 private fun mapPosPaymentMethodToTipoPago(m: PosPaymentMethod): String = when (m) {
     PosPaymentMethod.Efectivo -> "EFE"
-    PosPaymentMethod.Tarjeta -> "TAR"
-    PosPaymentMethod.Yape -> "YAP"
-    PosPaymentMethod.Plin -> "PLN"
+    PosPaymentMethod.Tarjeta  -> "TAR"
+    PosPaymentMethod.Yape     -> "YAP"
+    PosPaymentMethod.Plin     -> "PLN"
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  EMPTY STATE DEL CARRITO
+// ─────────────────────────────────────────────────────────────────────────────
 @Composable
-private fun LegacyCobrarVentaDialog(
-    total: Double,
-    onDismiss: () -> Unit,
-    onCobroExitoso: (CompletedSaleReceipt) -> Unit,
-    onPay: suspend (SalePaymentInfo) -> Result<CompletedSaleReceipt>,
-) {
-    val headerBg = BrandDark
-    val bodyBg = SurfaceWhite
-    val keypadBg = SurfaceAlt
-    val methodUnselected = Color(0xFFF0F2F5)
-    val methodSelected = Brand
-    val labelMuted = TextSecondary
-
-    var method by remember { mutableStateOf(PosPaymentMethod.Efectivo) }
-    var receivedText by remember { mutableStateOf("") }
-    var processing by remember { mutableStateOf(false) }
-    var errorText by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(method, total) {
-        receivedText = when (method) {
-            PosPaymentMethod.Efectivo -> ""
-            else -> String.format(Locale.US, "%.2f", total)
-        }
-    }
-
-    val received = receivedText.toDoubleOrNull() ?: 0.0
-    val vuelto = (received - total).coerceAtLeast(0.0)
-    val canConfirm = total > 0 && !processing && received + 1e-6 >= total
-
-    Dialog(onDismissRequest = { if (!processing) onDismiss() }) {
+private fun CartEmptyState(modifier: Modifier = Modifier) {
+    Column(
+        modifier            = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.xl, vertical = Spacing.xxl),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 24.dp),
+                .size(36.dp)
+                .clip(RoundedCornerShape(Radius.xxl))
+                .background(Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
-            Surface(
-                modifier = Modifier
-                    .widthIn(max = 440.dp)
-                    .fillMaxHeight(0.92f),
-                shape = RoundedCornerShape(20.dp),
-                color = bodyBg,
-                shadowElevation = 12.dp,
+            Icon(
+                Icons.Outlined.ShoppingBasket,
+                contentDescription = null,
+                tint     = Color(0xFF6F7A84),
+                modifier = Modifier.size(36.dp),
+            )
+        }
+        Spacer(Modifier.height(Spacing.md))
+        Text(
+            "Aqu\u00ed ver\u00e1s los productos que elijas\nen tu pr\u00f3xima venta",
+            color      = Color(0xFF516E96),
+            fontSize   = 22.sp,
+            lineHeight  = 32.sp,
+            fontWeight = FontWeight.Normal,
+            textAlign  = TextAlign.Center,
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CART ITEM ROW  — fondo blanco, sin grises
+// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun CartItemRow(
+    line: CartLine,
+    onIncrease: () -> Unit,
+    onDecrease: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(1.dp, RoundedCornerShape(Radius.md), ambientColor = Color(0x0A000000))
+            .clip(RoundedCornerShape(Radius.md))
+            .background(SurfaceWhite)
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                line.productName,
+                fontWeight = FontWeight.SemiBold,
+                color      = TextPrimary,
+                style      = MaterialTheme.typography.bodyMedium,
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "S/ ${"%.2f".format(line.unitPrice)} · Total S/ ${"%.2f".format(line.unitPrice * line.quantity)}",
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Spacer(Modifier.width(Spacing.sm))
+        // Controles de cantidad
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            IconButton(
+                onClick  = onDecrease,
+                modifier = Modifier.size(32.dp),
             ) {
-                Column(Modifier.fillMaxSize()) {
-                    // Cabecera roja
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(headerBg)
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.Payment,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(26.dp),
-                            )
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                "Cobrar venta",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleLarge,
-                            )
-                        }
-                        IconButton(onClick = { if (!processing) onDismiss() }, enabled = !processing) {
-                            Icon(Icons.Filled.Close, contentDescription = "Cerrar", tint = Color.White)
-                        }
-                    }
-
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                            .padding(16.dp),
-                    ) {
-                        Text("TOTAL A COBRAR", color = labelMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            Text(
-                                "S/ ${String.format(Locale.US, "%.2f", total)}",
-                                color = TextPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 28.sp,
-                            )
-                        }
-                        Spacer(Modifier.height(20.dp))
-                        Text("MÉTODO DE PAGO", color = labelMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            val methods = listOf(
-                                Triple(PosPaymentMethod.Efectivo, "Efectivo", Icons.Filled.AttachMoney),
-                                Triple(PosPaymentMethod.Tarjeta, "Tarjeta", Icons.Filled.CreditCard),
-                                Triple(PosPaymentMethod.Yape, "Yape", Icons.Filled.Smartphone),
-                                Triple(PosPaymentMethod.Plin, "Plin", Icons.Filled.Smartphone),
-                            )
-                            methods.forEach { (m, label, icon) ->
-                                val sel = method == m
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (sel) methodSelected else methodUnselected)
-                                        .clickable(enabled = !processing) {
-                                            method = m
-                                            errorText = ""
-                                        }
-                                        .padding(vertical = 12.dp, horizontal = 4.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
-                                    Icon(
-                                        icon,
-                                        contentDescription = null,
-                                        tint = if (sel) Color.White else TextSecondary,
-                                        modifier = Modifier.size(26.dp),
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        label,
-                                        color = if (sel) Color.White else TextSecondary,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(20.dp))
-                        Text("MONTO RECIBIDO", color = labelMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(SurfaceAlt, RoundedCornerShape(10.dp))
-                                .padding(vertical = 14.dp, horizontal = 12.dp),
-                            contentAlignment = Alignment.CenterEnd,
-                        ) {
-                            Text(
-                                text = if (receivedText.isEmpty()) "0" else receivedText,
-                                color = TextPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 32.sp,
-                            )
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        Text("VUELTO", color = labelMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(SurfaceAlt, RoundedCornerShape(10.dp))
-                                .padding(vertical = 12.dp, horizontal = 12.dp),
-                            contentAlignment = Alignment.CenterEnd,
-                        ) {
-                            Text(
-                                "S/ ${String.format(Locale.US, "%.2f", vuelto)}",
-                                color = Color(0xFF16A34A),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 26.sp,
-                            )
-                        }
-                        Spacer(Modifier.height(18.dp))
-                        Text("TECLADO NUMÉRICO", color = labelMuted, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(8.dp))
-                        val keys = listOf(
-                            listOf("7", "8", "9"),
-                            listOf("4", "5", "6"),
-                            listOf("1", "2", "3"),
-                            listOf(".", "0", "⌫"),
-                        )
-                        keys.forEach { row ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                row.forEach { k ->
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(48.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(keypadBg)
-                                            .clickable(enabled = !processing && method == PosPaymentMethod.Efectivo) {
-                                                receivedText = appendMontoRecibido(receivedText, k)
-                                                errorText = ""
-                                            },
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(k, color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 18.sp)
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                        }
-                        if (errorText.isNotBlank()) {
-                            Text(errorText, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                            Spacer(Modifier.height(8.dp))
-                        }
-                    }
-
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Button(
-                            onClick = {
-                                if (!canConfirm) return@Button
-                                scope.launch {
-                                    processing = true
-                                    errorText = ""
-                                    val payment = SalePaymentInfo(
-                                        tipoPago = mapPosPaymentMethodToTipoPago(method),
-                                        montoRecibido = received,
-                                        vuelto = vuelto,
-                                    )
-                                    val r = onPay(payment)
-                                    processing = false
-                                    r.fold(
-                                        onSuccess = {
-                                            onCobroExitoso(it)
-                                            onDismiss()
-                                        },
-                                        onFailure = { errorText = it.message ?: "No se pudo registrar la venta." },
-                                    )
-                                }
-                            },
-                            enabled = canConfirm,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Brand),
-                            shape = RoundedCornerShape(12.dp),
-                        ) {
-                            Text(
-                                "COBRAR  S/ ${String.format(Locale.US, "%.2f", total)}",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                            )
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        TextButton(
-                            onClick = { if (!processing) onDismiss() },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("Cancelar", color = labelMuted)
-                        }
-                    }
-                }
+                Icon(
+                    Icons.Filled.Remove,
+                    contentDescription = "Menos",
+                    tint     = BrandRed,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Text(
+                "${line.quantity}",
+                modifier   = Modifier.widthIn(min = 28.dp),
+                color      = TextPrimary,
+                fontWeight = FontWeight.Bold,
+                style      = MaterialTheme.typography.bodyMedium,
+                textAlign  = TextAlign.Center,
+            )
+            IconButton(
+                onClick  = onIncrease,
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Más",
+                    tint     = BrandRed,
+                    modifier = Modifier.size(16.dp),
+                )
             }
         }
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  RESUMEN TOTALES
+// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun CartTotalSection(subtotal: Double, igv: Double, total: Double) {
+    Surface(
+        modifier        = Modifier.fillMaxWidth(),
+        shape           = RoundedCornerShape(Radius.lg),
+        color           = SurfaceWhite,
+        shadowElevation = 2.dp,
+        tonalElevation  = 0.dp,
+    ) {
+        Column(modifier = Modifier.padding(Spacing.md)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("Subtotal", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("S/ ${"%.2f".format(subtotal)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(Spacing.xs))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("IGV (18%)", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("S/ ${"%.2f".format(igv)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(BorderDefault))
+            Spacer(Modifier.height(Spacing.sm))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "TOTAL",
+                    fontWeight = FontWeight.Bold,
+                    color      = TextPrimary,
+                    style      = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    "S/ ${"%.2f".format(total)}",
+                    fontWeight = FontWeight.Bold,
+                    color      = BrandRed,
+                    style      = MaterialTheme.typography.titleMedium,
+                )
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CART PANE  — panel derecho completo
+// ─────────────────────────────────────────────────────────────────────────────
 @Composable
 internal fun CartPane(
     modifier: Modifier,
@@ -377,63 +303,104 @@ internal fun CartPane(
     onPay: suspend (SalePaymentInfo, Long, ReceiptCustomerInfo, TipoComprobanteEmision) -> Result<CompletedSaleReceipt>,
     onNewClient: () -> Unit = {},
 ) {
-    var message by remember { mutableStateOf("") }
-    var showCobrarVenta by remember { mutableStateOf(false) }
-    var selectedCliente by remember { mutableStateOf<ClientRow?>(null) }
-    var showClientePicker by remember { mutableStateOf(false) }
-    var pendingReceipt by remember { mutableStateOf<CompletedSaleReceipt?>(null) }
-    var showPreview by remember { mutableStateOf(false) }
-    var comprobanteEmitido by remember { mutableStateOf<ComprobanteEmitidoResult?>(null) }
-    var selectedReceiptType by remember { mutableStateOf(TipoComprobanteEmision.BOLETA) }
-    var receiptCustomerInfo by remember { mutableStateOf(ReceiptCustomerInfo()) }
+    var message              by remember { mutableStateOf("") }
+    var showCobrarVenta      by remember { mutableStateOf(false) }
+    var selectedCliente      by remember { mutableStateOf<ClientRow?>(null) }
+    var showClientePicker    by remember { mutableStateOf(false) }
+    var pendingReceipt       by remember { mutableStateOf<CompletedSaleReceipt?>(null) }
+    var showPreview          by remember { mutableStateOf(false) }
+    var comprobanteEmitido   by remember { mutableStateOf<ComprobanteEmitidoResult?>(null) }
+    var selectedReceiptType  by remember { mutableStateOf(TipoComprobanteEmision.BOLETA) }
+    var receiptCustomerInfo  by remember { mutableStateOf(ReceiptCustomerInfo()) }
     var showGeneratingReceipt by remember { mutableStateOf(false) }
-    var showSaleCompleted by remember { mutableStateOf(false) }
-    var receiptPhone by remember { mutableStateOf("") }
-    var postSaleDismissed by remember { mutableStateOf(false) }
+    var showSaleCompleted    by remember { mutableStateOf(false) }
+    var receiptPhone         by remember { mutableStateOf("") }
+    var postSaleDismissed    by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    Column(modifier = modifier.background(SurfaceWhite).padding(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.ShoppingCart,
-                contentDescription = null,
-                tint = Brand,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Carrito (${state.cart.sumOf { it.quantity }})",
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-                style = MaterialTheme.typography.titleSmall,
-            )
+    Column(
+        modifier = modifier
+            .background(AppBackground)
+            .padding(Spacing.md),
+    ) {
+        // ── Header del carrito ───────────────────────────────────────────────
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(Radius.md))
+                    .background(BrandRedLight),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.ShoppingCart, contentDescription = null, tint = BrandRed, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(Spacing.sm))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Carrito",
+                    fontWeight = FontWeight.Bold,
+                    color      = TextPrimary,
+                    style      = MaterialTheme.typography.titleSmall,
+                )
+                val qty = state.cart.sumOf { it.quantity }
+                Text(
+                    if (qty == 0) "Vacío" else "$qty ${if (qty == 1) "producto" else "productos"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (qty == 0) TextTertiary else TextSecondary,
+                )
+            }
         }
-        Spacer(Modifier.height(6.dp))
-        Text("Cliente", style = MaterialTheme.typography.labelMedium, color = TextSecondary, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(5.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+
+        Spacer(Modifier.height(Spacing.md))
+
+        // ── Selector de cliente ──────────────────────────────────────────────
+        Text("Cliente", style = MaterialTheme.typography.labelMedium, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(Spacing.xs))
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
             Box(Modifier.weight(1f)) {
                 OutlinedButton(
-                    onClick = { showClientePicker = true },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
+                    onClick        = { showClientePicker = true },
+                    modifier       = Modifier.fillMaxWidth().height(46.dp),
+                    shape          = RoundedCornerShape(Radius.md),
+                    colors         = ButtonDefaults.outlinedButtonColors(containerColor = SurfaceWhite, contentColor = TextPrimary),
+                    border         = androidx.compose.foundation.BorderStroke(1.dp, BorderDefault),
+                    contentPadding = PaddingValues(horizontal = Spacing.md),
                 ) {
-                    Text(selectedCliente?.name?.takeIf { it.isNotBlank() } ?: "Cliente general", modifier = Modifier.weight(1f), color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Mostrar clientes", tint = TextSecondary)
+                    Text(
+                        selectedCliente?.name?.takeIf { it.isNotBlank() } ?: "Cliente general",
+                        modifier  = Modifier.weight(1f),
+                        color     = if (selectedCliente != null) TextPrimary else TextSecondary,
+                        maxLines  = 1,
+                        overflow  = TextOverflow.Ellipsis,
+                        style     = MaterialTheme.typography.bodySmall,
+                    )
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
                 }
                 DropdownMenu(
-                    expanded = showClientePicker,
+                    expanded        = showClientePicker,
                     onDismissRequest = { showClientePicker = false },
-                    modifier = Modifier.widthIn(min = 250.dp, max = 380.dp).heightIn(max = 360.dp),
+                    modifier        = Modifier.widthIn(min = 250.dp, max = 380.dp).heightIn(max = 360.dp),
                 ) {
-                    DropdownMenuItem(text = { Text("Cliente general") }, onClick = { selectedCliente = null; showClientePicker = false })
+                    DropdownMenuItem(
+                        text    = { Text("Cliente general", style = MaterialTheme.typography.bodyMedium) },
+                        onClick = { selectedCliente = null; showClientePicker = false },
+                    )
+                    HorizontalDivider()
                     clients.filter { it.active }.forEach { client ->
                         DropdownMenuItem(
                             text = {
                                 Column {
                                     Text(client.name.ifBlank { client.businessName.ifBlank { "Cliente" } }, fontWeight = FontWeight.Medium)
-                                    if (client.document.isNotBlank()) Text(client.document, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                    if (client.document.isNotBlank()) {
+                                        Text(client.document, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                    }
                                 }
                             },
                             onClick = { selectedCliente = client; showClientePicker = false },
@@ -441,108 +408,57 @@ internal fun CartPane(
                     }
                 }
             }
-            Button(
-                onClick = onNewClient,
-                modifier = Modifier.height(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Brand, contentColor = Color.White),
-                shape = RoundedCornerShape(10.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
+            IconButton(
+                onClick  = onNewClient,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(Radius.md))
+                    .background(BrandRed),
             ) {
-                Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(19.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("Nuevo", fontWeight = FontWeight.SemiBold)
+                Icon(Icons.Filled.PersonAdd, contentDescription = "Nuevo cliente", tint = Color.White, modifier = Modifier.size(18.dp))
             }
         }
-        Spacer(Modifier.height(8.dp))
-        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(state.cart) { line ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(AppBg)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            line.productName,
-                            fontWeight = FontWeight.Medium,
-                            color = TextPrimary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            "S/ ${"%.2f".format(line.unitPrice)}",
-                            color = TextSecondary,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { onDecrease(line) },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(Icons.Filled.Remove, contentDescription = "Menos", tint = Brand)
-                        }
-                        Text(
-                            "${line.quantity}",
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        IconButton(
-                            onClick = { onIncrease(line) },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = "Más", tint = Brand)
-                        }
-                    }
-                }
+
+        Spacer(Modifier.height(Spacing.md))
+
+        // ── Lista de items o empty state ─────────────────────────────────────
+        if (state.cart.isEmpty()) {
+            Box(
+                modifier         = Modifier.weight(1f).fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CartEmptyState()
             }
-        }
-        Spacer(Modifier.height(8.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(AppBg)
-                .padding(12.dp),
-        ) {
-            Column {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Subtotal", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text("S/ ${"%.2f".format(state.subtotal)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                }
-                Spacer(Modifier.height(4.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("IGV (18%)", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text("S/ ${"%.2f".format(state.igv)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                }
-                Spacer(Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(Divider),
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("TOTAL", fontWeight = FontWeight.Bold, color = TextPrimary, style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "S/ ${"%.2f".format(state.total)}",
-                        fontWeight = FontWeight.Bold,
-                        color = Brand,
-                        style = MaterialTheme.typography.titleMedium,
+        } else {
+            LazyColumn(
+                modifier              = Modifier.weight(1f),
+                verticalArrangement   = Arrangement.spacedBy(Spacing.sm),
+                contentPadding        = PaddingValues(vertical = Spacing.xs),
+            ) {
+                items(state.cart) { line ->
+                    CartItemRow(
+                        line       = line,
+                        onIncrease = { onIncrease(line) },
+                        onDecrease = { onDecrease(line) },
                     )
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
+
+        Spacer(Modifier.height(Spacing.md))
+
+        // ── Totales ──────────────────────────────────────────────────────────
+        CartTotalSection(
+            subtotal = state.subtotal,
+            igv      = state.igv,
+            total    = state.total,
+        )
+
+        Spacer(Modifier.height(Spacing.md))
+
+        // ── Botón pagar ──────────────────────────────────────────────────────
         Button(
-            onClick = {
+            onClick  = {
                 if (state.cart.isEmpty()) {
                     message = "Agregue productos al carrito."
                     return@Button
@@ -550,40 +466,50 @@ internal fun CartPane(
                 message = ""
                 showCobrarVenta = true
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Brand),
-            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            colors   = ButtonDefaults.buttonColors(
+                containerColor         = BrandRed,
+                contentColor           = Color.White,
+                disabledContainerColor = GrayLight,
+                disabledContentColor   = GrayMedium,
+            ),
+            shape    = RoundedCornerShape(Radius.md),
         ) {
-            Icon(Icons.Filled.Print, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("PAGAR", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+            Icon(Icons.Filled.Payment, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(Spacing.sm))
+            Text(
+                "COBRAR  S/ ${"%.2f".format(state.total)}",
+                color      = Color.White,
+                fontWeight = FontWeight.Bold,
+                style      = MaterialTheme.typography.titleSmall,
+            )
         }
+
         if (message.isNotBlank()) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Spacing.sm))
             Text(
                 message,
-                color = if (message.contains("Agregue")) Brand else Color(0xFF16A34A),
+                color = if (message.contains("Agregue")) BrandRed else GreenSuccess,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
     }
 
+    // ── Dialogs ──────────────────────────────────────────────────────────────
     if (showCobrarVenta) {
         CobrarVentaDialog(
-            total = state.total,
-            cashierName = cashierName,
-            clients = clients,
+            total        = state.total,
+            cashierName  = cashierName,
+            clients      = clients,
             initialClient = selectedCliente,
-            onDismiss = { showCobrarVenta = false },
+            onDismiss    = { showCobrarVenta = false },
             onCobroExitoso = { receipt, receiptType, customerInfo ->
                 message = "Venta registrada."
-                pendingReceipt = receipt
+                pendingReceipt      = receipt
                 selectedReceiptType = receiptType
                 receiptCustomerInfo = customerInfo
-                selectedCliente = clients.firstOrNull { it.id == customerInfo.id }
-                postSaleDismissed = false
+                selectedCliente     = clients.firstOrNull { it.id == customerInfo.id }
+                postSaleDismissed   = false
                 showGeneratingReceipt = true
                 scope.launch {
                     val emitted = withContext(Dispatchers.IO) {
@@ -598,9 +524,9 @@ internal fun CartPane(
                     emitted.fold(
                         onSuccess = {
                             if (!postSaleDismissed) {
-                                comprobanteEmitido = it
+                                comprobanteEmitido    = it
                                 showGeneratingReceipt = false
-                                showSaleCompleted = true
+                                showSaleCompleted     = true
                             }
                         },
                         onFailure = {
@@ -618,15 +544,14 @@ internal fun CartPane(
     }
 
     if (showGeneratingReceipt && pendingReceipt != null) {
-        val receipt = pendingReceipt!!
         GeneratingReceiptDialog(
-            type = selectedReceiptType,
+            type         = selectedReceiptType,
             onPrintTicket = {
-                postSaleDismissed = true
+                postSaleDismissed     = true
                 showGeneratingReceipt = false
                 scope.launch {
                     val ticket = withContext(Dispatchers.IO) {
-                        catalog.emitComprobanteForVenta(receipt.ventaId, TipoComprobanteEmision.SOLO_TICKET, receipt.idCliente)
+                        catalog.emitComprobanteForVenta(pendingReceipt!!.ventaId, TipoComprobanteEmision.SOLO_TICKET, pendingReceipt!!.idCliente)
                     }
                     ticket.onSuccess {
                         comprobanteEmitido = it
@@ -635,59 +560,198 @@ internal fun CartPane(
                 }
             },
             onContinueSelling = {
-                postSaleDismissed = true
+                postSaleDismissed     = true
                 showGeneratingReceipt = false
-                pendingReceipt = null
-                comprobanteEmitido = null
-                selectedCliente = null
-                receiptCustomerInfo = ReceiptCustomerInfo()
+                pendingReceipt        = null
+                comprobanteEmitido    = null
+                selectedCliente       = null
+                receiptCustomerInfo   = ReceiptCustomerInfo()
             },
         )
     }
 
     if (showSaleCompleted && pendingReceipt != null && comprobanteEmitido != null) {
-        val receipt = pendingReceipt!!
-        val issued = comprobanteEmitido!!
         SaleCompletedDialog(
-            receipt = receipt,
-            issued = issued,
-            type = selectedReceiptType,
-            initialPhone = selectedCliente?.phone.orEmpty(),
+            receipt       = pendingReceipt!!,
+            issued        = comprobanteEmitido!!,
+            type          = selectedReceiptType,
+            initialPhone  = selectedCliente?.phone.orEmpty(),
             onPhoneChanged = { receiptPhone = it },
             clienteNombre = receiptCustomerInfo.name,
-            clienteDoc = receiptCustomerInfo.document,
-            onPrint = { showPreview = true },
-            onNewSale = {
-                showSaleCompleted = false
-                pendingReceipt = null
-                comprobanteEmitido = null
-                selectedCliente = null
+            clienteDoc    = receiptCustomerInfo.document,
+            onPrint       = { showPreview = true },
+            onNewSale     = {
+                showSaleCompleted   = false
+                pendingReceipt      = null
+                comprobanteEmitido  = null
+                selectedCliente     = null
                 receiptCustomerInfo = ReceiptCustomerInfo()
-                message = ""
+                message             = ""
             },
         )
     }
 
     if (showPreview && pendingReceipt != null && comprobanteEmitido != null) {
-        val pr = pendingReceipt!!
-        val em = comprobanteEmitido!!
+        val pr  = pendingReceipt!!
+        val em  = comprobanteEmitido!!
         val cid = (selectedCliente?.id ?: pr.idCliente).coerceAtLeast(0L)
         val cdisp = if (receiptCustomerInfo.document.isNotBlank() || receiptCustomerInfo.name.isNotBlank()) {
             receiptCustomerInfo.name to receiptCustomerInfo.document
         } else if (cid > 0L) {
             catalog.getClienteDisplay(cid)
-        } else {
-            null
-        }
+        } else null
         VistaPreviaReciboDialog(
-            receipt = pr,
-            emitido = em,
+            receipt       = pr,
+            emitido       = em,
             clienteNombre = cdisp?.first,
-            clienteDoc = cdisp?.second,
+            clienteDoc    = cdisp?.second,
             whatsappPhone = receiptPhone.ifBlank { selectedCliente?.phone.orEmpty() },
-            onDismiss = {
-                showPreview = false
-            },
+            onDismiss     = { showPreview = false },
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  COBRAR VENTA DIALOG  — rediseñado
+// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun LegacyCobrarVentaDialog(
+    total: Double,
+    onDismiss: () -> Unit,
+    onCobroExitoso: (CompletedSaleReceipt) -> Unit,
+    onPay: suspend (SalePaymentInfo) -> Result<CompletedSaleReceipt>,
+) {
+    var method       by remember { mutableStateOf(PosPaymentMethod.Efectivo) }
+    var receivedText by remember { mutableStateOf("") }
+    var processing   by remember { mutableStateOf(false) }
+    var errorText    by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(method, total) {
+        receivedText = when (method) {
+            PosPaymentMethod.Efectivo -> ""
+            else -> String.format(Locale.US, "%.2f", total)
+        }
+    }
+
+    val received  = receivedText.toDoubleOrNull() ?: 0.0
+    val vuelto    = (received - total).coerceAtLeast(0.0)
+    val canConfirm = total > 0 && !processing && received + 1e-6 >= total
+
+    Dialog(onDismissRequest = { if (!processing) onDismiss() }) {
+        Box(Modifier.fillMaxSize().padding(horizontal = Spacing.lg, vertical = Spacing.xl), contentAlignment = Alignment.Center) {
+            Surface(
+                modifier        = Modifier.widthIn(max = 440.dp).fillMaxHeight(0.92f),
+                shape           = RoundedCornerShape(Radius.xl),
+                color           = SurfaceWhite,
+                shadowElevation = 12.dp,
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    // Cabecera
+                    Row(
+                        modifier = Modifier.fillMaxWidth().background(BrandRedDark).padding(horizontal = Spacing.md, vertical = Spacing.md),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Payment, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(Spacing.sm))
+                            Text("Cobrar venta", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        }
+                        IconButton(onClick = { if (!processing) onDismiss() }, enabled = !processing) {
+                            Icon(Icons.Filled.Close, contentDescription = "Cerrar", tint = Color.White)
+                        }
+                    }
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(Spacing.lg)) {
+                        Text("TOTAL A COBRAR", color = TextSecondary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(Spacing.xs))
+                        Text("S/ ${String.format(Locale.US, "%.2f", total)}", color = BrandRed, fontWeight = FontWeight.Bold, fontSize = 32.sp)
+                        Spacer(Modifier.height(Spacing.lg))
+                        Text("MÉTODO DE PAGO", color = TextSecondary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(Spacing.sm))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                            listOf(
+                                Triple(PosPaymentMethod.Efectivo, "Efectivo",  Icons.Filled.AttachMoney),
+                                Triple(PosPaymentMethod.Tarjeta,  "Tarjeta",   Icons.Filled.CreditCard),
+                                Triple(PosPaymentMethod.Yape,     "Yape",      Icons.Filled.Smartphone),
+                                Triple(PosPaymentMethod.Plin,     "Plin",      Icons.Filled.Smartphone),
+                            ).forEach { (m, label, icon) ->
+                                val sel = method == m
+                                Column(
+                                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(Radius.md))
+                                        .background(if (sel) BrandRed else SurfaceMuted)
+                                        .clickable(enabled = !processing) { method = m; errorText = "" }
+                                        .padding(vertical = Spacing.md, horizontal = Spacing.xs),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Icon(icon, contentDescription = null, tint = if (sel) Color.White else TextSecondary, modifier = Modifier.size(22.dp))
+                                    Spacer(Modifier.height(Spacing.xs))
+                                    Text(label, color = if (sel) Color.White else TextSecondary, style = MaterialTheme.typography.labelSmall, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(Spacing.lg))
+                        Text("MONTO RECIBIDO", color = TextSecondary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(Spacing.sm))
+                        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).background(SurfaceSubtle).padding(vertical = Spacing.md, horizontal = Spacing.md), contentAlignment = Alignment.CenterEnd) {
+                            Text(if (receivedText.isEmpty()) "0.00" else receivedText, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 28.sp)
+                        }
+                        Spacer(Modifier.height(Spacing.md))
+                        Text("VUELTO", color = TextSecondary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(Spacing.sm))
+                        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).background(SurfaceSubtle).padding(vertical = Spacing.sm, horizontal = Spacing.md), contentAlignment = Alignment.CenterEnd) {
+                            Text("S/ ${String.format(Locale.US, "%.2f", vuelto)}", color = GreenSuccess, fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                        }
+                        Spacer(Modifier.height(Spacing.lg))
+                        Text("TECLADO NUMÉRICO", color = TextSecondary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(Spacing.sm))
+                        listOf(listOf("7","8","9"), listOf("4","5","6"), listOf("1","2","3"), listOf(".","0","⌫")).forEach { row ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                row.forEach { k ->
+                                    Box(
+                                        modifier = Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(Radius.md))
+                                            .background(SurfaceMuted)
+                                            .clickable(enabled = !processing && method == PosPaymentMethod.Efectivo) {
+                                                receivedText = appendMontoRecibido(receivedText, k); errorText = ""
+                                            },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(k, color = TextPrimary, fontWeight = FontWeight.Medium, fontSize = 18.sp)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(Spacing.sm))
+                        }
+                        if (errorText.isNotBlank()) {
+                            Text(errorText, color = BrandRed, style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.height(Spacing.sm))
+                        }
+                    }
+                    Column(Modifier.fillMaxWidth().padding(Spacing.lg)) {
+                        Button(
+                            onClick = {
+                                if (!canConfirm) return@Button
+                                scope.launch {
+                                    processing = true; errorText = ""
+                                    val r = onPay(SalePaymentInfo(tipoPago = mapPosPaymentMethodToTipoPago(method), montoRecibido = received, vuelto = vuelto))
+                                    processing = false
+                                    r.fold(onSuccess = { onCobroExitoso(it); onDismiss() }, onFailure = { errorText = it.message ?: "Error al registrar." })
+                                }
+                            },
+                            enabled  = canConfirm,
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            colors   = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                            shape    = RoundedCornerShape(Radius.md),
+                        ) {
+                            Text("COBRAR  S/ ${String.format(Locale.US, "%.2f", total)}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
+                        Spacer(Modifier.height(Spacing.sm))
+                        TextButton(onClick = { if (!processing) onDismiss() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Cancelar", color = TextSecondary)
+                        }
+                    }
+                }
+            }
+        }
     }
 }

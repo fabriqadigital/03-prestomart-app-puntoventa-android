@@ -1,11 +1,9 @@
 package com.ecommerce.ecommerceposapp.data.remote.api
 
-import com.ecommerce.ecommerceposapp.BuildConfig
-
 object ApiConfig {
     const val PREFS_NAME = "pos_prefs"
     const val PRODUCTION_BASE_URL = "https://prestomartperu.com"
-    val DEFAULT_BASE_URL: String = BuildConfig.API_BASE_URL
+    const val DEFAULT_BASE_URL = PRODUCTION_BASE_URL
 
     // En el backend el bloque "Punto de Venta" vive hoy bajo /post.
     // Si lo renombran a /pos, solo cambia esta constante.
@@ -58,21 +56,9 @@ object ApiConfig {
     const val SUPPLIER_UPDATE_ESTADO = "$POS_PREFIX/proveedores/actualizar_estado"
     const val SUPPLIER_DELETE = "$POS_PREFIX/proveedores/eliminar"
 
-    fun normalizeBaseUrl(baseUrl: String): String {
-        return if (BuildConfig.DEBUG && baseUrl == "http://10.0.3.2:5555") {
-            "http://10.0.3.2:8000"
-        } else {
-            baseUrl
-        }
-    }
+    fun normalizeBaseUrl(baseUrl: String): String = PRODUCTION_BASE_URL
 
-    fun configuredBaseUrl(savedBaseUrl: String?): String {
-        val selected = if (BuildConfig.DEBUG) DEFAULT_BASE_URL else savedBaseUrl?.trim().takeUnless { it.isNullOrBlank() }
-            ?: DEFAULT_BASE_URL
-        return normalizeBaseUrl(selected)
-    }
+    fun configuredBaseUrl(savedBaseUrl: String?): String = PRODUCTION_BASE_URL
 
-    fun configuredHostHeader(savedHostHeader: String?): String {
-        return if (BuildConfig.DEBUG) BuildConfig.API_HOST_HEADER else savedHostHeader?.trim().orEmpty()
-    }
+    fun configuredHostHeader(savedHostHeader: String?): String = ""
 }

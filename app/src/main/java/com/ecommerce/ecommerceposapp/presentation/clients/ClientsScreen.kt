@@ -1,4 +1,4 @@
-package com.ecommerce.ecommerceposapp.presentation.clients
+﻿package com.ecommerce.ecommerceposapp.presentation.clients
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -55,14 +55,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
 
-private val ClientsAccent = Color(0xFFB91C2B)
-private val ClientsText = Color(0xFF111827)
-private val ClientsMuted = Color(0xFF64748B)
-private val ClientsDivider = Color(0xFFE2E8F0)
+private val ClientsAccent = com.ecommerce.ecommerceposapp.ui.theme.BrandRed
+private val ClientsText = com.ecommerce.ecommerceposapp.ui.theme.TextPrimary
+private val ClientsMuted = com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
+private val ClientsDivider = com.ecommerce.ecommerceposapp.ui.theme.BorderDefault
 
 @Composable
 fun ClientsCrudScreen(vm: ClientsViewModel) {
@@ -88,10 +89,18 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
             value = search,
             onValueChange = { search = it },
             placeholder = { Text("Buscar por nombre, documento o correo") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = com.ecommerce.ecommerceposapp.ui.theme.TextSecondary) },
             modifier = if (compact) Modifier.fillMaxWidth() else Modifier.widthIn(320.dp, 480.dp),
             singleLine = true,
-            shape = RoundedCornerShape(10.dp),
+            shape = RoundedCornerShape(com.ecommerce.ecommerceposapp.ui.theme.Radius.lg),
+            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                focusedBorderColor   = com.ecommerce.ecommerceposapp.ui.theme.BrandRed,
+                unfocusedBorderColor = com.ecommerce.ecommerceposapp.ui.theme.BorderDefault,
+                cursorColor          = com.ecommerce.ecommerceposapp.ui.theme.BrandRed,
+                focusedLabelColor    = com.ecommerce.ecommerceposapp.ui.theme.BrandRed,
+                focusedContainerColor   = com.ecommerce.ecommerceposapp.ui.theme.SurfaceWhite,
+                unfocusedContainerColor = com.ecommerce.ecommerceposapp.ui.theme.SurfaceWhite,
+            ),
         )
         Spacer(Modifier.height(10.dp))
         when {
@@ -261,10 +270,11 @@ private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: 
     val canSave = name.isNotBlank() && document.isNotBlank() && (!webAccess || email.isNotBlank())
     AlertDialog(
         onDismissRequest = onDismiss,
-        modifier = Modifier.fillMaxWidth(if (compact) .98f else .9f).widthIn(max = 980.dp),
+        modifier = Modifier.fillMaxWidth(if (compact) .98f else .96f).widthIn(max = 1180.dp),
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         title = { Text(if (initial.id == 0L) "Nuevo cliente" else "Editar cliente") },
         text = {
-            Column(Modifier.heightIn(max = if (compact) 610.dp else 720.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.heightIn(max = if (compact) 640.dp else 800.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (compact) fields() else {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {

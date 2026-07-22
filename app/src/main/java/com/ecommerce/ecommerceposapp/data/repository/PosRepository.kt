@@ -311,6 +311,84 @@ class PosRepositoryImpl(private val context: Context) :
     }
 
     override fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long, customerInfo: ReceiptCustomerInfo): Result<ComprobanteEmitidoResult> {
+        val hasLocalSale = realmQuery { realm ->
+            realm.where(FinanzaVentaRealm::class.java).equalTo("id", ventaId).count() > 0L
+        }
+        if (!hasLocalSale) {
+            return cashApi.getSaleReceipt(ventaId).map { receipt ->
+                val emitter = realmQuery { realm ->
+                    val config = realm.where(FinanzaEmisorConfigRealm::class.java)
+                        .equalTo("activo", true)
+                        .findFirst()
+                        ?: realm.where(FinanzaEmisorConfigRealm::class.java).findFirst()
+                    Triple(config?.ruc.orEmpty(), config?.razonSocial.orEmpty(), config?.direccion.orEmpty())
+                }
+                val tipoSunat = when (tipo) {
+                    TipoComprobanteEmision.FACTURA -> "01"
+                    TipoComprobanteEmision.BOLETA -> "03"
+                    TipoComprobanteEmision.SOLO_TICKET -> "TICK"
+                }
+                val number = receipt.numeroTicket
+                val serie = number.substringBeforeLast('-', missingDelimiterValue = "")
+                val correlativo = number.substringAfterLast('-', missingDelimiterValue = "").toIntOrNull() ?: 0
+                ComprobanteEmitidoResult(
+                    tipoSunat = tipoSunat,
+                    numeroCompleto = number,
+                    serie = serie,
+                    correlativo = correlativo,
+                    qrPayload = buildQrPayload(
+                        ruc = emitter.first,
+                        tipoDoc = tipoSunat,
+                        serie = serie,
+                        correlativo = correlativo,
+                        igv = receipt.igv,
+                        total = receipt.total,
+                        fechaSunat = formatFechaSunat(receipt.fechaMillis),
+                        numeroCompleto = number,
+                    ),
+                    emisorRuc = emitter.first,
+                    emisorRazonSocial = emitter.second,
+                    emisorDireccion = emitter.third,
+                    totalLetras = AmountInWordsFormatter.soles(receipt.total),
+                    receptorNombre = customerInfo.name.ifBlank { receipt.clienteNombre },
+                    receptorDocumento = customerInfo.document.ifBlank { receipt.clienteDocumento },
+                )
+            }
+        }
+        if (tipo != TipoComprobanteEmision.SOLO_TICKET) {
+            val expectedType = if (tipo == TipoComprobanteEmision.FACTURA) "01" else "03"
+            val existing = realmQuery { realm ->
+                val receipt = realm.where(FinanzaComprobanteRealm::class.java)
+                    .equalTo("idVenta", ventaId)
+                    .equalTo("tipoComprobante", expectedType)
+                    .sort("id", io.realm.Sort.DESCENDING)
+                    .findFirst()
+                    ?: return@realmQuery null
+                ComprobanteEmitidoResult(
+                    tipoSunat = receipt.tipoComprobante,
+                    numeroCompleto = receipt.numeroCompleto,
+                    serie = receipt.serie,
+                    correlativo = receipt.correlativo,
+                    qrPayload = buildQrPayload(
+                        ruc = receipt.emisorRuc,
+                        tipoDoc = receipt.tipoComprobante,
+                        serie = receipt.serie,
+                        correlativo = receipt.correlativo,
+                        igv = receipt.totalIgv,
+                        total = receipt.total,
+                        fechaSunat = receipt.fechaEmision,
+                        numeroCompleto = receipt.numeroCompleto,
+                    ),
+                    emisorRuc = receipt.emisorRuc,
+                    emisorRazonSocial = receipt.emisorRazonSocial,
+                    emisorDireccion = receipt.emisorDireccion,
+                    totalLetras = receipt.totalLetras,
+                    receptorNombre = receipt.receptorRazonSocial,
+                    receptorDocumento = receipt.receptorNumDoc,
+                )
+            }
+            if (existing != null) return Result.success(existing)
+        }
         if (tipo == TipoComprobanteEmision.SOLO_TICKET) {
             return realmQuery { realm ->
                 val venta = realm.where(FinanzaVentaRealm::class.java).equalTo("id", ventaId).findFirst()
@@ -533,22 +611,63 @@ class PosRepositoryImpl(private val context: Context) :
         return cashApi.listSales(sessionId).getOrThrow()
     }
 
-    override fun getSaleReceipt(ventaId: Long): Result<CompletedSaleReceipt> = cashApi.getSaleReceipt(ventaId).map { remote ->
-        realmQuery { realm ->
-            val localSale = realm.where(FinanzaVentaRealm::class.java).equalTo("id", ventaId).findFirst()
-            val localReceipt = realm.where(FinanzaComprobanteRealm::class.java)
-                .equalTo("idVenta", ventaId)
-                .sort("id", io.realm.Sort.DESCENDING)
-                .findFirst()
-            remote.copy(
-                subtotal = localSale?.subtotal?.takeIf { it > 0.0 } ?: remote.subtotal,
-                igv = localSale?.igv?.takeIf { it > 0.0 } ?: remote.igv,
-                montoRecibido = localSale?.montoRecibido?.takeIf { it > 0.0 } ?: remote.montoRecibido,
-                vuelto = localSale?.vuelto?.takeIf { it > 0.0 } ?: remote.vuelto,
-                clienteNombre = remote.clienteNombre.ifBlank { localReceipt?.receptorRazonSocial.orEmpty() },
-                clienteDocumento = remote.clienteDocumento.ifBlank { localReceipt?.receptorNumDoc.orEmpty() },
+    override fun getSaleReceipt(ventaId: Long): Result<CompletedSaleReceipt> {
+        val remoteResult = cashApi.getSaleReceipt(ventaId).map { remote ->
+            realmQuery { realm ->
+                val localSale = realm.where(FinanzaVentaRealm::class.java).equalTo("id", ventaId).findFirst()
+                val localReceipt = realm.where(FinanzaComprobanteRealm::class.java)
+                    .equalTo("idVenta", ventaId)
+                    .sort("id", io.realm.Sort.DESCENDING)
+                    .findFirst()
+                remote.copy(
+                    subtotal = localSale?.subtotal?.takeIf { it > 0.0 } ?: remote.subtotal,
+                    igv = localSale?.igv?.takeIf { it > 0.0 } ?: remote.igv,
+                    montoRecibido = localSale?.montoRecibido?.takeIf { it > 0.0 } ?: remote.montoRecibido,
+                    vuelto = localSale?.vuelto?.takeIf { it > 0.0 } ?: remote.vuelto,
+                    clienteNombre = remote.clienteNombre.ifBlank { localReceipt?.receptorRazonSocial.orEmpty() },
+                    clienteDocumento = remote.clienteDocumento.ifBlank { localReceipt?.receptorNumDoc.orEmpty() },
+                )
+            }
+        }
+        return remoteResult.recoverCatching { error ->
+            localSaleReceipt(ventaId) ?: throw error
+        }
+    }
+
+    private fun localSaleReceipt(ventaId: Long): CompletedSaleReceipt? = realmQuery { realm ->
+        val sale = realm.where(FinanzaVentaRealm::class.java).equalTo("id", ventaId).findFirst() ?: return@realmQuery null
+        val details = realm.where(FinanzaVentaDetalleRealm::class.java).equalTo("idVenta", ventaId).findAll()
+        val lines = details.map {
+            CartLine(
+                productId = it.idProducto,
+                productName = it.nombreProducto,
+                unitPrice = it.precioUnitario,
+                quantity = it.cantidad.toInt().coerceAtLeast(1),
             )
         }
+        val localReceipt = realm.where(FinanzaComprobanteRealm::class.java)
+            .equalTo("idVenta", ventaId)
+            .sort("id", io.realm.Sort.DESCENDING)
+            .findFirst()
+        val client = sale.idCliente.takeIf { it > 0L }?.let { id ->
+            realm.where(ClientRealm::class.java).equalTo("id", id).findFirst()
+        }
+        CompletedSaleReceipt(
+            ventaId = sale.id,
+            numeroTicket = sale.numeroComprobante,
+            subtotal = sale.subtotal,
+            igv = sale.igv,
+            total = sale.total,
+            tipoPago = sale.tipoPago,
+            montoRecibido = sale.montoRecibido.takeIf { it > 0.0 } ?: sale.total,
+            vuelto = sale.vuelto.coerceAtLeast(0.0),
+            fechaMillis = sale.fechaVenta,
+            lines = lines,
+            vendedorNombre = getSession()?.name.orEmpty(),
+            idCliente = sale.idCliente,
+            clienteNombre = localReceipt?.receptorRazonSocial.orEmpty().ifBlank { client?.name.orEmpty() },
+            clienteDocumento = localReceipt?.receptorNumDoc.orEmpty().ifBlank { client?.document.orEmpty() },
+        )
     }
 
     override fun listCashRegisters(): Result<List<CashRegister>> = cashApi.listCashRegisters()
@@ -565,12 +684,19 @@ class PosRepositoryImpl(private val context: Context) :
                 .filter { it.id > 0L }
         }
 
-    override fun findOpenCashSession(cashierId: Long): Result<CashSession?> = cashApi.findOpenSession(cashierId)
-        .onSuccess { session ->
-            cacheCashSession(session)
-            session?.let { cacheEmitterFromCashRegisters(lastCashRegisters, it.cashRegisterId) }
+    override fun findOpenCashSession(cashierId: Long): Result<CashSession?> {
+        val cached = cachedCashSession(cashierId)
+        if (cached != null) {
+            cacheEmitterFromCashRegisters(lastCashRegisters, cached.cashRegisterId)
+            return Result.success(cached)
         }
-        .recoverCatching { error -> if (error is IOException) cachedCashSession(cashierId) else throw error }
+        return cashApi.findOpenSession(cashierId)
+            .onSuccess { session ->
+                cacheCashSession(session)
+                session?.let { cacheEmitterFromCashRegisters(lastCashRegisters, it.cashRegisterId) }
+            }
+            .recoverCatching { error -> if (error is IOException) cachedCashSession(cashierId) else throw error }
+    }
 
     override fun openCashSession(cashRegisterId: Long, cashierId: Long, openingAmount: Double): Result<CashSession> =
         cashApi.openSession(cashRegisterId, cashierId, openingAmount).onSuccess {
@@ -1083,8 +1209,7 @@ class PosRepositoryImpl(private val context: Context) :
         if (input.isBlank()) return ""
         if (input.startsWith("file://")) return input
 
-        val preferredBase = prefs.getString("api_base_url", null)
-            ?: ApiConfig.DEFAULT_BASE_URL
+        val preferredBase = ApiSessionStore(context).baseUrl
 
         // Construir URL completa si es ruta relativa
         val fullUrl = when {
@@ -1099,8 +1224,7 @@ class PosRepositoryImpl(private val context: Context) :
             val u = URL(fullUrl)
             val host = u.host
             if (host == "localhost" || host == "127.0.0.1" || host.endsWith(".localhost")) {
-                val port = if (u.port > 0) ":${u.port}" else ""
-                "http://10.0.3.2$port${u.file}"
+                "${ApiConfig.PRODUCTION_BASE_URL}${u.file}"
             } else {
                 fullUrl
             }

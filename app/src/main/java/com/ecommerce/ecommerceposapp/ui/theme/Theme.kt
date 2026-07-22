@@ -6,45 +6,73 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val DarkColorScheme = darkColorScheme(
-    primary = BrandRed,
-    onPrimary = Color.White,
-    primaryContainer = BrandRedDark,
-    onPrimaryContainer = Color.White,
-    secondary = BlueLight,
-    onSecondary = Color.White,
-    secondaryContainer = BlueDeep,
-    onSecondaryContainer = Color.White,
-    tertiary = BluePale,
-    background = NavyDark,
-    onBackground = TextOnDark,
-    surface = NavyMedium,
-    onSurface = TextOnDark,
-    surfaceVariant = NavyLight,
-    onSurfaceVariant = TextMuted,
-    error = RedError,
-    onError = Color.White,
+// ── Light scheme — fondo blanco predominante, acento rojo + amarillo ──────────
+private val LightColorScheme = lightColorScheme(
+    // Primario: Rojo #FD0505
+    primary                = BrandRed,
+    onPrimary              = TextOnBrand,
+    primaryContainer       = BrandRedLight,
+    onPrimaryContainer     = BrandRedDark,
+
+    // Secundario: Amarillo #FFC107
+    secondary              = BrandYellow,
+    onSecondary            = TextOnYellow,
+    secondaryContainer     = BrandYellowLight,
+    onSecondaryContainer   = GrayDark,
+
+    // Terciario: éxito verde (informativo)
+    tertiary               = GreenSuccess,
+    onTertiary             = TextOnBrand,
+    tertiaryContainer      = GreenSuccessLight,
+    onTertiaryContainer    = GrayDark,
+
+    // Fondos: blanco puro
+    background             = AppBackground,
+    onBackground           = TextPrimary,
+
+    // Superficies: blanco puro
+    surface                = SurfaceWhite,
+    onSurface              = TextPrimary,
+    surfaceVariant         = SurfaceMuted,
+    onSurfaceVariant       = TextSecondary,
+    surfaceTint            = Color.Transparent,
+
+    // Bordes y divisores
+    outline                = BorderDefault,
+    outlineVariant         = GrayLight,
+
+    // Errores
+    error                  = RedDanger,
+    onError                = TextOnBrand,
+    errorContainer         = RedDangerLight,
+    onErrorContainer       = BrandRedDark,
+
+    // Inverso (tooltips, snackbars oscuros)
+    inverseSurface         = DarkSurface,
+    inverseOnSurface       = TextOnDark,
+    inversePrimary         = BrandRedLight,
+
+    scrim                  = Color(0x52000000),
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = BrandRed,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFF3F4F6),
-    onPrimaryContainer = TextDark,
-    secondary = GrayDark,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFF3F4F6),
-    onSecondaryContainer = TextDark,
-    tertiary = GrayDark,
-    background = GrayLight,
-    onBackground = TextDark,
-    surface = Color.White,
-    surfaceTint = Color.Transparent,
-    onSurface = TextDark,
-    surfaceVariant = GrayMedium,
-    onSurfaceVariant = GrayDark,
-    error = BrandRedDark,
-    onError = Color.White,
+// ── Dark scheme — reservado para futura implementación ───────────────────────
+private val DarkColorScheme = darkColorScheme(
+    primary                = BrandRed,
+    onPrimary              = TextOnBrand,
+    primaryContainer       = BrandRedDeep,
+    onPrimaryContainer     = BrandRedLight,
+    secondary              = BrandYellow,
+    onSecondary            = TextOnYellow,
+    secondaryContainer     = BrandYellowDark,
+    onSecondaryContainer   = BrandYellowLight,
+    background             = NavyDark,
+    onBackground           = TextOnDark,
+    surface                = NavyMedium,
+    onSurface              = TextOnDark,
+    surfaceVariant         = NavyLight,
+    onSurfaceVariant       = TextMuted,
+    error                  = RedError,
+    onError                = TextOnBrand,
 )
 
 @Composable
@@ -55,7 +83,7 @@ fun EcommercePosAppTheme(
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
-        content = content,
+        typography  = Typography,
+        content     = content,
     )
 }

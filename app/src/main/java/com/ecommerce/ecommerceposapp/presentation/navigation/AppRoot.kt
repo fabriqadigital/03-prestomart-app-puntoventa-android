@@ -1,4 +1,4 @@
-package com.ecommerce.ecommerceposapp.presentation.navigation
+﻿package com.ecommerce.ecommerceposapp.presentation.navigation
 
 import android.graphics.BitmapFactory
 import android.util.Base64
@@ -124,34 +124,42 @@ private const val LOGIN = "login"
 private const val SYNC = "sync"
 private const val POS = "pos"
 
-// Paleta de la app — fondo claro con acento rojo de marca
-private val Brand = Color(0xFFfd0505)
-private val BrandDark = Color(0xFFa82024)
-private val AppBg = Color(0xFFFFFFFF)          // fondo principal — blanco ligeramente gris
-private val SurfaceWhite = Color(0xFFFFFFFF)   // superficie blanca (tarjetas)
-private val SurfaceAlt = Color(0xFFEEF0F5)     // superficie alternativa más oscura
-private val TextPrimary = Color(0xFF111827)    // texto principal
-private val TextSecondary = Color(0xFF6B7280)  // texto secundario / muted
-private val Divider = Color(0xFFE5E7EB)        // separadores
+// Aliases locales — usan los tokens del DesignSystem
+private val Brand         = com.ecommerce.ecommerceposapp.ui.theme.BrandRed
+private val BrandDark     = com.ecommerce.ecommerceposapp.ui.theme.BrandRedDark
+private val AppBg         = com.ecommerce.ecommerceposapp.ui.theme.AppBackground
+private val SurfaceWhite  = com.ecommerce.ecommerceposapp.ui.theme.SurfaceWhite
+private val SurfaceAlt    = com.ecommerce.ecommerceposapp.ui.theme.SurfaceSubtle
+private val TextPrimary   = com.ecommerce.ecommerceposapp.ui.theme.TextPrimary
+private val TextSecondary = com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
+private val Divider       = com.ecommerce.ecommerceposapp.ui.theme.BorderDefault
 
 @Composable
 private fun FloatingRightNotice(data: SnackbarData) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Card(
+        androidx.compose.material3.Card(
             modifier = Modifier.widthIn(min = 300.dp, max = 440.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFF111827)),
-            elevation = androidx.compose.material3.CardDefaults.cardElevation(10.dp),
+            shape = RoundedCornerShape(com.ecommerce.ecommerceposapp.ui.theme.Radius.lg),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = com.ecommerce.ecommerceposapp.ui.theme.DarkSurface
+            ),
+            elevation = androidx.compose.material3.CardDefaults.cardElevation(8.dp),
         ) {
             Row(
                 Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Color(0xFF4ADE80))
-                Text(data.visuals.message, color = Color.White, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = com.ecommerce.ecommerceposapp.ui.theme.GreenSuccess)
+                Text(
+                    data.visuals.message,
+                    color = Color.White,
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 IconButton(onClick = data::dismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Filled.Close, contentDescription = "Cerrar notificación", tint = Color(0xFFCBD5E1))
+                    Icon(Icons.Filled.Close, contentDescription = "Cerrar", tint = Color(0xFFCBD5E1))
                 }
             }
         }
