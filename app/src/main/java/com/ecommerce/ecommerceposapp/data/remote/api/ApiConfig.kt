@@ -1,14 +1,12 @@
 package com.ecommerce.ecommerceposapp.data.remote.api
 
-import com.ecommerce.ecommerceposapp.BuildConfig
-
 object ApiConfig {
     const val PREFS_NAME = "pos_prefs"
-    const val PRODUCTION_BASE_URL = "https://prestomartperu.com"
-    val DEFAULT_BASE_URL: String = BuildConfig.API_BASE_URL
 
-    // En el backend el bloque "Punto de Venta" vive hoy bajo /post.
-    // Si lo renombran a /pos, solo cambia esta constante.
+    const val PRODUCTION_BASE_URL = "https://prestomartperu.com"
+    const val DEFAULT_BASE_URL = PRODUCTION_BASE_URL
+
+    // Prefijo de las rutas del Punto de Venta en el backend.
     const val POS_PREFIX = "/post"
 
     const val LOGIN = "$POS_PREFIX/login"
@@ -16,30 +14,40 @@ object ApiConfig {
     const val CASHIER_UPDATE = "$POS_PREFIX/cajeros/actualizar"
     const val AUTH_LOGOUT = "$POS_PREFIX/auth/logout"
     const val AUTH_REFRESH = "$POS_PREFIX/auth/refresh"
+
     const val PRODUCT_CREATE = "$POS_PREFIX/producto/crear"
     const val PRODUCT_UPDATE = "$POS_PREFIX/producto/actualizar"
     const val PRODUCT_DELETE = "$POS_PREFIX/producto/eliminar"
     const val PRODUCT_LIST = "$POS_PREFIX/producto/listar"
+
     const val CATEGORY_LIST = "$POS_PREFIX/producto_categoria/listar"
     const val PRODUCT_TYPE_LIST = "$POS_PREFIX/producto_categoria/listar_tipo"
     const val CATEGORY_CREATE = "$POS_PREFIX/producto_categoria/crear"
     const val CATEGORY_UPDATE = "$POS_PREFIX/producto_categoria/actualizar"
     const val CATEGORY_DELETE = "$POS_PREFIX/producto_categoria/eliminar"
+
     const val SUBCATEGORY_LIST = "$POS_PREFIX/producto_categoria_sub/listar"
-    const val SUBCATEGORY_LIST_BY_CATEGORY = "$POS_PREFIX/producto_categoria_sub/listar_obtener"
+    const val SUBCATEGORY_LIST_BY_CATEGORY =
+        "$POS_PREFIX/producto_categoria_sub/listar_obtener"
     const val SUBCATEGORY_CREATE = "$POS_PREFIX/producto_categoria_sub/crear"
     const val SUBCATEGORY_UPDATE = "$POS_PREFIX/producto_categoria_sub/actualizar"
     const val SUBCATEGORY_DELETE = "$POS_PREFIX/producto_categoria_sub/eliminar"
+
     const val CLIENT_LIST = "$POS_PREFIX/clientes/listar"
     const val CLIENT_CREATE = "$POS_PREFIX/clientes/crear"
     const val CLIENT_UPDATE = "$POS_PREFIX/clientes/actualizar"
     const val CLIENT_DELETE = "$POS_PREFIX/clientes/eliminar"
+
     const val USER_LIST = "$POS_PREFIX/usuarios/listar"
     const val USER_CREATE = "$POS_PREFIX/usuarios/crear"
     const val USER_UPDATE = "$POS_PREFIX/usuarios/actualizar"
     const val USER_DELETE = "$POS_PREFIX/usuarios/eliminar"
+
     const val SYNC_CATALOG = "$POS_PREFIX/finanza/sync/catalog"
     const val SALE_REGISTER = "$POS_PREFIX/finanza/ventas/registrar"
+    const val RECEIPT_SEND_EMAIL =
+        "$POS_PREFIX/finanza/comprobantes/enviar-correo"
+
     const val CASH_REGISTER_LIST = "$POS_PREFIX/caja/listar"
     const val CASH_SESSION_LIST = "$POS_PREFIX/caja/sesiones"
     const val CASH_SESSION_OPEN = "$POS_PREFIX/caja/abrir"
@@ -48,31 +56,21 @@ object ApiConfig {
     const val CASH_SALES = "$POS_PREFIX/caja/ventas"
     const val CASH_SALE_DETAIL = "$POS_PREFIX/caja/venta/detalle"
     const val CASH_SALE_CANCEL = "$POS_PREFIX/caja/venta/anular"
-    const val RECEIPT_SEND_EMAIL = "$POS_PREFIX/finanza/comprobantes/enviar-correo"
     const val CASH_FLOW = "$POS_PREFIX/caja/flujo"
 
     const val SUPPLIER_LIST = "$POS_PREFIX/proveedores/listar"
     const val SUPPLIER_GET = "$POS_PREFIX/proveedores/obtener"
     const val SUPPLIER_CREATE = "$POS_PREFIX/proveedores/crear"
     const val SUPPLIER_UPDATE = "$POS_PREFIX/proveedores/actualizar"
-    const val SUPPLIER_UPDATE_ESTADO = "$POS_PREFIX/proveedores/actualizar_estado"
+    const val SUPPLIER_UPDATE_ESTADO =
+        "$POS_PREFIX/proveedores/actualizar_estado"
     const val SUPPLIER_DELETE = "$POS_PREFIX/proveedores/eliminar"
 
-    fun normalizeBaseUrl(baseUrl: String): String {
-        return if (BuildConfig.DEBUG && baseUrl == "http://10.0.3.2:5555") {
-            "http://10.0.3.2:8000"
-        } else {
-            baseUrl
-        }
-    }
-
     fun configuredBaseUrl(savedBaseUrl: String?): String {
-        val selected = if (BuildConfig.DEBUG) DEFAULT_BASE_URL else savedBaseUrl?.trim().takeUnless { it.isNullOrBlank() }
-            ?: DEFAULT_BASE_URL
-        return normalizeBaseUrl(selected)
+        return PRODUCTION_BASE_URL
     }
 
     fun configuredHostHeader(savedHostHeader: String?): String {
-        return if (BuildConfig.DEBUG) BuildConfig.API_HOST_HEADER else savedHostHeader?.trim().orEmpty()
+        return ""
     }
 }
