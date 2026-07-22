@@ -18,12 +18,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashFlowItem
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashSession
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashSummary
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -53,13 +53,21 @@ fun CashModuleScreen(
         viewModel.load(session)
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFFFFFFF))) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color(0xFFFFFFFF)),
+        contentAlignment = Alignment.TopCenter,
+    ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp,
+            modifier = Modifier
+                .fillMaxHeight()
+                .widthIn(max = 640.dp)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(
+                start = 16.dp,
                 end = 16.dp,
                 top = 90.dp,
-                bottom = 16.dp),
+                bottom = 16.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // ── Header turno activo ──────────────────────────────────────────
@@ -85,6 +93,17 @@ fun CashModuleScreen(
                 )
             }
 
+            // Filas del flujo
+            val filtered = state.flowItems.filter { item ->
+                state.flowSearch.isBlank() ||
+                        item.comentario.contains(state.flowSearch, ignoreCase = true) ||
+                        item.razonSocial.contains(state.flowSearch, ignoreCase = true) ||
+                        item.cajeroNombre.contains(state.flowSearch, ignoreCase = true) ||
+                        item.sucursal.contains(state.flowSearch, ignoreCase = true) ||
+                        item.tipoPago.contains(state.flowSearch, ignoreCase = true) ||
+                        item.origen.contains(state.flowSearch, ignoreCase = true)
+            }
+
             // Placeholder cuando no hay items
             if (!state.flowLoading && state.flowItems.isEmpty() && state.flowError == null) {
                 item {
@@ -95,17 +114,6 @@ fun CashModuleScreen(
                         Text("Sin movimientos en este período", color = TextSecondary)
                     }
                 }
-            }
-
-            // Filas del flujo
-            val filtered = state.flowItems.filter { item ->
-                state.flowSearch.isBlank() ||
-                        item.comentario.contains(state.flowSearch, ignoreCase = true) ||
-                        item.razonSocial.contains(state.flowSearch, ignoreCase = true) ||
-                        item.cajeroNombre.contains(state.flowSearch, ignoreCase = true) ||
-                        item.sucursal.contains(state.flowSearch, ignoreCase = true) ||
-                        item.tipoPago.contains(state.flowSearch, ignoreCase = true) ||
-                        item.origen.contains(state.flowSearch, ignoreCase = true)
             }
 
             if (state.flowLoading) {
@@ -122,8 +130,10 @@ fun CashModuleScreen(
                 }
             }
 
-            items(filtered, key = { it.flujoId }) { item ->
-                CashFlowRow(item)
+            if (!state.flowLoading && filtered.isNotEmpty()) {
+                item {
+                    CashFlowTable(items = filtered)
+                }
             }
 
             item { Spacer(Modifier.height(80.dp)) }
@@ -394,17 +404,10 @@ private fun CashFlowSection(
     }
 }
 
-// ── Flow Row ─────────────────────────────────────────────────────────────────
+// ── Flow Table ────────────────────────────────────────────────────────────────
 
 @Composable
-private fun CashFlowRow(item: CashFlowItem) {
-    val isIngreso = item.tipoMovimiento.equals("Ingreso", ignoreCase = true)
-    val importeColor = if (isIngreso) GreenIncome else RedExpense
-    val importeSign = if (isIngreso) "+" else "-"
-    val dateStr = if (item.fecha > 0L)
-        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(item.fecha))
-    else "—"
-
+private fun CashFlowTable(items: List<CashFlowItem>) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -412,92 +415,162 @@ private fun CashFlowRow(item: CashFlowItem) {
         shadowElevation = 1.dp,
         tonalElevation = 0.dp,
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
-            // Fecha + Importe
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // ── Cabecera ──────────────────────────────────────────────────────
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Surface1)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(26.dp)
-                            .background(if (isIngreso) GreenIncomeLight else RedExpenseLight, RoundedCornerShape(6.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = if (isIngreso) Icons.Filled.TrendingUp else Icons.Filled.TrendingDown,
-                            contentDescription = null,
-                            tint = importeColor,
-                            modifier = Modifier.size(15.dp),
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Text(dateStr, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                TableHeaderCell("Fecha / Tipo", weight = 2.2f)
+                TableHeaderCell("Cliente / Ref.", weight = 2f)
+                TableHeaderCell("Importe", weight = 1.3f, align = Alignment.End)
+            }
+
+            HorizontalDivider(color = Divider, thickness = 1.dp)
+
+            // ── Filas ─────────────────────────────────────────────────────────
+            items.forEachIndexed { index, item ->
+                CashFlowTableRow(item)
+                if (index < items.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = Divider,
+                        thickness = 0.5.dp,
+                    )
                 }
-                Text(
-                    "$importeSign S/ %.2f".format(Locale.US, kotlin.math.abs(item.importe)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = importeColor,
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Pills: Tipo Mov. / Origen / Tipo Pago
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FlowPill(text = item.tipoMovimiento, bg = if (isIngreso) GreenIncomeLight else RedExpenseLight, color = importeColor)
-                FlowPill(text = item.origen, bg = Surface1, color = TextSecondary)
-                FlowPill(text = item.tipoPago, bg = Surface1, color = TextSecondary)
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Razón social
-            if (item.razonSocial.isNotBlank()) {
-                Text(
-                    item.razonSocial,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
-                    maxLines = 1,
-                )
-                Spacer(Modifier.height(2.dp))
-            }
-
-            // Sucursal • Caja • Empleado
-            Text(
-                "${item.sucursal} • ${item.cajaNombre} • ${item.cajeroNombre}",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
-                maxLines = 1,
-            )
-
-            // Comentario
-            if (item.comentario.isNotBlank()) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    item.comentario,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
-                    maxLines = 2,
-                )
             }
         }
     }
 }
 
 @Composable
-private fun FlowPill(text: String, bg: Color, color: Color) {
-    if (text.isBlank()) return
-    Box(
+private fun RowScope.TableHeaderCell(
+    text: String,
+    weight: Float,
+    align: Alignment.Horizontal = Alignment.Start,
+) {
+    Box(modifier = Modifier.weight(weight), contentAlignment = when (align) {
+        Alignment.End -> Alignment.CenterEnd
+        Alignment.CenterHorizontally -> Alignment.Center
+        else -> Alignment.CenterStart
+    }) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = TextSecondary,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun CashFlowTableRow(item: CashFlowItem) {
+    val isIngreso = item.tipoMovimiento.equals("Ingreso", ignoreCase = true)
+    val importeColor = if (isIngreso) GreenIncome else RedExpense
+    val importeSign = if (isIngreso) "+" else "−"
+    val dateStr = if (item.fecha > 0L)
+        SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault()).format(Date(item.fecha))
+    else "—"
+    val cliente = item.razonSocial.ifBlank { item.cajeroNombre }.ifBlank { "—" }
+
+    Row(
         modifier = Modifier
-            .background(bg, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.SemiBold)
+        // Columna 1: ícono + fecha + tipo
+        Row(
+            modifier = Modifier.weight(2.2f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .background(
+                        if (isIngreso) GreenIncomeLight else RedExpenseLight,
+                        RoundedCornerShape(7.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = if (isIngreso) Icons.Filled.TrendingUp else Icons.Filled.TrendingDown,
+                    contentDescription = null,
+                    tint = importeColor,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    dateStr,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                    maxLines = 1,
+                )
+                Text(
+                    item.tipoMovimiento.ifBlank { item.origen },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = importeColor,
+                    maxLines = 1,
+                )
+                if (item.tipoPago.isNotBlank()) {
+                    Text(
+                        item.tipoPago,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+
+        // Columna 2: cliente + comentario
+        Column(
+            modifier = Modifier.weight(2f),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+        ) {
+            Text(
+                cliente,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (item.comentario.isNotBlank()) {
+                Text(
+                    item.comentario,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (item.sucursal.isNotBlank()) {
+                Text(
+                    item.sucursal,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        // Columna 3: importe (alineado a la derecha)
+        Text(
+            "$importeSign S/ %.2f".format(Locale.US, kotlin.math.abs(item.importe)),
+            modifier = Modifier.weight(1.3f),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = importeColor,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            maxLines = 1,
+        )
     }
 }
 
