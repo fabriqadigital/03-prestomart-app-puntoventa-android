@@ -85,7 +85,7 @@ class PosRepositoryImpl(private val context: Context) :
     private val productImagesApi = ProductImageApiDataSource(context)
     private val pendingProducts = ProductRepositoryImpl(context)
     private var lastCashRegisters: List<CashRegister> = emptyList()
-    private val allSyncModules = listOf("productos", "imagenes_productos", "categorias", "subcategorias", "clientes", "proveedores", "usuarios", "caja", "ventas")
+    private val allSyncModules = listOf("productos", "imagenes_productos", "categorias", "subcategorias", "clientes", "proveedores", "caja", "ventas")
 
     override fun login(email: String, password: String): Result<UserSession> {
         if (email.isBlank() || password.isBlank()) return Result.failure(Exception("Completa usuario y contraseña."))

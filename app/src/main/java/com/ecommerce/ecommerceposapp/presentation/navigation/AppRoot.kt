@@ -539,7 +539,6 @@ private val drawerMenuItems = listOf(
     "Categorías",
     "Clientes",
     "Proveedores",
-    "Usuarios",
     "Sincronizar catálogo",
     "Cerrar sesión",
 )

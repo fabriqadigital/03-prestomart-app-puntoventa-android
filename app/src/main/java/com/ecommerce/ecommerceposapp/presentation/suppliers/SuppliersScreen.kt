@@ -1,45 +1,53 @@
 package com.ecommerce.ecommerceposapp.presentation.suppliers
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,8 +57,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,14 +66,13 @@ import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
 
-// Paleta consistente con el resto de la app
+// Paleta consistente con el modulo de productos
 private val Brand = Color(0xFFFD0505)
-private val AppBg = Color(0xFFFFFFFF)
-private val SurfaceWhite = Color(0xFFFFFFFF)
 private val TextPrimary = Color(0xFF111827)
-private val TextSecondary = Color(0xFF6B7280)
-private val DividerColor = Color(0xFFE5E7EB)
-private const val PAGE_SIZE = 10
+private val TextSecondary = Color(0xFF475569)
+private val DividerColor = Color(0xFFE2E8F0)
+private val SurfaceMutedLocal = Color(0xFFF1F5F9)
+private val BorderDefaultLocal = Color(0xFFCBD5E1)
 
 @Composable
 fun SuppliersCrudScreen(vm: SuppliersViewModel) {
@@ -73,177 +80,220 @@ fun SuppliersCrudScreen(vm: SuppliersViewModel) {
     LaunchedEffect(Unit) { vm.load() }
 
     var editing by remember { mutableStateOf<SupplierRow?>(null) }
-    var showCreate by remember { mutableStateOf(false) }
+    var creatingAdvanced by remember { mutableStateOf(false) }
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
     var search by remember { mutableStateOf("") }
-    var page by remember { mutableStateOf(0) }
+    var selectedEstado by remember { mutableStateOf<String?>(null) }
 
-    val filtered = remember(state.suppliers, search) {
-        if (search.isBlank()) {
-            state.suppliers
-        } else {
-            state.suppliers.filter {
-                it.businessName.contains(search, ignoreCase = true) ||
-                        it.ruc.contains(search, ignoreCase = true) ||
-                        it.codigoProveedor.contains(search, ignoreCase = true) ||
-                        it.correo.contains(search, ignoreCase = true)
-            }
+    val filteredSuppliers = state.suppliers
+        .filter { selectedEstado == null || it.estado.ifBlank { "Activo" } == selectedEstado }
+        .filter {
+            search.isBlank() ||
+                    it.businessName.contains(search, ignoreCase = true) ||
+                    it.ruc.contains(search, ignoreCase = true) ||
+                    it.codigoProveedor.contains(search, ignoreCase = true) ||
+                    it.correo.contains(search, ignoreCase = true)
         }
-    }
-    LaunchedEffect(filtered.size) {
-        val maxPage = if (filtered.isEmpty()) 0 else (filtered.size - 1) / PAGE_SIZE
-        if (page > maxPage) page = 0
-    }
-    val totalPages = if (filtered.isEmpty()) 1 else ((filtered.size - 1) / PAGE_SIZE) + 1
-    val pageItems = filtered.drop(page * PAGE_SIZE).take(PAGE_SIZE)
+    val compactScreen = LocalConfiguration.current.screenWidthDp < 600
 
-    // Contenedor responsive: en tablet se centra y limita a 600dp
-    Box(
-        modifier = Modifier.fillMaxSize().background(AppBg),
-        contentAlignment = Alignment.TopCenter,
-    ) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .widthIn(max = 600.dp)
-            .padding(horizontal = 20.dp, vertical = 20.dp)
-            .verticalScroll(rememberScrollState()),
-    ) {
-        // ── Encabezado + botón en la misma fila ──────────────────────────────
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Proveedores",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                )
-                Spacer(Modifier.height(2.dp))
+    if (creatingAdvanced || editing != null) {
+        SupplierAdvancedEditorView(
+            initial = editing ?: SupplierRow(id = 0, businessName = "", ruc = "", phone = ""),
+            onBack = {
+                creatingAdvanced = false
+                editing = null
+                vm.clearMessages()
+            },
+            onSave = {
+                vm.save(it)
+                creatingAdvanced = false
+                editing = null
+            },
+        )
+        return
+    }
+
+    Column(Modifier.fillMaxSize().background(Color.White).padding(16.dp)) {
+        if (compactScreen) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column {
+                Text("Proveedores", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
                     "Administra los proveedores disponibles para tus compras.",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                 )
             }
-            Spacer(Modifier.width(12.dp))
             Button(
-                onClick = { showCreate = true },
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Brand),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Agregar", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = search,
-            onValueChange = { search = it; page = 0 },
-            placeholder = { Text("Buscar por nombre o RUC", style = MaterialTheme.typography.bodyMedium) },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextSecondary) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = RoundedCornerShape(10.dp),
-        )
-        Spacer(Modifier.height(16.dp))
-
-        state.error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error)
-            Spacer(Modifier.height(8.dp))
-        }
-        state.message?.let {
-            Text(it, color = Color(0xFF16A34A))
-            Spacer(Modifier.height(8.dp))
-        }
-
-        if (pageItems.isEmpty() && !state.isLoading) {
-            Surface(
+                onClick = { creatingAdvanced = true },
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Brand, contentColor = Color.White),
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = Color.White,
-                shadowElevation = 1.dp,
-                tonalElevation = 0.dp,
             ) {
-                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text("No hay proveedores registrados", color = TextSecondary)
-                }
+                Text("+ Nuevo proveedor")
             }
-        } else {
-            SupplierTable(
-                items = pageItems,
-                onEdit = { row -> editing = row },
-                onDelete = { row ->
-                    pendingConfirm = PendingConfirm(
-                        title = "Desactivar proveedor",
-                        body = "¿Desactivar al proveedor ${row.businessName}? Dejará de mostrarse como activo.",
-                        confirmButtonText = "Desactivar",
-                        onConfirm = { vm.remove(row.id) },
-                    )
-                },
-            )
+        } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text("Proveedores", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Administra los proveedores disponibles para tus compras.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            }
+            Button(onClick = { creatingAdvanced = true }, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Brand, contentColor = Color.White)) {
+                Text("+ Nuevo proveedor")
+            }
         }
-    }
-    } // Box responsive
-
-    if (showCreate) {
-        SupplierEditDialog(
-            SupplierRow(id = 0, businessName = "", ruc = "", phone = ""),
-            onDismiss = { showCreate = false; vm.clearMessages() },
-            onSave = { vm.save(it); showCreate = false },
+        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        Spacer(Modifier.height(12.dp))
+        SuppliersTable(
+            suppliers = filteredSuppliers,
+            search = search,
+            onSearch = { search = it },
+            selectedEstado = selectedEstado,
+            onEstado = { selectedEstado = it },
+            onEdit = { editing = it },
+            onDelete = { supplier ->
+                pendingConfirm = PendingConfirm(
+                    title = "Desactivar proveedor",
+                    body = "¿Desactivar al proveedor ${supplier.businessName}? Dejará de mostrarse como activo.",
+                    confirmButtonText = "Desactivar",
+                    onConfirm = { vm.remove(supplier.id) },
+                )
+            },
         )
     }
-    editing?.let { row ->
-        SupplierEditDialog(row, onDismiss = { editing = null; vm.clearMessages() }, onSave = { vm.save(it); editing = null })
-    }
-    ConfirmDestructiveDialog(pendingConfirm, onDismiss = { pendingConfirm = null })
+    ConfirmDestructiveDialog(pendingConfirm) { pendingConfirm = null }
 }
 
 @Composable
-private fun SupplierTable(
-    items: List<SupplierRow>,
+private fun SuppliersTable(
+    suppliers: List<SupplierRow>,
+    search: String,
+    onSearch: (String) -> Unit,
+    selectedEstado: String?,
+    onEstado: (String?) -> Unit,
     onEdit: (SupplierRow) -> Unit,
     onDelete: (SupplierRow) -> Unit,
 ) {
+    val estados = listOf("Activo", "Inactivo", "Bloqueado")
+    val compact = LocalConfiguration.current.screenWidthDp < 760
+    var pageSize by remember { mutableStateOf(10) }
+    var pageSizeExpanded by remember { mutableStateOf(false) }
+    val totalPages = maxOf(1, (suppliers.size + pageSize - 1) / pageSize)
+    var currentPage by remember(suppliers.size, pageSize) { mutableStateOf(0) }
+    val pageSuppliers = suppliers.drop(currentPage * pageSize).take(pageSize)
+
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxSize(),
+        shape = RoundedCornerShape(8.dp),
         color = Color.White,
-        shadowElevation = 1.dp,
+        contentColor = TextPrimary,
         tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // ── Cabecera ──────────────────────────────────────────────────────
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFF8FAFC))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Proveedor / RUC", style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(2.5f))
-                Text("Contacto", style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1.8f))
-                Text("Estado", style = MaterialTheme.typography.labelSmall, color = TextSecondary, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1.2f))
-                Spacer(Modifier.width(32.dp))
+        Column {
+            val searchField: @Composable (Modifier) -> Unit = { fieldModifier ->
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = onSearch,
+                    placeholder = { Text("Buscar por nombre o RUC") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    modifier = fieldModifier,
+                    shape = RoundedCornerShape(10.dp),
+                    singleLine = true,
+                )
             }
-
-            HorizontalDivider(color = DividerColor, thickness = 1.dp)
-
-            // ── Filas ─────────────────────────────────────────────────────────
-            items.forEachIndexed { index, row ->
-                SupplierTableRow(row = row, onEdit = { onEdit(row) }, onDelete = { onDelete(row) })
-                if (index < items.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        color = DividerColor,
-                        thickness = 0.5.dp,
-                    )
+            val filterList: @Composable (Modifier) -> Unit = { listModifier ->
+                LazyRow(modifier = listModifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        FilterChip(
+                            selected = selectedEstado == null,
+                            onClick = { onEstado(null) },
+                            label = { Text("Todos") },
+                            colors = supplierFilterChipColors(),
+                            border = supplierFilterChipBorder(selectedEstado == null),
+                        )
+                    }
+                    items(estados) { estado ->
+                        FilterChip(
+                            selected = selectedEstado == estado,
+                            onClick = { onEstado(estado) },
+                            label = { Text(estado) },
+                            colors = supplierFilterChipColors(),
+                            border = supplierFilterChipBorder(selectedEstado == estado),
+                        )
+                    }
+                }
+            }
+            if (compact) {
+                Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    searchField(Modifier.fillMaxWidth())
+                    filterList(Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    searchField(Modifier.widthIn(min = 260.dp, max = 360.dp))
+                    filterList(Modifier.weight(1f))
+                }
+            }
+            HorizontalDivider()
+            Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 12.dp)) {
+                if (!compact) Text("Código", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.SemiBold)
+                Text("Razón social", modifier = Modifier.weight(1.6f), fontWeight = FontWeight.SemiBold)
+                if (!compact) Text("RUC", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                if (!compact) Text("Correo", modifier = Modifier.weight(1.4f), fontWeight = FontWeight.SemiBold)
+                if (!compact) Text("Teléfono", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                Text("Estado", modifier = Modifier.weight(0.9f), fontWeight = FontWeight.SemiBold)
+                if (!compact) Text("Calificación", modifier = Modifier.weight(0.9f), fontWeight = FontWeight.SemiBold)
+                if (!compact) Text("Banco", modifier = Modifier.weight(0.9f), fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(48.dp))
+            }
+            HorizontalDivider(color = DividerColor)
+            LazyColumn(Modifier.fillMaxWidth().weight(1f).background(Color.White)) {
+                items(pageSuppliers, key = { it.id }) { supplier ->
+                    SupplierTableRow(supplier = supplier, compact = compact, onEdit = onEdit, onDelete = onDelete)
+                    HorizontalDivider(color = DividerColor)
+                }
+            }
+            val paginationInfo: @Composable () -> Unit = {
+                val from = if (suppliers.isEmpty()) 0 else currentPage * pageSize + 1
+                val to = minOf(suppliers.size, (currentPage + 1) * pageSize)
+                Text(if (compact) "Filas:" else "Registros por pagina:", color = TextSecondary)
+                Box {
+                    TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = TextPrimary) }
+                    MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
+                        DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
+                            listOf(10, 20, 50).forEach { size ->
+                                DropdownMenuItem(
+                                    text = { Text(size.toString()) },
+                                    onClick = { pageSize = size; pageSizeExpanded = false },
+                                )
+                            }
+                        }
+                    }
+                }
+                Text("$from-$to de ${suppliers.size}", color = TextSecondary)
+            }
+            val paginationButtons: @Composable () -> Unit = {
+                IconButton(onClick = { currentPage-- }, enabled = currentPage > 0) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Pagina anterior")
+                }
+                IconButton(onClick = { currentPage++ }, enabled = currentPage < totalPages - 1) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Pagina siguiente")
+                }
+            }
+            if (compact) {
+                Column(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { paginationInfo() }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                        Text("Pagina ${currentPage + 1} de $totalPages", color = TextSecondary)
+                        paginationButtons()
+                    }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    paginationInfo()
+                    Spacer(Modifier.weight(1f))
+                    Text("Pagina ${currentPage + 1} de $totalPages", color = TextSecondary)
+                    paginationButtons()
                 }
             }
         }
@@ -251,144 +301,100 @@ private fun SupplierTable(
 }
 
 @Composable
-private fun SupplierTableRow(row: SupplierRow, onEdit: () -> Unit, onDelete: () -> Unit) {
-    var menuExpanded by remember { mutableStateOf(false) }
+private fun supplierFilterChipColors() = FilterChipDefaults.filterChipColors(
+    selectedContainerColor = Brand,
+    selectedLabelColor = Color.White,
+    containerColor = SurfaceMutedLocal,
+    labelColor = TextSecondary,
+)
 
+@Composable
+private fun supplierFilterChipBorder(selected: Boolean) = FilterChipDefaults.filterChipBorder(
+    enabled = true,
+    selected = selected,
+    selectedBorderColor = Brand,
+    borderColor = BorderDefaultLocal,
+    selectedBorderWidth = 1.dp,
+    borderWidth = 1.dp,
+)
+
+@Composable
+private fun SupplierTableRow(
+    supplier: SupplierRow,
+    compact: Boolean,
+    onEdit: (SupplierRow) -> Unit,
+    onDelete: (SupplierRow) -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().background(Color.White).clickable { onEdit(supplier) }.padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Col 1: nombre + código + RUC
-        Column(
-            modifier = Modifier.weight(2.5f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                row.businessName.ifBlank { "—" },
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (row.codigoProveedor.isNotBlank()) {
-                Text(
-                    row.codigoProveedor,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
-                    maxLines = 1,
-                )
-            }
-            if (row.ruc.isNotBlank()) {
-                Text(
-                    row.ruc,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
-                    maxLines = 1,
-                )
-            }
+        if (!compact) Text(supplier.codigoProveedor.ifBlank { "-" }, modifier = Modifier.weight(0.8f), color = TextPrimary)
+        Column(modifier = Modifier.weight(1.6f)) {
+            Text(supplier.businessName.ifBlank { "—" }, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+            if (compact) Text(supplier.codigoProveedor.ifBlank { "-" }, color = TextSecondary, style = MaterialTheme.typography.labelSmall)
         }
-
-        // Col 2: teléfono + correo
-        Column(
-            modifier = Modifier.weight(1.8f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                row.phone.ifBlank { "—" },
-                style = MaterialTheme.typography.labelSmall,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (row.correo.isNotBlank()) {
-                Text(
-                    row.correo,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+        if (!compact) Text(supplier.ruc.ifBlank { "-" }, modifier = Modifier.weight(1f), color = TextPrimary)
+        if (!compact) Text(supplier.correo.ifBlank { "-" }, modifier = Modifier.weight(1.4f), color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (!compact) Text(supplier.phone.ifBlank { "-" }, modifier = Modifier.weight(1f), color = TextPrimary)
+        Box(modifier = Modifier.weight(0.9f)) {
+            SupplierStatusPill(supplier.estado.ifBlank { "Activo" })
         }
-
-        // Col 3: badge de estado
-        Box(modifier = Modifier.weight(1.2f)) {
-            StatusPill(row.estado.ifBlank { "Activo" })
-        }
-
-        // Menú de opciones
+        if (!compact) Text(
+            if (supplier.calificacion > 0) supplier.calificacion.toString() else "-",
+            modifier = Modifier.weight(0.9f),
+            color = TextPrimary,
+        )
+        if (!compact) Text(supplier.banco.ifBlank { "-" }, modifier = Modifier.weight(0.9f), color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Box {
-            IconButton(onClick = { menuExpanded = true }, modifier = Modifier.width(32.dp)) {
-                Icon(Icons.Filled.MoreVert, contentDescription = "Opciones", tint = TextSecondary, modifier = Modifier.size(18.dp))
+            IconButton(onClick = { menuExpanded = true }) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "Opciones")
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                DropdownMenuItem(text = { Text("Editar") }, onClick = { menuExpanded = false; onEdit() })
-                DropdownMenuItem(text = { Text("Desactivar") }, onClick = { menuExpanded = false; onDelete() })
+                DropdownMenuItem(
+                    text = { Text("Editar") },
+                    onClick = {
+                        menuExpanded = false
+                        onEdit(supplier)
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Desactivar") },
+                    onClick = {
+                        menuExpanded = false
+                        onDelete(supplier)
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun StatusPill(status: String) {
+private fun SupplierStatusPill(status: String) {
     val (bg, fg) = when (status.lowercase()) {
         "activo" -> Color(0xFFDCFCE7) to Color(0xFF16A34A)
         "bloqueado" -> Color(0xFFFFEBEB) to Brand
         else -> Color(0xFFF3F4F6) to TextSecondary
     }
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(bg)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-    ) {
-        Text(status, color = fg, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+    Surface(shape = RoundedCornerShape(20.dp), color = bg) {
+        Text(
+            status,
+            color = fg,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+        )
     }
 }
 
 @Composable
-private fun PaginationFooter(
-    page: Int,
-    totalPages: Int,
-    totalItems: Int,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
+private fun SupplierAdvancedEditorView(
+    initial: SupplierRow,
+    onBack: () -> Unit,
+    onSave: (SupplierRow) -> Unit,
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(PAGE_SIZE.toString(), color = TextPrimary, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-        val start = if (totalItems == 0) 0 else page * PAGE_SIZE + 1
-        val end = minOf((page + 1) * PAGE_SIZE, totalItems)
-        Text("$start-$end de $totalItems", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-        Row {
-            IconButton(onClick = onPrev, enabled = page > 0) {
-                Icon(
-                    Icons.Filled.KeyboardArrowLeft,
-                    contentDescription = "Anterior",
-                    tint = if (page > 0) TextPrimary else Color(0xFFD1D5DB),
-                )
-            }
-            IconButton(onClick = onNext, enabled = page < totalPages - 1) {
-                Icon(
-                    Icons.Filled.KeyboardArrowRight,
-                    contentDescription = "Siguiente",
-                    tint = if (page < totalPages - 1) TextPrimary else Color(0xFFD1D5DB),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSave: (SupplierRow) -> Unit) {
     var codigo by remember(initial) { mutableStateOf(initial.codigoProveedor) }
     var name by remember(initial) { mutableStateOf(initial.businessName) }
     var ruc by remember(initial) { mutableStateOf(initial.ruc) }
@@ -399,151 +405,192 @@ private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSa
     var cargoContacto by remember(initial) { mutableStateOf(initial.cargoContacto) }
     var telefonoContacto by remember(initial) { mutableStateOf(initial.telefonoContacto) }
     var correoContacto by remember(initial) { mutableStateOf(initial.correoContacto) }
-    var calificacion by remember(initial) { mutableStateOf(initial.calificacion.toString()) }
+    var calificacion by remember(initial) { mutableStateOf(initial.calificacion) }
     var estado by remember(initial) { mutableStateOf(initial.estado.ifBlank { "Activo" }) }
     var observaciones by remember(initial) { mutableStateOf(initial.observaciones) }
     var banco by remember(initial) { mutableStateOf(initial.banco) }
     var cuenta by remember(initial) { mutableStateOf(initial.cuenta) }
     var cci by remember(initial) { mutableStateOf(initial.cci) }
     var codigoError by remember { mutableStateOf(false) }
-    // Solo se activa cuando el usuario intenta guardar con RUC incompleto
     var rucError by remember { mutableStateOf(false) }
 
-    val estados = listOf("Activo", "Inactivo", "Bloqueado")
+    val compactEditor = LocalConfiguration.current.screenWidthDp < 900
+    val canSaveSupplier = codigo.isNotBlank() && name.isNotBlank() && (ruc.isBlank() || ruc.length == 11)
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = Color.White,
-            tonalElevation = 0.dp,
-            shadowElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(Modifier.fillMaxWidth().padding(24.dp)) {
-                // Título
-                Text(
-                    if (initial.id == 0L) "Nuevo proveedor" else "Editar proveedor",
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Spacer(Modifier.height(16.dp))
+    val draftSupplier = {
+        SupplierRow(
+            id = initial.id,
+            codigoProveedor = codigo.trim(),
+            businessName = name.trim(),
+            ruc = ruc,
+            correo = correo.trim(),
+            phone = phone.trim(),
+            direccion = direccion.trim(),
+            personaContacto = personaContacto.trim(),
+            cargoContacto = cargoContacto.trim(),
+            telefonoContacto = telefonoContacto.trim(),
+            correoContacto = correoContacto.trim(),
+            calificacion = calificacion,
+            estado = estado,
+            fechaRegistro = initial.fechaRegistro,
+            observaciones = observaciones,
+            banco = banco.trim(),
+            cuenta = cuenta.trim(),
+            cci = cci.trim(),
+            active = estado == "Activo",
+        )
+    }
 
-                // Contenido scrollable
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 460.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = codigo,
-                        onValueChange = { codigo = it; codigoError = false },
-                        label = { Text("Codigo proveedor *") },
-                        modifier = Modifier.fillMaxWidth(),
-                        isError = codigoError,
-                        supportingText = {
-                            if (codigoError) Text("El código es obligatorio", color = MaterialTheme.colorScheme.error)
-                        },
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Razon social") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                    // RUC: solo dígitos, máx 11, error solo si está incompleto al guardar
-                    OutlinedTextField(
-                        value = ruc,
-                        onValueChange = { input ->
-                            val digits = input.filter { it.isDigit() }
-                            if (digits.length <= 11) {
-                                ruc = digits
-                                rucError = false
-                            }
-                        },
-                        label = { Text("RUC") },
-                        modifier = Modifier.fillMaxWidth(),
-                        isError = rucError,
-                        supportingText = if (rucError) {
-                            { Text("El RUC debe tener exactamente 11 dígitos", color = MaterialTheme.colorScheme.error) }
-                        } else null,
-                        singleLine = true,
-                    )
-                    OutlinedTextField(value = correo, onValueChange = { correo = it }, label = { Text("Correo") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Telefono") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = direccion, onValueChange = { direccion = it }, label = { Text("Direccion") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = personaContacto, onValueChange = { personaContacto = it }, label = { Text("Persona de contacto") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = cargoContacto, onValueChange = { cargoContacto = it }, label = { Text("Cargo del contacto") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = telefonoContacto, onValueChange = { telefonoContacto = it }, label = { Text("Telefono del contacto") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = correoContacto, onValueChange = { correoContacto = it }, label = { Text("Correo del contacto") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(
-                        value = calificacion,
-                        onValueChange = { input -> if (input.isEmpty() || input.toIntOrNull() != null) calificacion = input },
-                        label = { Text("Calificacion (1-5)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
+    val trySave: () -> Unit = {
+        var hasError = false
+        if (codigo.isBlank()) { codigoError = true; hasError = true }
+        if (ruc.isNotBlank() && ruc.length != 11) { rucError = true; hasError = true }
+        if (!hasError) onSave(draftSupplier())
+    }
 
-                    // ComboBox Estado
-                    SelectField("Estado", estado, estados) { estado = it }
+    Column(Modifier.fillMaxSize().background(Color.White).padding(18.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("< Volver") }
+            Text(
+                if (initial.id == 0L) "Nuevo proveedor" else "Editar proveedor",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Spacer(Modifier.height(18.dp))
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White,
+            ) {
+                Column(Modifier.padding(18.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
-                    OutlinedTextField(value = observaciones, onValueChange = { observaciones = it }, label = { Text("Observaciones") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = banco, onValueChange = { banco = it }, label = { Text("Banco") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = cuenta, onValueChange = { cuenta = it }, label = { Text("Cuenta") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(value = cci, onValueChange = { cci = it }, label = { Text("CCI") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                }
-
-                Spacer(Modifier.height(20.dp))
-
-                // Botones
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
-                ) {
-                    TextButton(
-                        onClick = onDismiss,
-                        shape = RoundedCornerShape(8.dp),
-                    ) {
-                        Text("Cancelar", color = Brand, fontWeight = FontWeight.SemiBold)
+                    Text("Información del proveedor", fontWeight = FontWeight.Bold)
+                    FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 2, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = codigo,
+                            onValueChange = { codigo = it; codigoError = false },
+                            label = { Text("Código Proveedor *") },
+                            isError = codigoError,
+                            supportingText = { if (codigoError) Text("El código es obligatorio", color = MaterialTheme.colorScheme.error) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("Razón social *") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = ruc,
+                            onValueChange = { input ->
+                                val digits = input.filter { it.isDigit() }
+                                if (digits.length <= 11) { ruc = digits; rucError = false }
+                            },
+                            label = { Text("RUC") },
+                            isError = rucError,
+                            supportingText = { if (rucError) Text("El RUC debe tener 11 dígitos", color = MaterialTheme.colorScheme.error) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(correo, { correo = it }, label = { Text("Correo") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(phone, { phone = it }, label = { Text("Teléfono") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(direccion, { direccion = it }, label = { Text("Dirección") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
-                    Button(
-                        onClick = {
-                            var hasError = false
-                            if (codigo.isBlank()) { codigoError = true; hasError = true }
-                            if (ruc.isNotBlank() && ruc.length != 11) { rucError = true; hasError = true }
-                            if (hasError) return@Button
-                            onSave(
-                                SupplierRow(
-                                    id = initial.id,
-                                    codigoProveedor = codigo,
-                                    businessName = name,
-                                    ruc = ruc,
-                                    correo = correo,
-                                    phone = phone,
-                                    direccion = direccion,
-                                    personaContacto = personaContacto,
-                                    cargoContacto = cargoContacto,
-                                    telefonoContacto = telefonoContacto,
-                                    correoContacto = correoContacto,
-                                    calificacion = calificacion.toIntOrNull() ?: 0,
-                                    estado = estado,
-                                    fechaRegistro = initial.fechaRegistro,
-                                    observaciones = observaciones,
-                                    banco = banco,
-                                    cuenta = cuenta,
-                                    cci = cci,
-                                    active = estado == "Activo",
-                                )
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Brand),
-                        shape = RoundedCornerShape(8.dp),
+
+                    Text("Información de contacto", fontWeight = FontWeight.Bold)
+                    FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 2, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(personaContacto, { personaContacto = it }, label = { Text("Persona de contacto") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(cargoContacto, { cargoContacto = it }, label = { Text("Cargo de contacto") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(telefonoContacto, { telefonoContacto = it }, label = { Text("Teléfono de contacto") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(correoContacto, { correoContacto = it }, label = { Text("Correo de contacto") }, modifier = Modifier.weight(1f), singleLine = true)
+                    }
+
+                    Text("Calificación y estado", fontWeight = FontWeight.Bold)
+                    FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 3, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Calificación", color = TextSecondary, style = MaterialTheme.typography.labelMedium)
+                            Spacer(Modifier.height(4.dp))
+                            StarRating(value = calificacion, onChange = { calificacion = it })
+                        }
+                        EstadoDropdown(
+                            value = estado,
+                            onChange = { estado = it },
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = initial.fechaRegistro,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Fecha de registro") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                    }
+
+                    Text("Información bancaria", fontWeight = FontWeight.Bold)
+                    FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 3, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(banco, { banco = it }, label = { Text("Banco") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(cuenta, { cuenta = it }, label = { Text("Cuenta") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(cci, { cci = it }, label = { Text("CCI") }, modifier = Modifier.weight(1f), singleLine = true)
+                    }
+
+                    Text("Observaciones", fontWeight = FontWeight.Bold)
+                    OutlinedTextField(observaciones, { observaciones = it }, label = { Text("Observaciones") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        Text("Guardar", color = Color.White, fontWeight = FontWeight.SemiBold)
+
+                        OutlinedButton(
+                            onClick = onBack,
+                            modifier = Modifier.height(52.dp)
+                        ) {
+                            Text("Cancelar")
+                        }
+
+                        Spacer(Modifier.width(12.dp))
+
+                        Button(
+                            onClick = trySave,
+                            enabled = canSaveSupplier,
+                            modifier = Modifier.height(52.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Brand,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text(
+                                if (initial.id == 0L)
+                                    "Crear proveedor"
+                                else
+                                    "Guardar"
+                            )
+                        }
+                    }
+                }
+            }
+            if (!compactEditor) Surface(modifier = Modifier.width(360.dp).fillMaxSize(), color = Color.White) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(name.ifBlank { "Razón social del proveedor" }, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(ruc.ifBlank { "Sin RUC" }, style = MaterialTheme.typography.titleMedium, color = TextSecondary)
+                    SupplierStatusPill(estado)
+                    Spacer(Modifier.weight(1f))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) { Text("Cancelar") }
+                        Button(
+                            onClick = trySave,
+                            modifier = Modifier.weight(1f),
+                            enabled = canSaveSupplier,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Brand, contentColor = Color.White),
+                        ) { Text(if (initial.id == 0L) "Crear proveedor" else "Guardar") }
                     }
                 }
             }
@@ -552,27 +599,61 @@ private fun SupplierEditDialog(initial: SupplierRow, onDismiss: () -> Unit, onSa
 }
 
 @Composable
-private fun SelectField(label: String, value: String, options: List<String>, onSelected: (String) -> Unit) {
+private fun StarRating(value: Int, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        for (star in 1..5) {
+            IconButton(onClick = { onChange(if (value == star) 0 else star) }, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    imageVector = if (star <= value) Icons.Filled.Star else Icons.Filled.StarBorder,
+                    contentDescription = "Calificación $star",
+                    tint = if (star <= value) Color(0xFFF59E0B) else BorderDefaultLocal,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EstadoDropdown(
+    value: String,
+    onChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val opciones = listOf("Activo", "Inactivo", "Bloqueado")
     var expanded by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxWidth()) {
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+        modifier = modifier
+    ) {
+
         OutlinedTextField(
             value = value,
             onValueChange = {},
             readOnly = true,
-            label = { Text(label) },
+            label = { Text("Estado") },
             trailingIcon = {
-                IconButton(onClick = { expanded = true }) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
-                }
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded)
             },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
+            modifier = Modifier
+                .menuAnchor()
+                .fillMaxWidth(),
+            singleLine = true
         )
-        DropdownMenu(expanded, { expanded = false }, modifier = Modifier.widthIn(min = 220.dp)) {
-            options.forEach { option ->
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            opciones.forEach { opcion ->
                 DropdownMenuItem(
-                    text = { Text(option.ifBlank { "No especificado" }) },
-                    onClick = { onSelected(option); expanded = false },
+                    text = { Text(opcion) },
+                    onClick = {
+                        onChange(opcion)
+                        expanded = false
+                    }
                 )
             }
         }

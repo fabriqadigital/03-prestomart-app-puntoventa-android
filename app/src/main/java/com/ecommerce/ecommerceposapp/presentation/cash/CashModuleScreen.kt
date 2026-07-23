@@ -27,6 +27,7 @@ import com.ecommerce.ecommerceposapp.domain.model.cash.CashSummary
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.platform.LocalConfiguration
 
 private val Brand = Color(0xFFfd0505)
 private val BrandLight = Color(0xFFFFFFFF)
@@ -47,6 +48,7 @@ fun CashModuleScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
+    val isTablet = LocalConfiguration.current.screenWidthDp >= 900
 
     // Load on first entry
     LaunchedEffect(session.id) {
@@ -58,10 +60,8 @@ fun CashModuleScreen(
         contentAlignment = Alignment.TopCenter,
     ) {
         LazyColumn(
-            modifier = Modifier
-                .fillMaxHeight()
-                .widthIn(max = 640.dp)
-                .fillMaxWidth(),
+            modifier = Modifier.fillMaxSize(),
+
             contentPadding = PaddingValues(
                 start = 16.dp,
                 end = 16.dp,
@@ -404,41 +404,49 @@ private fun CashFlowSection(
     }
 }
 
-// ── Flow Table ────────────────────────────────────────────────────────────────
+// ── Flow Table (mismo diseño que las tablas de Productos / Proveedores) ──────
 
 @Composable
 private fun CashFlowTable(items: List<CashFlowItem>) {
+    val compact = LocalConfiguration.current.screenWidthDp < 760
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
         color = Color.White,
-        shadowElevation = 1.dp,
+        contentColor = TextPrimary,
         tonalElevation = 0.dp,
+        shadowElevation = 1.dp,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             // ── Cabecera ──────────────────────────────────────────────────────
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Surface1)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .background(Color.White)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
-                TableHeaderCell("Fecha / Tipo", weight = 2.2f)
-                TableHeaderCell("Cliente / Ref.", weight = 2f)
-                TableHeaderCell("Importe", weight = 1.3f, align = Alignment.End)
+                TableHeaderCell("Fecha", 1.3f)
+                TableHeaderCell("Razón social", if (compact) 2f else 1.8f)
+                if (!compact) {
+                    TableHeaderCell("Sucursal", 1.1f)
+                    TableHeaderCell("Caja", 1f)
+                    TableHeaderCell("Empleado", 1.3f)
+                }
+                TableHeaderCell("Movimiento", 1.2f)
+                if (!compact) {
+                    TableHeaderCell("Transacción", 1.3f)
+                    TableHeaderCell("Origen", 1.1f)
+                    TableHeaderCell("Pago", 1f)
+                }
+                TableHeaderCell("Importe", 1.1f, Alignment.End)
             }
-
             HorizontalDivider(color = Divider, thickness = 1.dp)
 
             // ── Filas ─────────────────────────────────────────────────────────
             items.forEachIndexed { index, item ->
-                CashFlowTableRow(item)
+                CashFlowTableRow(item = item, compact = compact)
                 if (index < items.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        color = Divider,
-                        thickness = 0.5.dp,
-                    )
+                    HorizontalDivider(color = Divider, thickness = 0.5.dp)
                 }
             }
         }
@@ -458,118 +466,116 @@ private fun RowScope.TableHeaderCell(
     }) {
         Text(
             text,
-            style = MaterialTheme.typography.labelSmall,
-            color = TextSecondary,
             fontWeight = FontWeight.SemiBold,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
 @Composable
-private fun CashFlowTableRow(item: CashFlowItem) {
+private fun CashFlowTableRow(item: CashFlowItem, compact: Boolean) {
+
     val isIngreso = item.tipoMovimiento.equals("Ingreso", ignoreCase = true)
-    val importeColor = if (isIngreso) GreenIncome else RedExpense
-    val importeSign = if (isIngreso) "+" else "−"
-    val dateStr = if (item.fecha > 0L)
-        SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault()).format(Date(item.fecha))
-    else "—"
-    val cliente = item.razonSocial.ifBlank { item.cajeroNombre }.ifBlank { "—" }
+
+    val importeColor =
+        if (isIngreso) GreenIncome else RedExpense
+
+    val dateStr =
+        if (item.fecha > 0L)
+            SimpleDateFormat(
+                if (compact) "dd/MM/yy" else "dd/MM/yyyy HH:mm",
+                Locale.getDefault()
+            ).format(Date(item.fecha))
+        else "—"
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(Color.White)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        // Columna 1: ícono + fecha + tipo
-        Row(
-            modifier = Modifier.weight(2.2f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .background(
-                        if (isIngreso) GreenIncomeLight else RedExpenseLight,
-                        RoundedCornerShape(7.dp),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = if (isIngreso) Icons.Filled.TrendingUp else Icons.Filled.TrendingDown,
-                    contentDescription = null,
-                    tint = importeColor,
-                    modifier = Modifier.size(15.dp),
-                )
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        TableCell(text = dateStr, weight = 1.3f)
+
+        Box(modifier = Modifier.weight(if (compact) 2f else 1.8f).padding(horizontal = 4.dp)) {
+            Column {
                 Text(
-                    dateStr,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
+                    item.razonSocial.ifBlank { "-" },
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = TextPrimary,
                 )
-                Text(
-                    item.tipoMovimiento.ifBlank { item.origen },
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = importeColor,
-                    maxLines = 1,
-                )
-                if (item.tipoPago.isNotBlank()) {
+                if (compact) {
                     Text(
-                        item.tipoPago,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextSecondary,
+                        item.cajeroNombre.ifBlank { "-" },
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 }
             }
         }
 
-        // Columna 2: cliente + comentario
-        Column(
-            modifier = Modifier.weight(2f),
-            verticalArrangement = Arrangement.spacedBy(1.dp),
+        if (!compact) {
+            TableCell(text = item.sucursal, weight = 1.1f)
+            TableCell(text = item.cajaNombre, weight = 1f)
+            TableCell(text = item.cajeroNombre, weight = 1.3f)
+        }
+
+        TableCell(
+            text = item.tipoMovimiento,
+            weight = 1.2f,
+            color = importeColor,
+            bold = true,
+        )
+
+        if (!compact) {
+            TableCell(text = item.tipoTransaccion, weight = 1.3f)
+            TableCell(text = item.origen, weight = 1.1f)
+            TableCell(text = item.tipoPago, weight = 1f)
+        }
+
+        Box(
+            modifier = Modifier.weight(1.1f).padding(horizontal = 4.dp),
+            contentAlignment = Alignment.CenterEnd,
         ) {
             Text(
-                cliente,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Medium,
-                color = TextPrimary,
+                text = "S/ %.2f".format(item.importe),
+                fontWeight = FontWeight.SemiBold,
+                color = importeColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (item.comentario.isNotBlank()) {
-                Text(
-                    item.comentario,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (item.sucursal.isNotBlank()) {
-                Text(
-                    item.sucursal,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
+    }
+}
 
-        // Columna 3: importe (alineado a la derecha)
+@Composable
+private fun RowScope.TableCell(
+    text: String,
+    weight: Float,
+    color: Color = TextPrimary,
+    bold: Boolean = false
+) {
+
+    Box(
+        modifier = Modifier
+            .weight(weight)
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+
         Text(
-            "$importeSign S/ %.2f".format(Locale.US, kotlin.math.abs(item.importe)),
-            modifier = Modifier.weight(1.3f),
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = importeColor,
-            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            text = text.ifBlank { "-" },
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = color,
+            fontWeight =
+                if (bold) FontWeight.SemiBold
+                else FontWeight.Normal
         )
     }
 }
