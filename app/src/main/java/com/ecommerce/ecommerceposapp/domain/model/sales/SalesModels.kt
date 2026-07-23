@@ -30,6 +30,9 @@ data class CompletedSaleReceipt(
     val idCliente: Long,
     val clienteNombre: String = "",
     val clienteDocumento: String = "",
+    val emisorRuc: String = "",
+    val emisorRazonSocial: String = "",
+    val emisorDireccion: String = "",
 )
 
 data class ReceiptCustomerInfo(

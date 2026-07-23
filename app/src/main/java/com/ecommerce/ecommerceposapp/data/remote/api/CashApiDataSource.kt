@@ -32,14 +32,9 @@ class CashApiDataSource(context: Context) {
                 branch = item.firstString("sucursal", "sucursal_nombre", "nombre_sucursal", "branch_name", "branch", "tienda", "local", "sede")
                     .ifBlank { item.nestedFirstString("sucursal", "nombre", "name", "descripcion", "nombre_sucursal") },
                 active = item.optBooleanFlexible("status", true),
-                ruc = item.firstString("ruc", "empresa_ruc", "emisor_ruc")
-                    .ifBlank { item.nestedFirstString("tienda", "ruc", "empresa_ruc", "emisor_ruc") },
-                businessName = item.firstString("razon_social", "empresa_razon_social", "emisor_razon_social", "nombre_comercial")
-                    .ifBlank { item.nestedFirstString("tienda", "razon_social", "nombre_comercial") },
-                address = item.firstString("direccion_fiscal", "empresa_direccion", "emisor_direccion")
-                    .ifBlank { item.nestedFirstString("tienda", "direccion_fiscal", "direccion", "address") }
-                    .ifBlank { item.nestedFirstString("sucursal", "direccion", "address") }
-                    .ifBlank { item.firstString("direccion") },
+                ruc = item.emitterString("ruc", "empresa_ruc", "emisor_ruc", "tienda_ruc"),
+                businessName = item.emitterString("razon_social", "empresa_razon_social", "emisor_razon_social", "nombre_comercial"),
+                address = item.emitterString("direccion_fiscal", "empresa_direccion", "emisor_direccion", "direccion", "address"),
             )
         }
     }
@@ -141,6 +136,12 @@ class CashApiDataSource(context: Context) {
         val total = sale.optDoubleFlexible("total")
         val subtotal = total / 1.18
         val firstPayment = payments.optJSONObject(0)
+        val emisorRuc = sale.emitterString("ruc", "empresa_ruc", "emisor_ruc", "tienda_ruc")
+            .ifBlank { result.emitterString("ruc", "empresa_ruc", "emisor_ruc", "tienda_ruc") }
+        val emisorRazonSocial = sale.emitterString("razon_social", "empresa_razon_social", "emisor_razon_social", "nombre_comercial")
+            .ifBlank { result.emitterString("razon_social", "empresa_razon_social", "emisor_razon_social", "nombre_comercial") }
+        val emisorDireccion = sale.emitterString("direccion_fiscal", "empresa_direccion", "emisor_direccion", "direccion", "address")
+            .ifBlank { result.emitterString("direccion_fiscal", "empresa_direccion", "emisor_direccion", "direccion", "address") }
         CompletedSaleReceipt(
             ventaId = sale.optLong("id_venta"),
             numeroTicket = sale.cleanString("numero"),
@@ -158,6 +159,9 @@ class CashApiDataSource(context: Context) {
             idCliente = sale.optLong("id_cliente"),
             clienteNombre = sale.cleanString("cliente_nombre"),
             clienteDocumento = sale.cleanString("cliente_documento"),
+            emisorRuc = emisorRuc,
+            emisorRazonSocial = emisorRazonSocial,
+            emisorDireccion = emisorDireccion,
         )
     }
 
@@ -243,6 +247,14 @@ class CashApiDataSource(context: Context) {
     private fun JSONObject.nestedFirstString(containerKey: String, vararg keys: String): String {
         val nested = optJSONObject(containerKey) ?: return ""
         return nested.firstString(*keys)
+    }
+
+    private fun JSONObject.emitterString(vararg keys: String): String {
+        firstString(*keys).takeIf { it.isNotBlank() }?.let { return it }
+        for (container in listOf("emisor", "empresa", "tienda", "sucursal", "caja", "company", "store")) {
+            nestedFirstString(container, *keys).takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return ""
     }
 
     private fun JSONObject.optDoubleFlexible(key: String): Double = when (val value = opt(key)) {

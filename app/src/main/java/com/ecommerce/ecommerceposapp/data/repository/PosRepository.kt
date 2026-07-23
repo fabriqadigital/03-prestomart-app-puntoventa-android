@@ -311,24 +311,26 @@ class PosRepositoryImpl(private val context: Context) :
     }
 
     override fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long, customerInfo: ReceiptCustomerInfo): Result<ComprobanteEmitidoResult> {
-        val hasLocalSale = realmQuery { realm ->
-            realm.where(FinanzaVentaRealm::class.java).equalTo("id", ventaId).count() > 0L
-        }
-        if (!hasLocalSale) {
-            return cashApi.getSaleReceipt(ventaId).map { receipt ->
+        val remoteReceipt = cashApi.getSaleReceipt(ventaId).getOrNull()
+        if (remoteReceipt != null) {
+            return runCatching {
                 val emitter = realmQuery { realm ->
                     val config = realm.where(FinanzaEmisorConfigRealm::class.java)
                         .equalTo("activo", true)
                         .findFirst()
                         ?: realm.where(FinanzaEmisorConfigRealm::class.java).findFirst()
-                    Triple(config?.ruc.orEmpty(), config?.razonSocial.orEmpty(), config?.direccion.orEmpty())
+                    Triple(
+                        remoteReceipt.emisorRuc.ifBlank { config?.ruc.orEmpty() },
+                        remoteReceipt.emisorRazonSocial.ifBlank { config?.razonSocial.orEmpty() },
+                        remoteReceipt.emisorDireccion.ifBlank { config?.direccion.orEmpty() },
+                    )
                 }
                 val tipoSunat = when (tipo) {
                     TipoComprobanteEmision.FACTURA -> "01"
                     TipoComprobanteEmision.BOLETA -> "03"
                     TipoComprobanteEmision.SOLO_TICKET -> "TICK"
                 }
-                val number = receipt.numeroTicket
+                val number = remoteReceipt.numeroTicket
                 val serie = number.substringBeforeLast('-', missingDelimiterValue = "")
                 val correlativo = number.substringAfterLast('-', missingDelimiterValue = "").toIntOrNull() ?: 0
                 ComprobanteEmitidoResult(
@@ -341,17 +343,17 @@ class PosRepositoryImpl(private val context: Context) :
                         tipoDoc = tipoSunat,
                         serie = serie,
                         correlativo = correlativo,
-                        igv = receipt.igv,
-                        total = receipt.total,
-                        fechaSunat = formatFechaSunat(receipt.fechaMillis),
+                        igv = remoteReceipt.igv,
+                        total = remoteReceipt.total,
+                        fechaSunat = formatFechaSunat(remoteReceipt.fechaMillis),
                         numeroCompleto = number,
                     ),
                     emisorRuc = emitter.first,
                     emisorRazonSocial = emitter.second,
                     emisorDireccion = emitter.third,
-                    totalLetras = AmountInWordsFormatter.soles(receipt.total),
-                    receptorNombre = customerInfo.name.ifBlank { receipt.clienteNombre },
-                    receptorDocumento = customerInfo.document.ifBlank { receipt.clienteDocumento },
+                    totalLetras = AmountInWordsFormatter.soles(remoteReceipt.total),
+                    receptorNombre = customerInfo.name.ifBlank { remoteReceipt.clienteNombre },
+                    receptorDocumento = customerInfo.document.ifBlank { remoteReceipt.clienteDocumento },
                 )
             }
         }
@@ -993,11 +995,8 @@ class PosRepositoryImpl(private val context: Context) :
     private fun cacheEmitterFromCashRegisters(registers: List<CashRegister>, preferredCashRegisterId: Long? = null) {
         val validRegisters = registers.filter { it.ruc.isNotBlank() && it.businessName.isNotBlank() }
         val emitter = validRegisters.firstOrNull { it.id == preferredCashRegisterId } ?: validRegisters.firstOrNull()
+        if (emitter == null) return
         realmWrite { realm ->
-            if (emitter == null) {
-                realm.where(FinanzaEmisorConfigRealm::class.java).findAll().deleteAllFromRealm()
-                return@realmWrite
-            }
             realm.where(FinanzaEmisorConfigRealm::class.java).findAll().forEach { it.activo = false }
             realm.insertOrUpdate(
                 FinanzaEmisorConfigRealm().apply {
