@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -62,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -317,11 +319,22 @@ internal fun CartPane(
     var receiptPhone         by remember { mutableStateOf("") }
     var postSaleDismissed    by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val compact = LocalConfiguration.current.screenWidthDp < 900
+    val cartListState = rememberLazyListState()
+    var previousCartQuantities by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
+
+    LaunchedEffect(state.cart) {
+        val changedIndex = state.cart.indexOfFirst { line ->
+            previousCartQuantities[line.productId] != line.quantity
+        }
+        previousCartQuantities = state.cart.associate { it.productId to it.quantity }
+        if (changedIndex >= 0) cartListState.animateScrollToItem(changedIndex)
+    }
 
     Column(
         modifier = modifier
             .background(AppBackground)
-            .padding(Spacing.md),
+            .padding(if (compact) Spacing.sm else Spacing.md),
     ) {
         // ── Header del carrito ───────────────────────────────────────────────
         Row(
@@ -354,11 +367,13 @@ internal fun CartPane(
             }
         }
 
-        Spacer(Modifier.height(Spacing.md))
+        Spacer(Modifier.height(if (compact) Spacing.xs else Spacing.md))
 
         // ── Selector de cliente ──────────────────────────────────────────────
-        Text("Cliente", style = MaterialTheme.typography.labelMedium, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(Spacing.xs))
+        if (!compact) {
+            Text("Cliente", style = MaterialTheme.typography.labelMedium, color = TextSecondary, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(Spacing.xs))
+        }
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment     = Alignment.CenterVertically,
@@ -367,7 +382,7 @@ internal fun CartPane(
             Box(Modifier.weight(1f)) {
                 OutlinedButton(
                     onClick        = { showClientePicker = true },
-                    modifier       = Modifier.fillMaxWidth().height(46.dp),
+                    modifier       = Modifier.fillMaxWidth().height(if (compact) 40.dp else 46.dp),
                     shape          = RoundedCornerShape(Radius.md),
                     colors         = ButtonDefaults.outlinedButtonColors(containerColor = SurfaceWhite, contentColor = TextPrimary),
                     border         = androidx.compose.foundation.BorderStroke(1.dp, BorderDefault),
@@ -411,7 +426,7 @@ internal fun CartPane(
             IconButton(
                 onClick  = onNewClient,
                 modifier = Modifier
-                    .size(46.dp)
+                    .size(if (compact) 40.dp else 46.dp)
                     .clip(RoundedCornerShape(Radius.md))
                     .background(BrandRed),
             ) {
@@ -419,7 +434,7 @@ internal fun CartPane(
             }
         }
 
-        Spacer(Modifier.height(Spacing.md))
+        Spacer(Modifier.height(if (compact) Spacing.xs else Spacing.md))
 
         // ── Lista de items o empty state ─────────────────────────────────────
         if (state.cart.isEmpty()) {
@@ -432,6 +447,7 @@ internal fun CartPane(
         } else {
             LazyColumn(
                 modifier              = Modifier.weight(1f),
+                state                 = cartListState,
                 verticalArrangement   = Arrangement.spacedBy(Spacing.sm),
                 contentPadding        = PaddingValues(vertical = Spacing.xs),
             ) {
@@ -445,7 +461,7 @@ internal fun CartPane(
             }
         }
 
-        Spacer(Modifier.height(Spacing.md))
+        Spacer(Modifier.height(if (compact) Spacing.xs else Spacing.md))
 
         // ── Totales ──────────────────────────────────────────────────────────
         CartTotalSection(
@@ -454,7 +470,7 @@ internal fun CartPane(
             total    = state.total,
         )
 
-        Spacer(Modifier.height(Spacing.md))
+        Spacer(Modifier.height(if (compact) Spacing.xs else Spacing.md))
 
         // ── Botón pagar ──────────────────────────────────────────────────────
         Button(
@@ -466,7 +482,7 @@ internal fun CartPane(
                 message = ""
                 showCobrarVenta = true
             },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            modifier = Modifier.fillMaxWidth().height(if (compact) 46.dp else 52.dp),
             colors   = ButtonDefaults.buttonColors(
                 containerColor         = BrandRed,
                 contentColor           = Color.White,

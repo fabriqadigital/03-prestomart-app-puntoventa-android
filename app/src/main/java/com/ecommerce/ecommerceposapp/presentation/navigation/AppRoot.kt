@@ -2,6 +2,8 @@
 
 import android.graphics.BitmapFactory
 import android.util.Base64
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -669,7 +671,20 @@ private fun PosScreen(
     var showQuickProductDialog by remember { mutableStateOf(false) }
     var openAdvancedProductForm by remember { mutableStateOf(false) }
     val widthDp = LocalConfiguration.current.screenWidthDp
+    val heightDp = LocalConfiguration.current.screenHeightDp
     val responsiveTwoPanels = widthDp >= 900
+    val expandedCartFraction =
+        ((if (heightDp < 650) 0.615f else 0.545f) - (2f / heightDp.coerceAtLeast(1)))
+            .coerceAtLeast(0.1f)
+    val mobileCartFraction by animateFloatAsState(
+        targetValue = if (state.cart.isEmpty()) {
+            if (heightDp < 650) 0.38f else 0.30f
+        } else {
+            expandedCartFraction
+        },
+        animationSpec = tween(durationMillis = 220),
+        label = "mobileCartHeight",
+    )
 
     LaunchedEffect(session.cashierId) {
         posVm.loadCashSession(session.cashierId)
@@ -761,6 +776,9 @@ private fun PosScreen(
                                     onAddToCart = posVm::addToCart,
                                     onToggleFeatured = posVm::toggleFeatured,
                                     onNewProduct = { showQuickProductDialog = true },
+                                    onScanMessage = { message ->
+                                        scope.launch { snackbarHostState.showSnackbar(message) }
+                                    },
                                 )
                                 CartPane(
                                     Modifier.width(360.dp),
@@ -785,9 +803,14 @@ private fun PosScreen(
                                     onAddToCart = posVm::addToCart,
                                     onToggleFeatured = posVm::toggleFeatured,
                                     onNewProduct = { showQuickProductDialog = true },
+                                    onScanMessage = { message ->
+                                        scope.launch { snackbarHostState.showSnackbar(message) }
+                                    },
                                 )
                                 CartPane(
-                                    Modifier.fillMaxWidth().height(320.dp),
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight(mobileCartFraction),
                                     state,
                                     "${session.name} ${session.lastName}".trim(),
                                     clientsState.clients,

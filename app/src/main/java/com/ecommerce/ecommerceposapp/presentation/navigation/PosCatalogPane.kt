@@ -205,19 +205,46 @@ internal fun CatalogPane(
     onAddToCart: (ProductItem) -> Unit,
     onToggleFeatured: (ProductItem) -> Unit,
     onNewProduct: () -> Unit,
+    onScanMessage: (String) -> Unit,
 ) {
     var scanMode by rememberSaveable { mutableStateOf(false) }
+    var lastProcessedScan by remember { mutableStateOf<String?>(null) }
     val scanFocusRequester = remember { FocusRequester() }
 
     fun submitBarcode() {
         val scannedCode = state.search.trim()
-        if (scannedCode.isBlank()) return
+        if (scannedCode.isBlank() || scannedCode == lastProcessedScan) return
         val product = state.products.firstOrNull {
-            it.code.equals(scannedCode, ignoreCase = true) ||
-                it.barcode.equals(scannedCode, ignoreCase = true)
+            (it.code.isNotBlank() && it.code.equals(scannedCode, ignoreCase = true)) ||
+                (it.barcode.isNotBlank() && it.barcode.equals(scannedCode, ignoreCase = true))
         }
-        if (product != null && product.stock > 0.0) {
-            onAddToCart(product)
+        lastProcessedScan = scannedCode
+        when {
+            product == null -> onScanMessage("Producto no encontrado en el sistema")
+            product.stock <= 0.0 -> onScanMessage("Producto sin stock disponible")
+            else -> onAddToCart(product)
+        }
+        onSearch("")
+    }
+
+    LaunchedEffect(state.search, state.products) {
+        val scannedCode = state.search.trim()
+        if (scannedCode.isBlank()) {
+            lastProcessedScan = null
+            return@LaunchedEffect
+        }
+        if (scannedCode == lastProcessedScan) return@LaunchedEffect
+        val exactProduct = state.products.firstOrNull {
+            (it.code.isNotBlank() && it.code.equals(scannedCode, ignoreCase = true)) ||
+                (it.barcode.isNotBlank() && it.barcode.equals(scannedCode, ignoreCase = true))
+        }
+        if (exactProduct != null) {
+            lastProcessedScan = scannedCode
+            if (exactProduct.stock > 0.0) {
+                onAddToCart(exactProduct)
+            } else {
+                onScanMessage("Producto sin stock disponible")
+            }
             onSearch("")
         }
     }
@@ -236,7 +263,7 @@ internal fun CatalogPane(
     }
 
     val visibleSubcategories = state.subcategories.filter { it.categoryId == state.selectedCategoryId }
-    val compact = LocalConfiguration.current.screenWidthDp < 600
+    val compact = LocalConfiguration.current.screenWidthDp < 900
     val gridMinWidth = when {
         LocalConfiguration.current.screenWidthDp >= 900 -> 178.dp
         LocalConfiguration.current.screenWidthDp >= 600 -> 164.dp
@@ -278,14 +305,14 @@ internal fun CatalogPane(
                 modifier = fieldMod
                     .focusRequester(scanFocusRequester)
                     .onPreviewKeyEvent { event ->
-                        if (scanMode && event.key == Key.Enter && event.type == KeyEventType.KeyUp) {
+                        if (event.key == Key.Enter && event.type == KeyEventType.KeyUp) {
                             submitBarcode(); true
                         } else false
                     },
                 shape = RoundedCornerShape(Radius.lg),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { if (scanMode) submitBarcode() }),
+                keyboardActions = KeyboardActions(onDone = { submitBarcode() }),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor      = BrandRed,
                     unfocusedBorderColor    = BorderDefault,
@@ -335,12 +362,13 @@ internal fun CatalogPane(
         }
 
         if (compact) {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                searchField(Modifier.fillMaxWidth())
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    scanButton(Modifier)
-                    newProductButton(Modifier.weight(1f))
-                }
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                searchField(Modifier.weight(1f))
+                scanButton(Modifier)
             }
         } else {
             Row(
