@@ -47,6 +47,8 @@ object ApiConfig {
     const val SALE_REGISTER = "$POS_PREFIX/finanza/ventas/registrar"
     const val RECEIPT_SEND_EMAIL =
         "$POS_PREFIX/finanza/comprobantes/enviar-correo"
+    const val RECEIPT_SEND_WHATSAPP =
+        "$POS_PREFIX/finanza/comprobantes/enviar-whatsapp"
 
     const val CASH_REGISTER_LIST = "$POS_PREFIX/caja/listar"
     const val CASH_SESSION_LIST = "$POS_PREFIX/caja/sesiones"

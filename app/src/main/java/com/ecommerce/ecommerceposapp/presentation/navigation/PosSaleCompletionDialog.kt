@@ -1,6 +1,7 @@
 package com.ecommerce.ecommerceposapp.presentation.navigation
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -20,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -54,12 +55,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.ecommerce.ecommerceposapp.R
 import com.ecommerce.ecommerceposapp.data.remote.api.ReceiptDeliveryApiDataSource
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
+import com.ecommerce.ecommerceposapp.presentation.pos.buildReceiptShareText
 import com.ecommerce.ecommerceposapp.presentation.pos.createReceiptPdfForSharing
-import com.ecommerce.ecommerceposapp.presentation.pos.shareReceiptPdfOnWhatsapp
+import com.ecommerce.ecommerceposapp.presentation.pos.openWhatsapp
+import com.ecommerce.ecommerceposapp.presentation.pos.sanitizePhone51
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -199,10 +203,21 @@ internal fun SaleCompletedDialog(
                         val pdf = withContext(Dispatchers.IO) {
                             createReceiptPdfForSharing(context, receipt, issued, clienteNombre, clienteDoc, null)
                         }
-                        shareReceiptPdfOnWhatsapp(context, pdf, digits)
+                        val link = withContext(Dispatchers.IO) {
+                            ReceiptDeliveryApiDataSource(context).requestWhatsappLink(
+                                issued.numeroCompleto,
+                                clienteNombre.ifBlank { issued.receptorNombre },
+                                pdf,
+                            ).getOrThrow()
+                        }
+                        val phone51 = sanitizePhone51(digits) ?: error("Número de WhatsApp inválido.")
+                        val message = buildReceiptShareText(receipt, issued, clienteNombre, clienteDoc, link.url)
+                        openWhatsapp(context, phone51, message)
                     }.onSuccess {
-                        notice = "Comprobante listo para enviar por WhatsApp."
-                    }.onFailure { notice = "No se pudo generar o compartir el PDF." }
+                        notice = "WhatsApp abierto con el comprobante."
+                    }.onFailure {
+                        notice = it.message ?: "No se pudo generar el enlace de WhatsApp."
+                    }
                     sharingPdf = false
                 }
             }
@@ -258,8 +273,12 @@ internal fun SaleCompletedDialog(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     Text("Compartir por:", color = CompletionMuted)
                     Spacer(Modifier.width(10.dp))
-                    ShareButton(ShareMode.Email, shareMode, Icons.Filled.Email, "Correo") { shareMode = it; destination = ""; notice = "" }
-                    ShareButton(ShareMode.Whatsapp, shareMode, Icons.AutoMirrored.Filled.Chat, "WhatsApp") { shareMode = it; destination = initialPhone; notice = "" }
+                    ShareButton(ShareMode.Email, shareMode, "Correo", { tint ->
+                        Icon(Icons.Filled.Email, contentDescription = "Correo", tint = tint)
+                    }) { shareMode = it; destination = ""; notice = "" }
+                    ShareButton(ShareMode.Whatsapp, shareMode, "WhatsApp", {
+                        Image(painterResource(R.drawable.ic_whatsapp), contentDescription = "WhatsApp", modifier = Modifier.size(24.dp))
+                    }) { shareMode = it; destination = initialPhone; notice = "" }
                 }
                 Spacer(Modifier.height(10.dp))
                 when (shareMode) {
@@ -283,7 +302,11 @@ internal fun SaleCompletedDialog(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(8.dp),
                 ) {
-                    Icon(if (shareMode == ShareMode.Email) Icons.Filled.Email else Icons.AutoMirrored.Filled.Chat, null)
+                    if (shareMode == ShareMode.Email) {
+                        Icon(Icons.Filled.Email, contentDescription = null)
+                    } else {
+                        Image(painterResource(R.drawable.ic_whatsapp), contentDescription = null, modifier = Modifier.size(20.dp))
+                    }
                     Spacer(Modifier.width(7.dp))
                     Text(if (sharingPdf) "Preparando PDF..." else "Enviar")
                 }
@@ -366,8 +389,8 @@ private fun NewSaleButton(onClick: () -> Unit, modifier: Modifier) {
 private fun ShareButton(
     mode: ShareMode,
     selected: ShareMode,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
+    icon: @Composable (tint: Color) -> Unit,
     onSelect: (ShareMode) -> Unit,
 ) {
     Surface(
@@ -376,7 +399,7 @@ private fun ShareButton(
         border = BorderStroke(1.dp, if (mode == selected) CompletionBrand else Color.Transparent),
     ) {
         IconButton(onClick = { onSelect(mode) }) {
-            Icon(icon, contentDescription = description, tint = if (mode == selected) CompletionBrand else CompletionMuted)
+            icon(if (mode == selected) CompletionBrand else CompletionMuted)
         }
     }
 }

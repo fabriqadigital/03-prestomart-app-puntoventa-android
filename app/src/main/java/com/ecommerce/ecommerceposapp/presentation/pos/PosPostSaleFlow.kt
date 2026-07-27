@@ -53,7 +53,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.FileProvider
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -111,7 +110,7 @@ private fun resolveReceiptCustomer(
     return name to document
 }
 
-private fun sanitizePhone51(input: String): String? {
+internal fun sanitizePhone51(input: String): String? {
     val d = input.filter { it.isDigit() }
     if (d.length < 9) return null
     return when {
@@ -121,11 +120,12 @@ private fun sanitizePhone51(input: String): String? {
     }
 }
 
-private fun buildReceiptShareText(
+internal fun buildReceiptShareText(
     receipt: CompletedSaleReceipt,
     emitido: ComprobanteEmitidoResult,
     clienteNombre: String?,
     clienteDoc: String?,
+    ticketUrl: String? = null,
 ): String = buildString {
     val (customerName, customerDocument) = resolveReceiptCustomer(emitido, clienteNombre, clienteDoc)
     appendLine(emitido.emisorRazonSocial)
@@ -136,9 +136,14 @@ private fun buildReceiptShareText(
     appendLine("TOTAL: S/ ${"%.2f".format(Locale.US, receipt.total)}")
     if (customerName.isNotBlank()) appendLine("Cliente: $customerName")
     if (customerDocument.isNotBlank()) appendLine("Doc.: $customerDocument")
+    if (!ticketUrl.isNullOrBlank()) {
+        appendLine()
+        appendLine("Ver/descargar tu comprobante:")
+        appendLine(ticketUrl)
+    }
 }
 
-private fun openWhatsapp(context: android.content.Context, phone51: String, message: String) {
+internal fun openWhatsapp(context: android.content.Context, phone51: String, message: String) {
     val enc = URLEncoder.encode(message, Charsets.UTF_8.name())
     val uri = android.net.Uri.parse("https://wa.me/$phone51?text=$enc")
     val intent = Intent(Intent.ACTION_VIEW, uri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
@@ -305,24 +310,6 @@ internal fun createReceiptPdfForSharing(
     output.outputStream().use(document::writeTo)
     document.close()
     return output
-}
-
-internal fun shareReceiptPdfOnWhatsapp(context: android.content.Context, pdf: File, phone: String) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pdf)
-    val normalizedPhone = sanitizePhone51(phone)
-    val baseIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "application/pdf"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        putExtra(Intent.EXTRA_TEXT, "Comprobante de pago")
-        normalizedPhone?.let { putExtra("jid", "$it@s.whatsapp.net") }
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    val whatsapp = Intent(baseIntent).setPackage("com.whatsapp")
-    runCatching { context.startActivity(whatsapp) }.recoverCatching {
-        context.startActivity(Intent(baseIntent).setPackage("com.whatsapp.w4b"))
-    }.getOrElse {
-        context.startActivity(Intent.createChooser(baseIntent, "Enviar comprobante PDF").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
 }
 
 @Composable
