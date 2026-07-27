@@ -1,6 +1,9 @@
 ﻿package com.ecommerce.ecommerceposapp.presentation.clients
 
+import android.util.Patterns
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,10 +23,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -40,6 +46,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -60,10 +67,10 @@ import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
 
-private val ClientsAccent = com.ecommerce.ecommerceposapp.ui.theme.BrandRed
-private val ClientsText = com.ecommerce.ecommerceposapp.ui.theme.TextPrimary
-private val ClientsMuted = com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
-private val ClientsDivider = com.ecommerce.ecommerceposapp.ui.theme.BorderDefault
+private val ClientsAccent = Color(0xFFB91C2B)
+private val ClientsText = Color(0xFF111827)
+private val ClientsMuted = Color(0xFF64748B)
+private val ClientsDivider = Color(0xFFE2E8F0)
 
 @Composable
 fun ClientsCrudScreen(vm: ClientsViewModel) {
@@ -89,18 +96,10 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
             value = search,
             onValueChange = { search = it },
             placeholder = { Text("Buscar por nombre, documento o correo") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = com.ecommerce.ecommerceposapp.ui.theme.TextSecondary) },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             modifier = if (compact) Modifier.fillMaxWidth() else Modifier.widthIn(320.dp, 480.dp),
             singleLine = true,
-            shape = RoundedCornerShape(com.ecommerce.ecommerceposapp.ui.theme.Radius.lg),
-            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                focusedBorderColor   = com.ecommerce.ecommerceposapp.ui.theme.BrandRed,
-                unfocusedBorderColor = com.ecommerce.ecommerceposapp.ui.theme.BorderDefault,
-                cursorColor          = com.ecommerce.ecommerceposapp.ui.theme.BrandRed,
-                focusedLabelColor    = com.ecommerce.ecommerceposapp.ui.theme.BrandRed,
-                focusedContainerColor   = com.ecommerce.ecommerceposapp.ui.theme.SurfaceWhite,
-                unfocusedContainerColor = com.ecommerce.ecommerceposapp.ui.theme.SurfaceWhite,
-            ),
+            shape = RoundedCornerShape(10.dp),
         )
         Spacer(Modifier.height(10.dp))
         when {
@@ -133,7 +132,7 @@ private fun ClientsHeader(compact: Boolean, onAdd: () -> Unit) {
     val title: @Composable () -> Unit = {
         Column {
             Text("Clientes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("Clientes del punto de venta y cuentas web vinculadas.", color = ClientsMuted)
+            Text("Clientes del punto de venta.", color = ClientsMuted)
         }
     }
     val button: @Composable () -> Unit = {
@@ -154,50 +153,146 @@ private fun ClientsHeader(compact: Boolean, onAdd: () -> Unit) {
 
 @Composable
 private fun ClientCards(clients: List<ClientRow>, onEdit: (ClientRow) -> Unit, onDelete: (ClientRow) -> Unit) {
-    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(clients, key = { it.id }) { client ->
-            Surface(shape = RoundedCornerShape(10.dp), color = Color.White, shadowElevation = 1.dp) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(client.displayName(), color = ClientsText, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${client.documentType}: ${client.document}", color = ClientsMuted)
-                        Text(if (client.webAccess) "Cuenta web vinculada" else "Solo cliente POS", color = if (client.webAccess) Color(0xFF15803D) else ClientsMuted)
+    var pageSize by remember { mutableStateOf(10) }
+    val totalPages = maxOf(1, (clients.size + pageSize - 1) / pageSize)
+    var currentPage by remember(clients.size, pageSize) { mutableStateOf(0) }
+    val pageClients = clients.drop(currentPage * pageSize).take(pageSize)
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(pageClients, key = { it.id }) { client ->
+                Surface(shape = RoundedCornerShape(10.dp), color = Color.White, shadowElevation = 1.dp) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(client.displayName(), color = ClientsText, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${client.documentType}: ${client.document}", color = ClientsMuted)
+                        }
+                        ClientRowMenu(client, onEdit, onDelete)
                     }
-                    IconButton(onClick = { onEdit(client) }) { Icon(Icons.Filled.Edit, contentDescription = "Editar") }
-                    IconButton(onClick = { onDelete(client) }) { Icon(Icons.Filled.Delete, contentDescription = "Eliminar") }
                 }
             }
         }
+        ClientsPaginationBar(
+            total = clients.size,
+            pageSize = pageSize,
+            currentPage = currentPage,
+            totalPages = totalPages,
+            onPageSize = { pageSize = it },
+            onPageChange = { currentPage = it },
+            compact = true,
+        )
     }
 }
 
 @Composable
 private fun ClientTable(clients: List<ClientRow>, onEdit: (ClientRow) -> Unit, onDelete: (ClientRow) -> Unit) {
+    var pageSize by remember { mutableStateOf(10) }
+    val totalPages = maxOf(1, (clients.size + pageSize - 1) / pageSize)
+    var currentPage by remember(clients.size, pageSize) { mutableStateOf(0) }
+    val pageClients = clients.drop(currentPage * pageSize).take(pageSize)
     Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(8.dp), color = Color.White, shadowElevation = 1.dp) {
         Column {
             Row(Modifier.fillMaxWidth().background(Color(0xFFF8FAFC)).padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Text("Nombre", Modifier.weight(1.8f), fontWeight = FontWeight.SemiBold)
                 Text("Documento", Modifier.weight(1.1f), fontWeight = FontWeight.SemiBold)
                 Text("Correo", Modifier.weight(1.7f), fontWeight = FontWeight.SemiBold)
-                Text("Acceso", Modifier.weight(.8f), fontWeight = FontWeight.SemiBold)
                 Text("Estado", Modifier.weight(.7f), fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.width(96.dp))
+                Spacer(Modifier.width(56.dp))
             }
             HorizontalDivider(color = ClientsDivider)
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(clients, key = { it.id }) { client ->
+            LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                items(pageClients, key = { it.id }) { client ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(client.displayName(), Modifier.weight(1.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${client.documentType} ${client.document}", Modifier.weight(1.1f), color = ClientsMuted)
                         Text(client.email.ifBlank { "-" }, Modifier.weight(1.7f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(if (client.webAccess) "Web" else "POS", Modifier.weight(.8f), color = if (client.webAccess) Color(0xFF15803D) else ClientsMuted)
                         Text(if (client.active) "Activo" else "Inactivo", Modifier.weight(.7f), color = if (client.active) Color(0xFF15803D) else ClientsMuted)
-                        IconButton(onClick = { onEdit(client) }) { Icon(Icons.Filled.Edit, contentDescription = "Editar") }
-                        IconButton(onClick = { onDelete(client) }) { Icon(Icons.Filled.Delete, contentDescription = "Eliminar") }
+                        ClientRowMenu(client, onEdit, onDelete)
                     }
                     HorizontalDivider(color = ClientsDivider)
                 }
             }
+            ClientsPaginationBar(
+                total = clients.size,
+                pageSize = pageSize,
+                currentPage = currentPage,
+                totalPages = totalPages,
+                onPageSize = { pageSize = it },
+                onPageChange = { currentPage = it },
+                compact = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClientRowMenu(client: ClientRow, onEdit: (ClientRow) -> Unit, onDelete: (ClientRow) -> Unit) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { menuExpanded = true }) {
+            Icon(Icons.Filled.MoreVert, contentDescription = "Opciones")
+        }
+        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Editar") },
+                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                onClick = { menuExpanded = false; onEdit(client) },
+            )
+            DropdownMenuItem(
+                text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
+                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                onClick = { menuExpanded = false; onDelete(client) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClientsPaginationBar(
+    total: Int,
+    pageSize: Int,
+    currentPage: Int,
+    totalPages: Int,
+    onPageSize: (Int) -> Unit,
+    onPageChange: (Int) -> Unit,
+    compact: Boolean,
+) {
+    var pageSizeExpanded by remember { mutableStateOf(false) }
+    val from = if (total == 0) 0 else currentPage * pageSize + 1
+    val to = minOf(total, (currentPage + 1) * pageSize)
+    val info: @Composable () -> Unit = {
+        Text(if (compact) "Filas:" else "Registros por pagina:", color = ClientsMuted)
+        Box {
+            TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = ClientsText) }
+            DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
+                listOf(10, 20, 50).forEach { size ->
+                    DropdownMenuItem(text = { Text(size.toString()) }, onClick = { onPageSize(size); pageSizeExpanded = false })
+                }
+            }
+        }
+        Text("$from-$to de $total", color = ClientsMuted)
+    }
+    val buttons: @Composable () -> Unit = {
+        IconButton(onClick = { onPageChange(currentPage - 1) }, enabled = currentPage > 0) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Pagina anterior")
+        }
+        IconButton(onClick = { onPageChange(currentPage + 1) }, enabled = currentPage < totalPages - 1) {
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Pagina siguiente")
+        }
+    }
+    if (compact) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { info() }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                Text("Pagina ${currentPage + 1} de $totalPages", color = ClientsMuted)
+                buttons()
+            }
+        }
+    } else {
+        Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            info()
+            Spacer(Modifier.weight(1f))
+            Text("Pagina ${currentPage + 1} de $totalPages", color = ClientsMuted)
+            buttons()
         }
     }
 }
@@ -215,6 +310,29 @@ private fun ClientRow.displayName(): String {
 }
 
 private fun String.cleanValue(): String = trim().takeUnless { it.equals("null", true) } ?: ""
+
+private fun filterDocumentInput(documentType: String, raw: String): String = when (documentType) {
+    "DNI" -> raw.filter(Char::isDigit).take(8)
+    "RUC" -> raw.filter(Char::isDigit).take(11)
+    "CE" -> raw.filter(Char::isLetterOrDigit).take(16)
+    else -> raw.filter(Char::isLetterOrDigit)
+}
+
+private fun isDocumentValid(documentType: String, document: String): Boolean = when (documentType) {
+    "DNI" -> document.length == 8
+    "RUC" -> document.length == 11
+    "CE" -> document.isNotBlank() && document.length <= 16
+    else -> document.isNotBlank()
+}
+
+private fun documentHelperText(documentType: String): String = when (documentType) {
+    "DNI" -> "Debe tener 8 digitos"
+    "RUC" -> "Debe tener 11 digitos"
+    "CE" -> "Letras y numeros, maximo 16 caracteres"
+    else -> ""
+}
+
+private fun isEmailValid(email: String): Boolean = email.isBlank() || Patterns.EMAIL_ADDRESS.matcher(email).matches()
 
 @Composable
 private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: (ClientRow) -> Unit) {
@@ -239,7 +357,13 @@ private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: 
     val fields: @Composable () -> Unit = {
         SelectField("Tipo de persona", personType, listOf("Natural", "Juridica")) { personType = it }
         SelectField("Tipo de documento", documentType, listOf("DNI", "RUC", "CE")) { documentType = it; document = "" }
-        ClientTextField("Nro. de documento", document, { document = it.filter(Char::isLetterOrDigit) }, KeyboardType.Text)
+        ClientTextField(
+            "Nro. de documento", document,
+            { document = filterDocumentInput(documentType, it) },
+            if (documentType == "CE") KeyboardType.Text else KeyboardType.Number,
+            isError = document.isNotBlank() && !isDocumentValid(documentType, document),
+            supportingText = documentHelperText(documentType),
+        )
         ClientTextField("Nombre", name, { name = it })
         ClientTextField("Apellido", lastName, { lastName = it })
         if (personType == "Juridica") ClientTextField("Razon social", businessName, { businessName = it })
@@ -248,8 +372,12 @@ private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: 
         ClientTextField("Alias", alias, { alias = it })
         SelectField("Genero", gender, listOf("", "Masculino", "Femenino", "Otro")) { gender = it }
         SelectField("Estado civil", maritalStatus, listOf("", "Soltero", "Casado", "Conviviente", "Divorciado", "Viudo")) { maritalStatus = it }
-        ClientTextField("Descuento (%)", discount, { value -> if (value.matches(Regex("^\\d{0,3}([.]\\d{0,2})?$"))) discount = value }, KeyboardType.Decimal)
-        ClientTextField("Correo", email, { email = it }, KeyboardType.Email)
+        // ClientTextField("Descuento (%)", discount, { value -> if (value.matches(Regex("^\\d{0,3}([.]\\d{0,2})?$"))) discount = value }, KeyboardType.Decimal)
+        ClientTextField(
+            "Correo", email, { email = it }, KeyboardType.Email,
+            isError = !isEmailValid(email),
+            supportingText = if (!isEmailValid(email)) "Formato de correo invalido" else null,
+        )
         OutlinedTextField(observations, { observations = it }, label = { Text("Observaciones") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Estado del cliente: ${if (active) "Activado" else "Inactivo"}", Modifier.weight(1f))
@@ -280,7 +408,13 @@ private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: 
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             SelectField("Tipo de persona", personType, listOf("Natural", "Juridica")) { personType = it }
                             SelectField("Tipo de documento", documentType, listOf("DNI", "RUC", "CE")) { documentType = it; document = "" }
-                            ClientTextField("Nro. de documento", document, { document = it.filter(Char::isLetterOrDigit) })
+                            ClientTextField(
+                                "Nro. de documento", document,
+                                { document = filterDocumentInput(documentType, it) },
+                                if (documentType == "CE") KeyboardType.Text else KeyboardType.Number,
+                                isError = document.isNotBlank() && !isDocumentValid(documentType, document),
+                                supportingText = documentHelperText(documentType),
+                            )
                             ClientTextField("Nombre", name, { name = it })
                             ClientTextField("Apellido", lastName, { lastName = it })
                             if (personType == "Juridica") ClientTextField("Razon social", businessName, { businessName = it })
@@ -291,8 +425,12 @@ private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: 
                             ClientTextField("Telefono", phone, { phone = it.filter(Char::isDigit).take(15) }, KeyboardType.Phone)
                             SelectField("Genero", gender, listOf("", "Masculino", "Femenino", "Otro")) { gender = it }
                             SelectField("Estado civil", maritalStatus, listOf("", "Soltero", "Casado", "Conviviente", "Divorciado", "Viudo")) { maritalStatus = it }
-                            ClientTextField("Descuento (%)", discount, { value -> if (value.matches(Regex("^\\d{0,3}([.]\\d{0,2})?$"))) discount = value }, KeyboardType.Decimal)
-                            ClientTextField("Correo", email, { email = it }, KeyboardType.Email)
+                            // ClientTextField("Descuento (%)", discount, { value -> if (value.matches(Regex("^\\d{0,3}([.]\\d{0,2})?$"))) discount = value }, KeyboardType.Decimal)
+                            ClientTextField(
+                                "Correo", email, { email = it }, KeyboardType.Email,
+                                isError = !isEmailValid(email),
+                                supportingText = if (!isEmailValid(email)) "Formato de correo invalido" else null,
+                            )
                             OutlinedTextField(observations, { observations = it }, label = { Text("Observaciones") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text("Cliente ${if (active) "activo" else "inactivo"}", Modifier.weight(1f)); Switch(active, { active = it }) }
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(if (initial.userId > 0L) "Cuenta web vinculada" else "Activar acceso web / app", Modifier.weight(1f)); Switch(webAccess, { webAccess = it }, enabled = initial.userId == 0L) }
@@ -324,8 +462,24 @@ private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: 
 }
 
 @Composable
-private fun ClientTextField(label: String, value: String, onValueChange: (String) -> Unit, keyboardType: KeyboardType = KeyboardType.Text) {
-    OutlinedTextField(value, onValueChange, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = keyboardType))
+private fun ClientTextField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    isError: Boolean = false,
+    supportingText: String? = null,
+) {
+    OutlinedTextField(
+        value,
+        onValueChange,
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        isError = isError,
+        supportingText = supportingText?.let { { Text(it) } },
+    )
 }
 
 @Composable
@@ -337,9 +491,14 @@ private fun SelectField(label: String, value: String, options: List<String>, onS
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
-            trailingIcon = { IconButton(onClick = { expanded = true }) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null) } },
+            trailingIcon = { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+        )
+        Box(
+            Modifier
+                .matchParentSize()
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { expanded = true },
         )
         DropdownMenu(expanded, { expanded = false }, modifier = Modifier.widthIn(min = 220.dp)) {
             options.forEach { option -> DropdownMenuItem(text = { Text(option.ifBlank { "No especificado" }) }, onClick = { onSelected(option); expanded = false }) }
