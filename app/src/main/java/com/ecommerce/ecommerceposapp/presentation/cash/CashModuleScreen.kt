@@ -111,7 +111,11 @@ fun CashModuleScreen(
                         Modifier.fillMaxWidth().padding(vertical = 32.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text("Sin movimientos en este período", color = TextSecondary)
+                        Text(
+                            "Sin movimientos en este período",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
+                        )
                     }
                 }
             }
@@ -126,7 +130,12 @@ fun CashModuleScreen(
 
             state.flowError?.let { err ->
                 item {
-                    Text(err, color = Brand, modifier = Modifier.padding(vertical = 8.dp))
+                    Text(
+                        err,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Brand,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
                 }
             }
 
@@ -172,20 +181,20 @@ private fun CashHeaderCard(session: CashSession, onRequestClose: () -> Unit) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     "Turno activo",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
                     session.cashRegisterName.ifBlank { "Caja" },
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
                 )
                 /*if (session.cashierName.isNotBlank()) {
                     Text(
                         "Cajero: ${session.cashierName}",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
                     )
                 }*/
@@ -194,7 +203,7 @@ private fun CashHeaderCard(session: CashSession, onRequestClose: () -> Unit) {
                 else "—"
                 Text(
                     "Apertura: $openedStr",
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                 )
             }
@@ -204,9 +213,9 @@ private fun CashHeaderCard(session: CashSession, onRequestClose: () -> Unit) {
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
             ) {
-                Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Cerrar caja", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text("Cerrar caja", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -226,7 +235,7 @@ private fun CashSummaryCard(summary: CashSummary?, loading: Boolean, error: Stri
                 "Resumen del turno",
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
             )
             Spacer(Modifier.height(14.dp))
             if (loading) {
@@ -234,7 +243,7 @@ private fun CashSummaryCard(summary: CashSummary?, loading: Boolean, error: Stri
                     CircularProgressIndicator(color = Brand, modifier = Modifier.size(28.dp))
                 }
             } else if (error != null) {
-                Text(error, color = Brand, style = MaterialTheme.typography.bodySmall)
+                Text(error, color = Brand, style = MaterialTheme.typography.bodyMedium)
             } else {
                 // Fila 1: Fondo inicial, Ventas, Efectivo
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -284,13 +293,13 @@ private fun SummaryChip(
             .padding(horizontal = 10.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
         Spacer(Modifier.height(4.dp))
         Text(
             "S/ %.2f".format(Locale.US, value),
             fontWeight = FontWeight.Bold,
             color = textColor,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             maxLines = 1,
         )
     }
@@ -325,20 +334,20 @@ private fun CashFlowSection(
                     "Flujo de caja",
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
                 val total = state.flowItems.size
                 if (total > 0) {
                     Text(
                         "$total ${if (total == 1) "registro" else "registros"}",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
                     )
                     Spacer(Modifier.width(8.dp))
                 }
-                IconButton(onClick = onRefresh, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "Recargar", tint = TextSecondary, modifier = Modifier.size(18.dp))
+                IconButton(onClick = onRefresh, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "Recargar", tint = TextSecondary, modifier = Modifier.size(20.dp))
                 }
             }
 
@@ -353,22 +362,22 @@ private fun CashFlowSection(
                 OutlinedTextField(
                     value = state.filterFrom,
                     onValueChange = onFromChange,
-                    label = { Text("Desde", style = MaterialTheme.typography.labelSmall) },
-                    placeholder = { Text("yyyy-MM-dd", style = MaterialTheme.typography.labelSmall) },
+                    label = { Text("Desde", style = MaterialTheme.typography.bodyMedium) },
+                    placeholder = { Text("yyyy-MM-dd", style = MaterialTheme.typography.bodyMedium) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp),
-                    textStyle = MaterialTheme.typography.bodySmall,
+                    textStyle = MaterialTheme.typography.bodyMedium,
                 )
                 OutlinedTextField(
                     value = state.filterTo,
                     onValueChange = onToChange,
-                    label = { Text("Hasta", style = MaterialTheme.typography.labelSmall) },
-                    placeholder = { Text("yyyy-MM-dd", style = MaterialTheme.typography.labelSmall) },
+                    label = { Text("Hasta", style = MaterialTheme.typography.bodyMedium) },
+                    placeholder = { Text("yyyy-MM-dd", style = MaterialTheme.typography.bodyMedium) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     shape = RoundedCornerShape(8.dp),
-                    textStyle = MaterialTheme.typography.bodySmall,
+                    textStyle = MaterialTheme.typography.bodyMedium,
                 )
                 IconButton(
                     onClick = onApply,
@@ -394,11 +403,11 @@ private fun CashFlowSection(
             OutlinedTextField(
                 value = state.flowSearch,
                 onValueChange = onSearchChange,
-                placeholder = { Text("Buscar en flujo...", style = MaterialTheme.typography.bodySmall) },
+                placeholder = { Text("Buscar en flujo...", style = MaterialTheme.typography.bodyMedium) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(8.dp),
-                textStyle = MaterialTheme.typography.bodySmall,
+                textStyle = MaterialTheme.typography.bodyMedium,
             )
         }
     }
@@ -466,6 +475,7 @@ private fun RowScope.TableHeaderCell(
     }) {
         Text(
             text,
+            style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
             color = TextPrimary,
             maxLines = 1,
@@ -503,6 +513,7 @@ private fun CashFlowTableRow(item: CashFlowItem, compact: Boolean) {
             Column {
                 Text(
                     item.razonSocial.ifBlank { "-" },
+                    style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = TextPrimary,
@@ -513,7 +524,7 @@ private fun CashFlowTableRow(item: CashFlowItem, compact: Boolean) {
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         color = TextSecondary,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
             }
@@ -544,6 +555,7 @@ private fun CashFlowTableRow(item: CashFlowItem, compact: Boolean) {
         ) {
             Text(
                 text = "S/ %.2f".format(item.importe),
+                style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = importeColor,
                 maxLines = 1,
@@ -570,6 +582,7 @@ private fun RowScope.TableCell(
 
         Text(
             text = text.ifBlank { "-" },
+            style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             color = color,
@@ -607,10 +620,10 @@ private fun CashCloseDialog(
                     Icon(Icons.Filled.Lock, contentDescription = null, tint = Brand)
                 }
                 Column {
-                    Text("Cerrar caja", fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("Cerrar caja", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
                     Text(
                         "Confirma el efectivo de tu turno",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
                     )
                 }
@@ -635,8 +648,9 @@ private fun CashCloseDialog(
                 OutlinedTextField(
                     value = counted,
                     onValueChange = { counted = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Efectivo contado") },
-                    prefix = { Text("S/ ") },
+                    label = { Text("Efectivo contado", style = MaterialTheme.typography.bodyMedium) },
+                    prefix = { Text("S/ ", style = MaterialTheme.typography.bodyMedium) },
+                    textStyle = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(10.dp),
@@ -660,7 +674,7 @@ private fun CashCloseDialog(
                     Text(
                         "Diferencia: ${if (diff >= 0) "+" else ""}S/ %.2f".format(Locale.US, diff),
                         color = diffColor,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
@@ -668,7 +682,8 @@ private fun CashCloseDialog(
                 OutlinedTextField(
                     value = observations,
                     onValueChange = { observations = it },
-                    label = { Text("Observaciones (opcional)") },
+                    label = { Text("Observaciones (opcional)", style = MaterialTheme.typography.bodyMedium) },
+                    textStyle = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
                     minLines = 2,
@@ -681,13 +696,13 @@ private fun CashCloseDialog(
                         cursorColor = Brand,
                     ),
                 )
-                error?.let { Text(it, color = Brand, style = MaterialTheme.typography.bodySmall) }
+                error?.let { Text(it, color = Brand, style = MaterialTheme.typography.bodyMedium) }
                 if (loading) LinearProgressIndicator(color = Brand, modifier = Modifier.fillMaxWidth())
             }
         },
         dismissButton = {
             OutlinedButton(onClick = onDismiss, enabled = !loading) {
-                Text("Cancelar")
+                Text("Cancelar", style = MaterialTheme.typography.labelLarge)
             }
         },
         confirmButton = {
@@ -701,7 +716,7 @@ private fun CashCloseDialog(
                 ),
                 shape = RoundedCornerShape(10.dp),
             ) {
-                Text("Cerrar caja", fontWeight = FontWeight.SemiBold)
+                Text("Cerrar caja", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             }
         },
     )
@@ -721,12 +736,12 @@ private fun SummaryDialogRow(
         else -> TextPrimary
     }
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+        Text(label, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
         Text(
             "S/ %.2f".format(Locale.US, value),
             color = color,
             fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
         )
     }
 }

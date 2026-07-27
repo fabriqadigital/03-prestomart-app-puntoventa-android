@@ -730,6 +730,13 @@ private fun PosScreen(
             usersVm.clearMessages()
         }
     }
+    LaunchedEffect(state.message) {
+        val notice = state.message
+        if (!notice.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(notice)
+            posVm.clearMessage()
+        }
+    }
 
     LaunchedEffect(selectedModule) {
         when (selectedModule) {

@@ -35,6 +35,7 @@ data class PosUiState(
     val cashSummary: CashSummary? = null,
     val cashLoading: Boolean = false,
     val cashError: String? = null,
+    val message: String? = null,
 ) {
     val total: Double = round(cart.sumOf { it.lineTotal } * 100) / 100
     val subtotal: Double = round((total / 1.18) * 100) / 100
@@ -102,6 +103,7 @@ class PosViewModel(
     fun setCategory(categoryId: Long?) = _uiState.update { it.copy(selectedCategoryId = categoryId, selectedSubcategoryId = null) }
     fun setSubcategory(subcategoryId: Long?) = _uiState.update { it.copy(selectedSubcategoryId = subcategoryId) }
 
+    fun clearMessage() = _uiState.update { it.copy(message = null) }
     fun toggleFeatured(product: ProductItem) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -117,7 +119,14 @@ class PosViewModel(
         val index = current.indexOfFirst { it.productId == product.id }
         if (index >= 0) {
             val row = current[index]
-            if (row.quantity >= product.stock.toInt()) return
+            if (row.quantity >= product.stock.toInt()) {
+                _uiState.update {
+                    it.copy(
+                        message = "Stock insuficiente. Máximo ${product.stock.toInt()} unidad(es) disponible(s)."
+                    )
+                }
+                return
+            }
             current[index] = row.copy(quantity = row.quantity + 1)
         } else {
             if (product.stock <= 0.0) return

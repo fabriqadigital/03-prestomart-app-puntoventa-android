@@ -74,8 +74,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.platform.LocalContext
+import com.ecommerce.ecommerceposapp.util.ScannerDetector
 import coil.compose.AsyncImage
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
+import com.ecommerce.ecommerceposapp.presentation.pos.CameraScannerDialog
 import com.ecommerce.ecommerceposapp.presentation.pos.PosUiState
 import com.ecommerce.ecommerceposapp.ui.theme.AppBackground
 import com.ecommerce.ecommerceposapp.ui.theme.BorderDefault
@@ -96,6 +99,7 @@ import com.ecommerce.ecommerceposapp.ui.theme.SurfaceWhite
 import com.ecommerce.ecommerceposapp.ui.theme.TextPrimary
 import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 import com.ecommerce.ecommerceposapp.ui.theme.TextTertiary
+import kotlinx.coroutines.delay
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ONBOARDING STEPS  (sin cambios estructurales, solo ajuste de colores)
@@ -209,14 +213,17 @@ internal fun CatalogPane(
 ) {
     var scanMode by rememberSaveable { mutableStateOf(false) }
     var lastProcessedScan by remember { mutableStateOf<String?>(null) }
+    var scanBuffer by remember { mutableStateOf("") }
     val scanFocusRequester = remember { FocusRequester() }
+    val context = LocalContext.current
+    var showCameraScanner by remember { mutableStateOf(false) }
 
-    fun submitBarcode() {
-        val scannedCode = state.search.trim()
+    fun tryProcessScan(rawCode: String) {
+        val scannedCode = rawCode.trim()
         if (scannedCode.isBlank() || scannedCode == lastProcessedScan) return
         val product = state.products.firstOrNull {
             (it.code.isNotBlank() && it.code.equals(scannedCode, ignoreCase = true)) ||
-                (it.barcode.isNotBlank() && it.barcode.equals(scannedCode, ignoreCase = true))
+                    (it.barcode.isNotBlank() && it.barcode.equals(scannedCode, ignoreCase = true))
         }
         lastProcessedScan = scannedCode
         when {
@@ -224,7 +231,8 @@ internal fun CatalogPane(
             product.stock <= 0.0 -> onScanMessage("Producto sin stock disponible")
             else -> onAddToCart(product)
         }
-        onSearch("")
+        scanBuffer = ""
+        lastProcessedScan = null
     }
 
     LaunchedEffect(state.search, state.products) {
@@ -249,8 +257,19 @@ internal fun CatalogPane(
         }
     }
 
+    LaunchedEffect(scanBuffer) {
+        if (!scanMode || scanBuffer.length < 8) return@LaunchedEffect
+        delay(200)
+        tryProcessScan(scanBuffer)
+    }
+
     LaunchedEffect(scanMode) {
-        if (scanMode) scanFocusRequester.requestFocus()
+        if (scanMode) {
+            scanFocusRequester.requestFocus()
+            scanBuffer = ""
+        } else {
+            lastProcessedScan = null
+        }
     }
 
     val products = state.products.filter {
@@ -279,8 +298,8 @@ internal fun CatalogPane(
         // ── Barra de búsqueda + botones ──────────────────────────────────────
         val searchField: @Composable (Modifier) -> Unit = { fieldMod ->
             OutlinedTextField(
-                value       = state.search,
-                onValueChange = onSearch,
+                value       = if (scanMode) scanBuffer else state.search,
+                onValueChange = { if (scanMode) scanBuffer = if (it.length > 14) it.takeLast(14) else it  else { onSearch(it)}},
                 placeholder = {
                     Text(
                         if (scanMode) "Escanear código de barras..." else "Buscar producto o código...",
@@ -295,9 +314,9 @@ internal fun CatalogPane(
                         modifier = Modifier.size(20.dp),
                     )
                 },
-                trailingIcon = if (state.search.isNotBlank()) {
+                trailingIcon = if ((if (scanMode) scanBuffer else state.search).isNotBlank()) {
                     {
-                        IconButton(onClick = { onSearch("") }) {
+                        IconButton(onClick = { if (scanMode) scanBuffer = "" else onSearch("") }) {
                             Icon(Icons.Filled.Close, contentDescription = "Limpiar", tint = TextSecondary, modifier = Modifier.size(18.dp))
                         }
                     }
@@ -305,14 +324,14 @@ internal fun CatalogPane(
                 modifier = fieldMod
                     .focusRequester(scanFocusRequester)
                     .onPreviewKeyEvent { event ->
-                        if (event.key == Key.Enter && event.type == KeyEventType.KeyUp) {
-                            submitBarcode(); true
+                        if (scanMode && event.key == Key.Enter && event.type == KeyEventType.KeyUp) {
+                            tryProcessScan(scanBuffer); true
                         } else false
                     },
                 shape = RoundedCornerShape(Radius.lg),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { submitBarcode() }),
+                keyboardActions = KeyboardActions(onDone = { if (scanMode) tryProcessScan(scanBuffer) }),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor      = BrandRed,
                     unfocusedBorderColor    = BorderDefault,
@@ -331,7 +350,13 @@ internal fun CatalogPane(
                 shadowElevation = 1.dp,
             ) {
                 IconButton(
-                    onClick = { scanMode = !scanMode; onSearch("") },
+                    onClick = {
+                        when {
+                            scanMode -> { scanMode = false; onSearch("") }
+                            ScannerDetector.isPhysicalScannerConnected(context) -> scanMode = true
+                            else -> showCameraScanner = true
+                        }
+                    },
                     modifier = Modifier.size(50.dp),
                 ) {
                     Icon(
@@ -467,6 +492,15 @@ internal fun CatalogPane(
                 }
             }
         }
+    }
+    if (showCameraScanner) {
+        CameraScannerDialog(
+            onBarcodeDetected = { code ->
+                showCameraScanner = false
+                tryProcessScan(code)
+            },
+            onDismiss = { showCameraScanner = false },
+        )
     }
 }
 

@@ -65,6 +65,9 @@ import androidx.compose.ui.unit.dp
 import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // Paleta consistente con el modulo de productos
 private val Brand = Color(0xFFFD0505)
@@ -411,11 +414,33 @@ private fun SupplierAdvancedEditorView(
     var banco by remember(initial) { mutableStateOf(initial.banco) }
     var cuenta by remember(initial) { mutableStateOf(initial.cuenta) }
     var cci by remember(initial) { mutableStateOf(initial.cci) }
+    // Fecha de registro: si el proveedor es nuevo (viene vacía), se autocompleta con la fecha actual
+    val fechaRegistro = remember(initial) {
+        initial.fechaRegistro.ifBlank {
+            SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+        }
+    }
     var codigoError by remember { mutableStateOf(false) }
     var rucError by remember { mutableStateOf(false) }
 
     val compactEditor = LocalConfiguration.current.screenWidthDp < 900
-    val canSaveSupplier = codigo.isNotBlank() && name.isNotBlank() && (ruc.isBlank() || ruc.length == 11)
+
+    // Código: obligatorio (texto libre). RUC: obligatorio, exactamente 11 dígitos.
+    // Cuenta y CCI ya vienen filtrados a solo dígitos, así que basta validar que no estén en blanco.
+    val canSaveSupplier = codigo.isNotBlank() &&
+            name.isNotBlank() &&
+            ruc.length == 11 &&
+            correo.isNotBlank() &&
+            phone.isNotBlank() &&
+            direccion.isNotBlank() &&
+            personaContacto.isNotBlank() &&
+            cargoContacto.isNotBlank() &&
+            telefonoContacto.isNotBlank() &&
+            correoContacto.isNotBlank() &&
+            banco.isNotBlank() &&
+            cuenta.isNotBlank() &&
+            cci.isNotBlank() &&
+            observaciones.isNotBlank()
 
     val draftSupplier = {
         SupplierRow(
@@ -432,7 +457,7 @@ private fun SupplierAdvancedEditorView(
             correoContacto = correoContacto.trim(),
             calificacion = calificacion,
             estado = estado,
-            fechaRegistro = initial.fechaRegistro,
+            fechaRegistro = fechaRegistro,
             observaciones = observaciones,
             banco = banco.trim(),
             cuenta = cuenta.trim(),
@@ -444,7 +469,7 @@ private fun SupplierAdvancedEditorView(
     val trySave: () -> Unit = {
         var hasError = false
         if (codigo.isBlank()) { codigoError = true; hasError = true }
-        if (ruc.isNotBlank() && ruc.length != 11) { rucError = true; hasError = true }
+        if (ruc.length != 11) { rucError = true; hasError = true }
         if (!hasError) onSave(draftSupplier())
     }
 
@@ -490,9 +515,10 @@ private fun SupplierAdvancedEditorView(
                                 val digits = input.filter { it.isDigit() }
                                 if (digits.length <= 11) { ruc = digits; rucError = false }
                             },
-                            label = { Text("RUC") },
+                            label = { Text("RUC *") },
                             isError = rucError,
                             supportingText = { if (rucError) Text("El RUC debe tener 11 dígitos", color = MaterialTheme.colorScheme.error) },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
@@ -522,7 +548,7 @@ private fun SupplierAdvancedEditorView(
                             modifier = Modifier.weight(1f),
                         )
                         OutlinedTextField(
-                            value = initial.fechaRegistro,
+                            value = fechaRegistro,
                             onValueChange = {},
                             readOnly = true,
                             label = { Text("Fecha de registro") },
@@ -534,8 +560,22 @@ private fun SupplierAdvancedEditorView(
                     Text("Información bancaria", fontWeight = FontWeight.Bold)
                     FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 3, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(banco, { banco = it }, label = { Text("Banco") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(cuenta, { cuenta = it }, label = { Text("Cuenta") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(cci, { cci = it }, label = { Text("CCI") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(
+                            value = cuenta,
+                            onValueChange = { input -> cuenta = input.filter { it.isDigit() } },
+                            label = { Text("Cuenta") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = cci,
+                            onValueChange = { input -> cci = input.filter { it.isDigit() } },
+                            label = { Text("CCI") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
                     }
 
                     Text("Observaciones", fontWeight = FontWeight.Bold)
