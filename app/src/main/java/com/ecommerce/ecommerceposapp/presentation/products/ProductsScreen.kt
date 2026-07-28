@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -76,6 +77,11 @@ import com.ecommerce.ecommerceposapp.ui.theme.BrandRed
 import com.ecommerce.ecommerceposapp.ui.theme.BorderDefault
 import com.ecommerce.ecommerceposapp.ui.theme.SurfaceMuted
 import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import com.ecommerce.ecommerceposapp.presentation.pos.CameraScannerDialog
+import com.ecommerce.ecommerceposapp.util.ScannerDetector
 
 @Composable
 fun ProductsCrudScreen(
@@ -109,7 +115,8 @@ fun ProductsCrudScreen(
         .filter {
             search.isBlank() ||
                 it.name.contains(search, ignoreCase = true) ||
-                it.code.contains(search, ignoreCase = true)
+                it.code.contains(search, ignoreCase = true) ||
+                it.barcode.contains(search, ignoreCase = true)
         }
     val compactScreen = LocalConfiguration.current.screenWidthDp < 600
 
@@ -220,6 +227,9 @@ private fun ProductsTable(
     val totalPages = maxOf(1, (products.size + pageSize - 1) / pageSize)
     var currentPage by remember(products.size, pageSize) { mutableStateOf(0) }
     val pageProducts = products.drop(currentPage * pageSize).take(pageSize)
+    val context = LocalContext.current
+    val searchFocusRequester = remember { FocusRequester() }
+    var showSearchCameraScanner by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxSize(),
         shape = RoundedCornerShape(8.dp),
@@ -235,9 +245,48 @@ private fun ProductsTable(
                     onValueChange = onSearch,
                     placeholder = { Text("Buscar") },
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    trailingIcon = if (search.isNotBlank()) {
+                        {
+                            IconButton(onClick = { onSearch("") }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Limpiar búsqueda", tint = TextSecondary)
+                            }
+                        }
+                    } else null,
                     modifier = fieldModifier,
                     shape = RoundedCornerShape(10.dp),
                     singleLine = true,
+                )
+            }
+
+            val scanSearchButton: @Composable (Modifier) -> Unit = { btnMod ->
+                Surface(
+                    modifier        = btnMod,
+                    shape           = RoundedCornerShape(10.dp),
+                    color           = Color.White,
+                    border          = androidx.compose.foundation.BorderStroke(1.dp, BorderDefault),
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (ScannerDetector.isPhysicalScannerConnected(context)) {
+                                searchFocusRequester.requestFocus()
+                            } else {
+                                showSearchCameraScanner = true
+                            }
+                        },
+                        modifier = Modifier.size(50.dp),
+                    ) {
+                        Icon(Icons.Filled.QrCodeScanner, contentDescription = "Filtrar por código escaneado", tint = TextSecondary)
+                    }
+                }
+            }
+
+            if (showSearchCameraScanner) {
+                CameraScannerDialog(
+                    onBarcodeDetected = { code ->
+                        onSearch(code)
+                        showSearchCameraScanner = false
+                    },
+                    onDismiss = { showSearchCameraScanner = false },
                 )
             }
             val filterList: @Composable (Modifier) -> Unit = { listModifier ->
@@ -284,12 +333,16 @@ private fun ProductsTable(
             }
             if (compact) {
                 Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    searchField(Modifier.fillMaxWidth())
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        searchField(Modifier.weight(1f).focusRequester(searchFocusRequester))
+                        scanSearchButton(Modifier)
+                    }
                     filterList(Modifier.fillMaxWidth())
                 }
             } else {
                 Row(Modifier.fillMaxWidth().padding(10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    searchField(Modifier.widthIn(min = 260.dp, max = 360.dp))
+                    searchField(Modifier.widthIn(min = 260.dp, max = 360.dp).focusRequester(searchFocusRequester))
+                    scanSearchButton(Modifier)
                     filterList(Modifier.weight(1f))
                 }
             }
@@ -481,6 +534,8 @@ private fun ProductAdvancedEditorView(
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) imageUrl = copyPickedProductImage(context, uri)
     }
+    val barcodeFocusRequester = remember { FocusRequester() }
+    var showBarcodeCameraScanner by remember { mutableStateOf(false) }
     val draftProduct = {
         initial.copy(
             categoryId = categoryId, subcategoryId = selectedSubcategoryIds.firstOrNull() ?: 0L,
@@ -528,7 +583,46 @@ private fun ProductAdvancedEditorView(
                     Text("Información del producto", fontWeight = FontWeight.Bold)
                     FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 2, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(code, { code = it }, label = { Text("Código Producto") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(barcode, { barcode = it }, label = { Text("Código Barra") }, modifier = Modifier.weight(1f), singleLine = true)
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            OutlinedTextField(
+                                value = barcode,
+                                onValueChange = { barcode = it },
+                                label = { Text("Código Barra") },
+                                modifier = Modifier.weight(1f).focusRequester(barcodeFocusRequester),
+                                singleLine = true,
+                            )
+                            Surface(
+                                shape  = RoundedCornerShape(10.dp),
+                                color  = Color.White,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BorderDefault),
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        if (ScannerDetector.isPhysicalScannerConnected(context)) {
+                                            barcodeFocusRequester.requestFocus()
+                                        } else {
+                                            showBarcodeCameraScanner = true
+                                        }
+                                    },
+                                    modifier = Modifier.size(54.dp),
+                                ) {
+                                    Icon(Icons.Filled.QrCodeScanner, contentDescription = "Escanear código de barra", tint = TextSecondary)
+                                }
+                            }
+                        }
+                    }
+                    if (showBarcodeCameraScanner) {
+                        CameraScannerDialog(
+                            onBarcodeDetected = { code ->
+                                barcode = code
+                                showBarcodeCameraScanner = false
+                            },
+                            onDismiss = { showBarcodeCameraScanner = false },
+                        )
                     }
                     OutlinedTextField(name, { name = it }, label = { Text("Nombre *") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     ProductCheckboxField(
