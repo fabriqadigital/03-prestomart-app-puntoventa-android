@@ -23,8 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Refresh
@@ -353,15 +351,13 @@ private fun UsersTableRow(
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                 DropdownMenuItem(
                     text = { Text("Editar") },
-                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
                     onClick = {
                         menuOpen = false
                         onEdit(user)
                     },
                 )
                 DropdownMenuItem(
-                    text = { Text("Eliminar", color = RedDanger) },
-                    leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = RedDanger) },
+                    text = { Text("Eliminar") },
                     onClick = {
                         menuOpen = false
                         onDelete(user)

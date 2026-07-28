@@ -18,8 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
@@ -223,13 +221,11 @@ private fun CategoryRow(
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     DropdownMenuItem(
                         text = { Text("Nueva subcategoria") },
-                        leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) },
                         onClick = { menuExpanded = false; onCreateSubcategory() },
                     )
                     DropdownMenuItem(text = { Text("Editar") }, onClick = { menuExpanded = false; onEdit() })
                     DropdownMenuItem(
-                        text = { Text("Eliminar", color = TableBrand) },
-                        leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = TableBrand) },
+                        text = { Text("Eliminar") },
                         onClick = { menuExpanded = false; onDelete() },
                     )
                 }
@@ -259,8 +255,7 @@ private fun SubcategoryRow(
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     DropdownMenuItem(text = { Text("Editar") }, onClick = { menuExpanded = false; onEdit() })
                     DropdownMenuItem(
-                        text = { Text("Eliminar", color = TableBrand) },
-                        leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = TableBrand) },
+                        text = { Text("Eliminar") },
                         onClick = { menuExpanded = false; onDelete() },
                     )
                 }

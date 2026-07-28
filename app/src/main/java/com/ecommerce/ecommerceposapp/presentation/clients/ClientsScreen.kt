@@ -65,7 +65,7 @@ import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
 
-private val ClientsAccent = Color(0xFFB91C2B)
+private val ClientsAccent = Color(0xFFFD0505)
 private val ClientsText = Color(0xFF111827)
 private val ClientsMuted = Color(0xFF64748B)
 private val ClientsDivider = Color(0xFFE2E8F0)
@@ -212,7 +212,7 @@ private fun ClientRowMenu(client: ClientRow, onEdit: (ClientRow) -> Unit, onDele
                 onClick = { menuExpanded = false; onEdit(client) },
             )
             DropdownMenuItem(
-                text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
+                text = { Text("Eliminar") },
                 onClick = { menuExpanded = false; onDelete(client) },
             )
         }
