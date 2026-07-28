@@ -5,7 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
-import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
+import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,8 +15,8 @@ import kotlinx.coroutines.launch
 
 class NetworkSyncCoordinator(
     context: Context,
-    private val products: ProductRepository,
     private val catalog: CatalogRepository,
+    private val sync: SyncRepository,
 ) {
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -24,11 +24,25 @@ class NetworkSyncCoordinator(
 
     fun start() {
         connectivity.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (hasValidatedInternet(network)) synchronize()
+            }
+
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-                if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) synchronize()
+                if (
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                ) synchronize()
             }
         })
+        connectivity.activeNetwork?.takeIf(::hasValidatedInternet)?.let { synchronize() }
     }
+
+    private fun hasValidatedInternet(network: Network): Boolean =
+        connectivity.getNetworkCapabilities(network)?.let {
+            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        } == true
 
     private fun synchronize() {
         if (!syncing.compareAndSet(false, true)) return
@@ -36,8 +50,10 @@ class NetworkSyncCoordinator(
             try {
                 // Permite que Android complete el arranque antes de abrir o migrar Realm.
                 delay(6_000)
-                val productsResult = products.syncPendingProducts()
-                if (productsResult.isSuccess) catalog.refreshCatalog()
+                val catalogResult = catalog.refreshCatalog()
+                if (catalogResult.isSuccess) {
+                    sync.processOutbox()
+                }
             } finally {
                 syncing.set(false)
             }

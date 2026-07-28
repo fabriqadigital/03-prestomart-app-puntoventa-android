@@ -26,8 +26,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -105,8 +103,12 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
         when {
             state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ClientsAccent) }
             clients.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No se encontraron clientes", color = ClientsMuted) }
-            compact -> ClientCards(clients, { editing = it }) { client -> pendingConfirm = deleteConfirmation(client, vm) }
-            else -> ClientTable(clients, { editing = it }) { client -> pendingConfirm = deleteConfirmation(client, vm) }
+            else -> ClientTable(
+                clients = clients,
+                compact = compact,
+                onEdit = { editing = it },
+                onDelete = { client -> pendingConfirm = deleteConfirmation(client, vm) },
+            )
         }
     }
 
@@ -152,39 +154,12 @@ private fun ClientsHeader(compact: Boolean, onAdd: () -> Unit) {
 }
 
 @Composable
-private fun ClientCards(clients: List<ClientRow>, onEdit: (ClientRow) -> Unit, onDelete: (ClientRow) -> Unit) {
-    var pageSize by remember { mutableStateOf(10) }
-    val totalPages = maxOf(1, (clients.size + pageSize - 1) / pageSize)
-    var currentPage by remember(clients.size, pageSize) { mutableStateOf(0) }
-    val pageClients = clients.drop(currentPage * pageSize).take(pageSize)
-    Column(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(pageClients, key = { it.id }) { client ->
-                Surface(shape = RoundedCornerShape(10.dp), color = Color.White, shadowElevation = 1.dp) {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(client.displayName(), color = ClientsText, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${client.documentType}: ${client.document}", color = ClientsMuted)
-                        }
-                        ClientRowMenu(client, onEdit, onDelete)
-                    }
-                }
-            }
-        }
-        ClientsPaginationBar(
-            total = clients.size,
-            pageSize = pageSize,
-            currentPage = currentPage,
-            totalPages = totalPages,
-            onPageSize = { pageSize = it },
-            onPageChange = { currentPage = it },
-            compact = true,
-        )
-    }
-}
-
-@Composable
-private fun ClientTable(clients: List<ClientRow>, onEdit: (ClientRow) -> Unit, onDelete: (ClientRow) -> Unit) {
+private fun ClientTable(
+    clients: List<ClientRow>,
+    compact: Boolean,
+    onEdit: (ClientRow) -> Unit,
+    onDelete: (ClientRow) -> Unit,
+) {
     var pageSize by remember { mutableStateOf(10) }
     val totalPages = maxOf(1, (clients.size + pageSize - 1) / pageSize)
     var currentPage by remember(clients.size, pageSize) { mutableStateOf(0) }
@@ -192,20 +167,20 @@ private fun ClientTable(clients: List<ClientRow>, onEdit: (ClientRow) -> Unit, o
     Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(8.dp), color = Color.White, shadowElevation = 1.dp) {
         Column {
             Row(Modifier.fillMaxWidth().background(Color(0xFFF8FAFC)).padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text("Nombre", Modifier.weight(1.8f), fontWeight = FontWeight.SemiBold)
+                Text("Nombre", Modifier.weight(if (compact) 1.5f else 1.8f), fontWeight = FontWeight.SemiBold)
                 Text("Documento", Modifier.weight(1.1f), fontWeight = FontWeight.SemiBold)
-                Text("Correo", Modifier.weight(1.7f), fontWeight = FontWeight.SemiBold)
-                Text("Estado", Modifier.weight(.7f), fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.width(56.dp))
+                if (!compact) Text("Correo", Modifier.weight(1.7f), fontWeight = FontWeight.SemiBold)
+                if (!compact) Text("Estado", Modifier.weight(.7f), fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.width(if (compact) 44.dp else 56.dp))
             }
             HorizontalDivider(color = ClientsDivider)
             LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                 items(pageClients, key = { it.id }) { client ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(client.displayName(), Modifier.weight(1.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${client.documentType} ${client.document}", Modifier.weight(1.1f), color = ClientsMuted)
-                        Text(client.email.ifBlank { "-" }, Modifier.weight(1.7f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(if (client.active) "Activo" else "Inactivo", Modifier.weight(.7f), color = if (client.active) Color(0xFF15803D) else ClientsMuted)
+                        Text(client.displayName(), Modifier.weight(if (compact) 1.5f else 1.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${client.documentType} ${client.document}", Modifier.weight(1.1f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (!compact) Text(client.email.ifBlank { "-" }, Modifier.weight(1.7f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (!compact) Text(if (client.active) "Activo" else "Inactivo", Modifier.weight(.7f), color = if (client.active) Color(0xFF15803D) else ClientsMuted)
                         ClientRowMenu(client, onEdit, onDelete)
                     }
                     HorizontalDivider(color = ClientsDivider)
@@ -218,7 +193,7 @@ private fun ClientTable(clients: List<ClientRow>, onEdit: (ClientRow) -> Unit, o
                 totalPages = totalPages,
                 onPageSize = { pageSize = it },
                 onPageChange = { currentPage = it },
-                compact = false,
+                compact = compact,
             )
         }
     }
@@ -234,12 +209,10 @@ private fun ClientRowMenu(client: ClientRow, onEdit: (ClientRow) -> Unit, onDele
         DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
             DropdownMenuItem(
                 text = { Text("Editar") },
-                leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
                 onClick = { menuExpanded = false; onEdit(client) },
             )
             DropdownMenuItem(
                 text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
-                leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                 onClick = { menuExpanded = false; onDelete(client) },
             )
         }

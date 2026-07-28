@@ -88,6 +88,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.sp
 import java.util.Locale
 import androidx.navigation.NavHostController
@@ -343,7 +344,12 @@ private fun ModernLoginScreen(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                     Icon(Icons.Filled.Cloud, null, tint = if (!state.offlineMode) Color(0xFF16A34A) else TextSecondary, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(6.dp)); Text("Online", color = if (!state.offlineMode) Color(0xFF16A34A) else TextSecondary)
-                    androidx.compose.material3.Switch(checked = state.offlineMode, onCheckedChange = onOfflineModeChange, enabled = state.offlineAvailable, modifier = Modifier.padding(horizontal = 8.dp))
+                    androidx.compose.material3.Switch(
+                        checked = state.offlineMode,
+                        onCheckedChange = onOfflineModeChange,
+                        enabled = !state.busy,
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
                     Icon(Icons.Filled.CloudOff, null, tint = if (state.offlineMode) Brand else TextSecondary, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(6.dp)); Text("Offline", color = if (state.offlineMode) Brand else TextSecondary)
                 }
@@ -875,69 +881,73 @@ private fun PosScreen(
     }
 
     val scaffold: @Composable () -> Unit = {
-        Scaffold(
-            containerColor = AppBg,
-            snackbarHost = {
-                SnackbarHost(
-                    hostState = snackbarHostState,
-                    modifier = Modifier.fillMaxWidth().padding(end = 18.dp, bottom = 18.dp),
-                    snackbar = { data -> FloatingRightNotice(data) },
-                )
-            },
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            topBarTitle,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    if (drawerState.isOpen) drawerState.close() else drawerState.open()
-                                }
-                            },
-                        ) {
-                            Icon(
-                                imageVector = if (drawerState.isOpen) Icons.Filled.Close else Icons.Filled.Menu,
-                                contentDescription = if (drawerState.isOpen) "Cerrar menú" else "Abrir menú",
-                                tint = TextPrimary,
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(
+                containerColor = AppBg,
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                topBarTitle,
+                                color = TextPrimary,
+                                fontWeight = FontWeight.SemiBold,
                             )
-                        }
-                    },
-                    actions = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(end = 12.dp),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
-                                        if (session.offlineSession) Color(0xFFF3F4F6) else Color(0xFFDCFCE7),
-                                    )
-                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                        },
+                        navigationIcon = {
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        if (drawerState.isOpen) drawerState.close() else drawerState.open()
+                                    }
+                                },
                             ) {
-                                Text(
-                                    if (session.offlineSession) "OFFLINE" else "ONLINE",
-                                    color = if (session.offlineSession) Brand else Color(0xFF16A34A),
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.labelMedium,
+                                Icon(
+                                    imageVector = if (drawerState.isOpen) Icons.Filled.Close else Icons.Filled.Menu,
+                                    contentDescription = if (drawerState.isOpen) "Cerrar menú" else "Abrir menú",
+                                    tint = TextPrimary,
                                 )
                             }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = SurfaceWhite,
-                        titleContentColor = TextPrimary,
-                        navigationIconContentColor = TextPrimary,
-                    ),
-                )
-            },
-        ) { padding -> posContent(padding) }
+                        },
+                        actions = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(end = 12.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (session.offlineSession) Color(0xFFF3F4F6) else Color(0xFFDCFCE7),
+                                        )
+                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                ) {
+                                    Text(
+                                        if (session.offlineSession) "OFFLINE" else "ONLINE",
+                                        color = if (session.offlineSession) Brand else Color(0xFF16A34A),
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = SurfaceWhite,
+                            titleContentColor = TextPrimary,
+                            navigationIconContentColor = TextPrimary,
+                        ),
+                    )
+                },
+            ) { padding -> posContent(padding) }
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .zIndex(20f)
+                    .fillMaxWidth()
+                    .padding(top = 76.dp, end = 18.dp, start = 18.dp),
+                snackbar = { data -> FloatingRightNotice(data) },
+            )
+        }
     }
 
     ModalNavigationDrawer(
@@ -1012,7 +1022,12 @@ private fun PosScreen(
             },
         )
     }
-    CashFlowHost(session, state, posVm)
+    CashFlowHost(
+        session = session,
+        state = state,
+        viewModel = posVm,
+        onLoginRequested = onLogout,
+    )
 }
 
 private fun UserSession.avatarModel(): Any? {

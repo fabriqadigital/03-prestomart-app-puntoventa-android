@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository
 import com.ecommerce.ecommerceposapp.domain.model.sync.SyncModuleStatus
 import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
+import com.ecommerce.ecommerceposapp.domain.sync.SyncPlan
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -20,6 +21,9 @@ data class SyncUiState(
     val message: String = "",
     val modules: List<SyncModuleStatus> = emptyList(),
     val selectedModules: Set<String> = emptySet(),
+    val selectionNotice: String = "",
+    val progressFraction: Float = 0f,
+    val activeModuleLabel: String = "",
     // true solo en la primerísima sincronización (modo offline inicial).
     val isInitialSync: Boolean = false,
     // Segundos transcurridos desde que empezó a sincronizar; alimenta el
@@ -48,30 +52,55 @@ class SyncViewModel(
      *  - Re-sincronización -> arranca todo deseleccionado; el usuario
      *    decide qué módulo sincronizar cada vez.
      */
-    fun loadModules(isInitial: Boolean) {
-        viewModelScope.launch {
-            val modules = withContext(Dispatchers.IO) { syncRepository.listSyncModuleStatus() }
-            _uiState.update { s ->
-                val selected = if (isInitial) modules.map { it.key }.toSet() else emptySet()
-                s.copy(modules = modules, selectedModules = selected, isInitialSync = isInitial)
-            }
+    suspend fun loadModules(isInitial: Boolean) {
+        val modules = withContext(Dispatchers.IO) { syncRepository.listSyncModuleStatus() }
+        _uiState.update { s ->
+            val selected = if (isInitial) modules.map { it.key }.toSet() else emptySet()
+            s.copy(
+                modules = modules,
+                selectedModules = selected,
+                selectionNotice = "",
+                isInitialSync = isInitial,
+            )
         }
     }
 
     fun toggleModule(moduleKey: String) {
         _uiState.update { s ->
-            val selected = s.selectedModules.toMutableSet()
-            if (!selected.add(moduleKey)) selected.remove(moduleKey)
-            s.copy(selectedModules = selected)
+            val labels = s.modules.associate { it.key to it.label }
+            if (moduleKey in s.selectedModules) {
+                val selected = SyncPlan.removeWithDependents(s.selectedModules, moduleKey)
+                val removedDependents = s.selectedModules - selected - moduleKey
+                val notice = if (removedDependents.isEmpty()) {
+                    ""
+                } else {
+                    "También se quitaron: ${removedDependents.joinToString { labels[it] ?: it }}."
+                }
+                s.copy(selectedModules = selected, selectionNotice = notice)
+            } else {
+                val selected = SyncPlan.expand(s.selectedModules + moduleKey)
+                val addedDependencies = selected - s.selectedModules - moduleKey
+                val notice = if (addedDependencies.isEmpty()) {
+                    ""
+                } else {
+                    "Requisitos incluidos automáticamente: ${addedDependencies.joinToString { labels[it] ?: it }}."
+                }
+                s.copy(selectedModules = selected, selectionNotice = notice)
+            }
         }
     }
 
     fun selectAllModules() {
-        _uiState.update { s -> s.copy(selectedModules = s.modules.map { it.key }.toSet()) }
+        _uiState.update { s ->
+            s.copy(
+                selectedModules = SyncPlan.expand(s.modules.map { it.key }.toSet()),
+                selectionNotice = "",
+            )
+        }
     }
 
     fun clearSelection() {
-        _uiState.update { it.copy(selectedModules = emptySet()) }
+        _uiState.update { it.copy(selectedModules = emptySet(), selectionNotice = "") }
     }
 
     /** Llamar desde `LaunchedEffect` o `scope.launch` — escribe en Realm fuera del hilo UI. */
@@ -87,10 +116,14 @@ class SyncViewModel(
         }
 
         _uiState.update {
+            val labels = it.modules.associate { module -> module.key to module.label }
+            val firstSelected = SyncPlan.orderedModules.firstOrNull { key -> key in selected }
             it.copy(
                 syncing = true,
                 completed = false,
                 elapsedSeconds = 0,
+                progressFraction = 0f,
+                activeModuleLabel = firstSelected?.let(labels::get).orEmpty(),
                 message = "Sincronizando módulos seleccionados...",
             )
         }
@@ -104,9 +137,18 @@ class SyncViewModel(
             }
         }
 
+        val labels = current.modules.associate { it.key to it.label }
+        val onProgress: (com.ecommerce.ecommerceposapp.domain.model.sync.SyncProgress) -> Unit = { progress ->
+            _uiState.update {
+                it.copy(
+                    progressFraction = progress.fraction.coerceIn(0f, 1f),
+                    activeModuleLabel = labels[progress.activeModuleKey] ?: progress.activeModuleKey,
+                )
+            }
+        }
         val result = withContext(Dispatchers.IO) {
-            if (current.isInitialSync) syncRepository.syncInitialData(user)
-            else syncRepository.syncModules(user, selected)
+            if (current.isInitialSync) syncRepository.syncInitialData(user, onProgress)
+            else syncRepository.syncModules(user, selected, onProgress)
         }
 
         timerJob?.cancel()
@@ -123,6 +165,9 @@ class SyncViewModel(
                         // La próxima vez que se abra esta pantalla arranca
                         // deseleccionado (ya no es la primera sync).
                         selectedModules = emptySet(),
+                        selectionNotice = "",
+                        progressFraction = 1f,
+                        activeModuleLabel = "",
                         isInitialSync = false,
                     )
                 }

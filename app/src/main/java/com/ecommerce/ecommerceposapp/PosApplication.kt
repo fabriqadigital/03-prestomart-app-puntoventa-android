@@ -10,10 +10,11 @@ import com.ecommerce.ecommerceposapp.data.remote.api.HostHeaderInterceptor
 import com.ecommerce.ecommerceposapp.di.appModules
 import com.ecommerce.ecommerceposapp.data.sync.NetworkSyncCoordinator
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
-import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
+import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository
 import io.realm.Realm
 import io.realm.RealmConfiguration
 import io.realm.RealmMigration
+import io.realm.FieldAttribute
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.context.startKoin
@@ -30,7 +31,7 @@ class PosApplication : Application() {
         Realm.init(this)
         val config = RealmConfiguration.Builder()
             .name("ecommerce_pos.realm")
-            .schemaVersion(14)
+            .schemaVersion(17)
             .migration(RealmMigration { realm, oldVersion, _ ->
                 if (oldVersion < 9L) {
                     realm.schema.get("ProductRealm")?.apply {
@@ -135,6 +136,35 @@ class PosApplication : Application() {
                         addField("webAccess", Boolean::class.javaPrimitiveType!!)
                     }
                 }
+                if (oldVersion < 15L) {
+                    realm.schema.create("OutboxRealm")
+                        .addField("id", String::class.java, FieldAttribute.PRIMARY_KEY, FieldAttribute.REQUIRED)
+                        .addField("moduleKey", String::class.java, FieldAttribute.REQUIRED)
+                        .addField("operation", String::class.java, FieldAttribute.REQUIRED)
+                        .addField("aggregateType", String::class.java, FieldAttribute.REQUIRED)
+                        .addField("aggregateLocalId", Long::class.javaPrimitiveType!!)
+                        .addField("payloadJson", String::class.java, FieldAttribute.REQUIRED)
+                        .addField("createdAt", Long::class.javaPrimitiveType!!)
+                        .addField("updatedAt", Long::class.javaPrimitiveType!!)
+                        .addField("attemptCount", Int::class.javaPrimitiveType!!)
+                        .addField("nextAttemptAt", Long::class.javaPrimitiveType!!)
+                        .addField("state", String::class.java, FieldAttribute.REQUIRED)
+                        .addField("lastError", String::class.java, FieldAttribute.REQUIRED)
+                    realm.schema.create("SyncIdMapRealm")
+                        .addField("key", String::class.java, FieldAttribute.PRIMARY_KEY, FieldAttribute.REQUIRED)
+                        .addField("entityType", String::class.java, FieldAttribute.REQUIRED)
+                        .addField("localId", Long::class.javaPrimitiveType!!)
+                        .addField("remoteId", Long::class.javaPrimitiveType!!)
+                        .addField("createdAt", Long::class.javaPrimitiveType!!)
+                }
+                if (oldVersion < 17L) {
+                    realm.schema.get("OutboxRealm")?.let { schema ->
+                        if (!schema.isRequired("id")) schema.setRequired("id", true)
+                    }
+                    realm.schema.get("SyncIdMapRealm")?.let { schema ->
+                        if (!schema.isRequired("key")) schema.setRequired("key", true)
+                    }
+                }
             })
             .allowWritesOnUiThread(true)
             .allowQueriesOnUiThread(true)
@@ -169,8 +199,8 @@ class PosApplication : Application() {
         }.koin
         NetworkSyncCoordinator(
             this,
-            koin.get<ProductRepository>(),
             koin.get<CatalogRepository>(),
+            koin.get<SyncRepository>(),
         ).start()
     }
 
@@ -202,6 +232,7 @@ class PosApplication : Application() {
                 .remove("offline_auth_salt")
                 .remove("offline_auth_verifier")
                 .remove("offline_auth_verified_at")
+                .remove("offline_user_profile")
                 .apply()
             // Crear el marker para futuras ejecuciones normales
             noBackupFilesDir.mkdirs()

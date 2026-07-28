@@ -57,6 +57,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ecommerce.ecommerceposapp.R
 import com.ecommerce.ecommerceposapp.data.remote.api.ReceiptDeliveryApiDataSource
+import com.ecommerce.ecommerceposapp.data.sync.OfflineReceiptDeliveryQueue
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
@@ -174,10 +175,12 @@ internal fun SaleCompletedDialog(
                 scope.launch {
                     sharingPdf = true
                     notice = ""
+                    var generatedPdf: java.io.File? = null
                     runCatching {
                         val pdf = withContext(Dispatchers.IO) {
                             createReceiptPdfForSharing(context, receipt, issued, clienteNombre, clienteDoc, null)
                         }
+                        generatedPdf = pdf
                         withContext(Dispatchers.IO) {
                             ReceiptDeliveryApiDataSource(context).sendByEmail(
                                 destination,
@@ -189,7 +192,19 @@ internal fun SaleCompletedDialog(
                     }.onSuccess {
                         notice = "Comprobante enviado por correo."
                     }.onFailure {
-                        notice = it.message ?: "No se pudo enviar el comprobante por correo."
+                        val queued = generatedPdf?.let { pdf ->
+                            OfflineReceiptDeliveryQueue(context).enqueueEmail(
+                                email = destination,
+                                receiptNumber = issued.numeroCompleto,
+                                customerName = clienteNombre.ifBlank { issued.receptorNombre },
+                                sourcePdf = pdf,
+                            )
+                        }
+                        notice = if (queued?.isSuccess == true) {
+                            "Sin conexión. El correo quedó en cola y se enviará automáticamente."
+                        } else {
+                            it.message ?: "No se pudo enviar ni encolar el comprobante."
+                        }
                     }
                     sharingPdf = false
                 }
@@ -334,8 +349,8 @@ internal fun SaleCompletedDialog(
                     message = notice,
                     isError = notice.startsWith("No ", ignoreCase = true),
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(horizontal = 24.dp, vertical = 28.dp),
+                        .align(Alignment.TopEnd)
+                        .padding(horizontal = 24.dp, vertical = 22.dp),
                 )
             }
         }

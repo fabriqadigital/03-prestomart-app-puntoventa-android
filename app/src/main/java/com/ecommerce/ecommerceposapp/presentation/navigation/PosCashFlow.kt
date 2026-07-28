@@ -60,7 +60,12 @@ fun CashSessionIndicator(state: PosUiState, onClose: () -> Unit, modifier: Modif
 }
 
 @Composable
-fun CashFlowHost(session: UserSession, state: PosUiState, viewModel: PosViewModel) {
+fun CashFlowHost(
+    session: UserSession,
+    state: PosUiState,
+    viewModel: PosViewModel,
+    onLoginRequested: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     var selectedId by remember(state.cashRegisters, session.defaultCashRegisterId) {
         mutableStateOf(session.defaultCashRegisterId.takeIf { id -> state.cashRegisters.any { it.id == id } }
@@ -71,6 +76,7 @@ fun CashFlowHost(session: UserSession, state: PosUiState, viewModel: PosViewMode
     var showClose by remember { mutableStateOf(false) }
     var counted by remember { mutableStateOf("") }
     var observations by remember { mutableStateOf("") }
+    val authenticationRequired = state.cashError.isAuthenticationError()
 
     if (state.cashSession == null) {
         AlertDialog(
@@ -137,14 +143,39 @@ fun CashFlowHost(session: UserSession, state: PosUiState, viewModel: PosViewMode
                         shape = RoundedCornerShape(10.dp),
                         colors = cashTextFieldColors(),
                     )
-                    state.cashError?.let { Text(it, color = CashBrand) }
+                    state.cashError?.let { error ->
+                        Text(
+                            if (authenticationRequired) {
+                                "Tu sesión venció o ya no es válida. Inicia sesión nuevamente para continuar."
+                            } else {
+                                error
+                            },
+                            color = CashBrand,
+                        )
+                    }
                     if (state.cashLoading) CircularProgressIndicator(color = CashBrand)
+                }
+            },
+            dismissButton = {
+                if (authenticationRequired) {
+                    OutlinedButton(
+                        onClick = onLoginRequested,
+                        border = BorderStroke(1.dp, CashBrand),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = CashWhite,
+                            contentColor = CashBrand,
+                        ),
+                        modifier = Modifier.height(48.dp),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("Iniciar sesión")
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = { scope.launch { viewModel.openCashSession(selectedId, session.cashierId, amount.toDoubleOrNull() ?: 0.0) } },
-                    enabled = selectedId > 0L && !state.cashLoading,
+                    enabled = selectedId > 0L && !state.cashLoading && !authenticationRequired,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = CashBrand,
                         contentColor = Color.White,
@@ -208,6 +239,22 @@ fun CashFlowHost(session: UserSession, state: PosUiState, viewModel: PosViewMode
             },
         )
     }
+}
+
+internal fun String?.isAuthenticationError(): Boolean {
+    val normalized = this?.lowercase(Locale.ROOT).orEmpty()
+    return listOf(
+        "no autentic",
+        "inicia ses",
+        "inicie ses",
+        "sesión venc",
+        "sesion venc",
+        "token",
+        "unauthorized",
+        "forbidden",
+        "401",
+        "403",
+    ).any(normalized::contains)
 }
 
 @Composable

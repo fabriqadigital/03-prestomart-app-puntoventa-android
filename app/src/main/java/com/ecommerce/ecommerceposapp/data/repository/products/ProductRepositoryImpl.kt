@@ -4,6 +4,7 @@ import android.content.Context
 import com.ecommerce.ecommerceposapp.data.local.categories.CategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.categories.SubcategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.products.ProductRealm
+import com.ecommerce.ecommerceposapp.data.local.sync.SyncIdMapRealm
 import com.ecommerce.ecommerceposapp.data.remote.api.ApiConfig
 import com.ecommerce.ecommerceposapp.data.remote.api.ApiSessionStore
 import com.ecommerce.ecommerceposapp.data.remote.api.ProductApiDataSource
@@ -13,6 +14,7 @@ import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductTypeRow
 import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
+import com.ecommerce.ecommerceposapp.domain.sync.TimestampConflictResolver
 import java.io.IOException
 
 class ProductRepositoryImpl(context: Context) : ProductRepository {
@@ -64,7 +66,10 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
             realm.where(ProductRealm::class.java)
                 .findAll()
                 .map(::toRow)
-                .sortedByDescending { it.id }
+                .sortedWith(
+                    compareByDescending<ProductAdminRow> { it.syncState == "PENDING" }
+                        .thenByDescending { it.id },
+                )
         }
 
     override fun listProductTypes(): Result<List<ProductTypeRow>> =
@@ -93,7 +98,7 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
         val error = remoteResult.exceptionOrNull()
             ?: Exception("No se pudo guardar el producto.")
 
-        if (!error.hasNetworkCause()) {
+        if (!error.canQueueOffline()) {
             return Result.failure(error)
         }
 
@@ -163,9 +168,11 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
                 it.sameIdentity(item.row)
             }
 
+            // The oldest creation wins. Missing timestamps and exact ties use
+            // the existing server row, preventing duplicate records.
             val serverWins =
                 server != null &&
-                        server.createdAt > item.createdAt
+                    TimestampConflictResolver.serverWins(server.createdAt, item.createdAt)
 
             if (serverWins) {
                 replaceLocal(
@@ -289,6 +296,15 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
     ) {
         db.write { realm ->
             if (oldId != newId) {
+                realm.insertOrUpdate(
+                    SyncIdMapRealm().apply {
+                        key = "product:$oldId"
+                        entityType = "product"
+                        localId = oldId
+                        remoteId = newId
+                        this.createdAt = System.currentTimeMillis()
+                    },
+                )
                 realm.where(ProductRealm::class.java)
                     .equalTo("id", oldId)
                     .findFirst()
@@ -477,6 +493,11 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
 
         return false
     }
+
+    private fun Throwable.canQueueOffline(): Boolean =
+        hasNetworkCause() ||
+            message?.contains("sesion en linea", ignoreCase = true) == true ||
+            message?.contains("sesión en línea", ignoreCase = true) == true
 
     private data class PendingProduct(
         val row: ProductAdminRow,

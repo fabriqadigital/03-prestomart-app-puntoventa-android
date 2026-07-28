@@ -1,5 +1,8 @@
 package com.ecommerce.ecommerceposapp.presentation.navigation
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -94,6 +98,16 @@ internal fun CobrarVentaDialog(
     onCobroExitoso: (CompletedSaleReceipt, TipoComprobanteEmision, ReceiptCustomerInfo) -> Unit,
     onPay: suspend (SalePaymentInfo, ReceiptCustomerInfo, TipoComprobanteEmision) -> Result<CompletedSaleReceipt>,
 ) {
+    val context = LocalContext.current
+    val connectivity = remember {
+        context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    }
+    val isOnline = connectivity.activeNetwork?.let { network ->
+        connectivity.getNetworkCapabilities(network)?.let { capabilities ->
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        }
+    } == true
     var step by remember { mutableStateOf(PaymentStep.Methods) }
     var method by remember { mutableStateOf<PaymentMethod?>(null) }
     var receiptType by remember { mutableStateOf(TipoComprobanteEmision.SOLO_TICKET) }
@@ -265,6 +279,14 @@ internal fun CobrarVentaDialog(
                         },
                         change = change,
                     )
+                    if (!isOnline && method != PaymentMethod.Cash) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Modo offline: confirma el pago en el POS, terminal o billetera antes de continuar. La app lo registrará pendiente de sincronización, pero no puede autorizarlo con el banco.",
+                            color = Color(0xFFC2410C),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     if (errorText.isNotBlank()) {
                         Spacer(Modifier.height(10.dp))
                         Text(errorText, color = PaymentBrand, style = MaterialTheme.typography.bodySmall)

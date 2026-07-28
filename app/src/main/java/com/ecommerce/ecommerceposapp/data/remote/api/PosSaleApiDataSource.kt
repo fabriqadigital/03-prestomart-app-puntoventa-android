@@ -24,6 +24,7 @@ class PosSaleApiDataSource(context: Context) {
         cashSessionId: Long,
         customerInfo: ReceiptCustomerInfo,
         receiptType: TipoComprobanteEmision,
+        idempotencyKey: String? = null,
     ): Result<RegisteredPosSale> {
         if (session.token.isBlank()) {
             return Result.failure(Exception("Se necesita conexion autenticada para actualizar el stock del backend."))
@@ -55,11 +56,14 @@ class PosSaleApiDataSource(context: Context) {
                     }
                 })
             }
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url(resolver.endpoint(ApiConfig.SALE_REGISTER))
                 .post(payload.toString().toRequestBody(jsonType))
                 .header("Accept", "application/json")
-                .build()
+            idempotencyKey?.takeIf { it.isNotBlank() }?.let {
+                requestBuilder.header("Idempotency-Key", it)
+            }
+            val request = requestBuilder.build()
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 val json = runCatching { JSONObject(body) }.getOrNull()

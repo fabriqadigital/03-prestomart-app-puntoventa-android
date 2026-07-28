@@ -24,12 +24,9 @@ class SupplierRepositoryImpl(context: Context) : SupplierRepository {
     }
 
     override fun deleteSupplier(id: Long): Result<Unit> {
-        return api.updateEstado(id, "Inactivo").onSuccess {
+        return api.delete(id).onSuccess {
             db.write { realm ->
-                realm.where(SupplierRealm::class.java).equalTo("id", id).findFirst()?.let {
-                    it.estado = "Inactivo"
-                    it.active = false
-                }
+                realm.where(SupplierRealm::class.java).equalTo("id", id).findFirst()?.deleteFromRealm()
             }
         }
     }

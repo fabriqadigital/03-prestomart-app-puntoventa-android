@@ -79,6 +79,16 @@ class CashModuleViewModel(
     }
 
     private fun loadFlow(sessionId: Long?, fechaInicio: String?, fechaFin: String?) {
+        if (sessionId == null || sessionId < 0L) {
+            _uiState.update {
+                it.copy(
+                    flowItems = emptyList(),
+                    flowLoading = false,
+                    flowError = "Modo offline: el resumen usa las ventas guardadas en este dispositivo.",
+                )
+            }
+            return
+        }
         _uiState.update { it.copy(flowLoading = true, flowError = null) }
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -89,7 +99,15 @@ class CashModuleViewModel(
                 )
             }
                 .onSuccess { items -> _uiState.update { it.copy(flowItems = items, flowLoading = false) } }
-                .onFailure { e -> _uiState.update { it.copy(flowLoading = false, flowError = e.message) } }
+                .onFailure {
+                    _uiState.update {
+                        it.copy(
+                            flowItems = emptyList(),
+                            flowLoading = false,
+                            flowError = "Sin conexión. El resumen local continúa disponible.",
+                        )
+                    }
+                }
         }
     }
 

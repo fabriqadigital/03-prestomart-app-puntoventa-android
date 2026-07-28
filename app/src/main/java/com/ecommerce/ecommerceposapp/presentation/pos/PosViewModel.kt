@@ -117,6 +117,7 @@ class PosViewModel(
     fun addToCart(product: ProductItem) {
         val current = _uiState.value.cart.toMutableList()
         val index = current.indexOfFirst { it.productId == product.id }
+        val nextQuantity: Int
         if (index >= 0) {
             val row = current[index]
             if (row.quantity >= product.stock.toInt()) {
@@ -127,23 +128,35 @@ class PosViewModel(
                 }
                 return
             }
-            current[index] = row.copy(quantity = row.quantity + 1)
+            nextQuantity = row.quantity + 1
+            current[index] = row.copy(quantity = nextQuantity)
         } else {
             if (product.stock <= 0.0) return
+            nextQuantity = 1
             current.add(CartLine(product.id, product.name, product.price, 1))
         }
-        _uiState.update { it.copy(cart = current) }
+        _uiState.update {
+            it.copy(
+                cart = current,
+                message = "${product.name} agregado al carrito. Cantidad: $nextQuantity",
+            )
+        }
     }
 
     fun increase(line: CartLine) {
         _uiState.update {
             val productStock = it.products.firstOrNull { p -> p.id == line.productId }?.stock?.toInt() ?: Int.MAX_VALUE
-            it.copy(cart = it.cart.map { row -> if (row.productId == line.productId) row.copy(quantity = row.quantity + 1) else row })
-                .let { next ->
-                    next.copy(cart = next.cart.map { row ->
-                        if (row.productId == line.productId && row.quantity > productStock) row.copy(quantity = productStock) else row
-                    })
-                }
+            if (line.quantity >= productStock) {
+                it.copy(message = "Stock insuficiente. Máximo $productStock unidad(es) de ${line.productName}.")
+            } else {
+                val nextQuantity = line.quantity + 1
+                it.copy(
+                    cart = it.cart.map { row ->
+                        if (row.productId == line.productId) row.copy(quantity = nextQuantity) else row
+                    },
+                    message = "${line.productName} agregado al carrito. Cantidad: $nextQuantity",
+                )
+            }
         }
     }
 

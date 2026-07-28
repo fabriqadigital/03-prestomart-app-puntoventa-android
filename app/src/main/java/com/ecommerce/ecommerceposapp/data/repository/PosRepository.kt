@@ -16,17 +16,22 @@ import com.ecommerce.ecommerceposapp.data.local.products.ProductRealm
 import com.ecommerce.ecommerceposapp.data.local.suppliers.SupplierRealm
 import com.ecommerce.ecommerceposapp.data.local.sync.SyncModuleStateRealm
 import com.ecommerce.ecommerceposapp.data.local.sync.SyncStateRealm
+import com.ecommerce.ecommerceposapp.data.local.sync.OutboxRealm
+import com.ecommerce.ecommerceposapp.data.local.sync.SyncIdMapRealm
 import com.ecommerce.ecommerceposapp.data.local.users.UserRealm
 import com.ecommerce.ecommerceposapp.data.remote.api.ApiConfig
 import com.ecommerce.ecommerceposapp.data.remote.api.ApiSessionStore
 import com.ecommerce.ecommerceposapp.data.remote.api.AuthApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.ClientApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.CashApiDataSource
+import com.ecommerce.ecommerceposapp.data.remote.api.CategoryApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.ProductImageApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.PosSaleApiDataSource
+import com.ecommerce.ecommerceposapp.data.remote.api.ReceiptDeliveryApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.RemoteCatalogDataSource
 import com.ecommerce.ecommerceposapp.data.repository.pos.AmountInWordsFormatter
 import com.ecommerce.ecommerceposapp.data.repository.products.ProductRepositoryImpl
+import com.ecommerce.ecommerceposapp.data.repository.suppliers.SupplierRepositoryImpl
 import com.ecommerce.ecommerceposapp.data.security.OfflineCredentialVerifier
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
@@ -35,6 +40,8 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
 import com.ecommerce.ecommerceposapp.domain.model.sync.SyncModuleStatus
+import com.ecommerce.ecommerceposapp.domain.model.sync.SyncProgress
+import com.ecommerce.ecommerceposapp.domain.sync.SyncPlan
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.catalog.CategoryItem
@@ -66,8 +73,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 import java.io.File
 import kotlin.math.round
+import org.json.JSONArray
 import org.json.JSONObject
 
 class PosRepositoryImpl(private val context: Context) :
@@ -80,12 +89,15 @@ class PosRepositoryImpl(private val context: Context) :
     private val authApi = AuthApiDataSource(context)
     private val clientApi = ClientApiDataSource(context)
     private val cashApi = CashApiDataSource(context)
+    private val categoryApi = CategoryApiDataSource(context)
     private val remoteCatalog = RemoteCatalogDataSource(context)
     private val remoteSale = PosSaleApiDataSource(context)
+    private val receiptDelivery = ReceiptDeliveryApiDataSource(context)
     private val productImagesApi = ProductImageApiDataSource(context)
     private val pendingProducts = ProductRepositoryImpl(context)
+    private val supplierCatalog = SupplierRepositoryImpl(context)
     private var lastCashRegisters: List<CashRegister> = emptyList()
-    private val allSyncModules = listOf("productos", "imagenes_productos", "categorias", "subcategorias", "clientes", "proveedores", "caja", "ventas")
+    private val allSyncModules = SyncPlan.orderedModules
 
     override fun login(email: String, password: String): Result<UserSession> {
         if (email.isBlank() || password.isBlank()) return Result.failure(Exception("Completa usuario y contraseña."))
@@ -93,7 +105,7 @@ class PosRepositoryImpl(private val context: Context) :
         if (online.isSuccess) return online
         val error = online.exceptionOrNull()
         if (error !is IOException) return online
-        val cached = getSession()
+        val cached = getSession() ?: getOfflineProfile()
         if (cached == null || cached.email.trim().lowercase() != email.trim().lowercase()) {
             return Result.failure(Exception("Sin Internet. Este cajero todavía no tiene acceso offline en este dispositivo."))
         }
@@ -108,7 +120,7 @@ class PosRepositoryImpl(private val context: Context) :
     override fun canLoginOffline(email: String): Boolean = offlineCredentials.isAvailableFor(email)
 
     override fun loginOffline(email: String, password: String): Result<UserSession> {
-        val cached = getSession()
+        val cached = getSession() ?: getOfflineProfile()
         if (cached == null || cached.email.trim().lowercase() != email.trim().lowercase()) {
             return Result.failure(Exception("Este cajero todavía no tiene acceso offline en este dispositivo."))
         }
@@ -143,7 +155,6 @@ class PosRepositoryImpl(private val context: Context) :
     }
 
     override fun logout() {
-        offlineCredentials.clear()
         prefs.edit()
             .remove("session_user_id")
             .remove("session_email")
@@ -232,14 +243,7 @@ class PosRepositoryImpl(private val context: Context) :
         if (lines.isEmpty()) return Result.failure(Exception("El carrito está vacío."))
         val session = getSession() ?: return Result.failure(Exception("Sin sesión de usuario."))
         val cashSessionId = prefs.getLong("pos_cash_session_id", 0L)
-        val registered = remoteSale.registerSale(
-            lines,
-            payment,
-            idCliente,
-            cashSessionId,
-            customerInfo,
-            receiptType,
-        ).getOrElse { return Result.failure(it) }
+        if (cashSessionId == 0L) return Result.failure(Exception("Abre una caja antes de registrar ventas."))
         val linesCopy = lines.map { it.copy() }
         val fechaMillis = System.currentTimeMillis()
         lateinit var receipt: CompletedSaleReceipt
@@ -248,8 +252,13 @@ class PosRepositoryImpl(private val context: Context) :
             val total = round(lines.sumOf { it.lineTotal } * 100) / 100
             val subtotal = round((total / 1.18) * 100) / 100
             val igv = round((total - subtotal) * 100) / 100
-            val ventaId = registered.id
-            val numero = registered.number
+            lines.forEach { line ->
+                val stock = realm.where(ProductRealm::class.java).equalTo("id", line.productId).findFirst()?.stock
+                    ?: throw IllegalStateException("El producto ${line.productName} ya no existe localmente.")
+                require(stock >= line.quantity) { "Stock local insuficiente para ${line.productName}." }
+            }
+            val ventaId = nextLocalId(realm, FinanzaVentaRealm::class.java)
+            val numero = "LOCAL-${fechaMillis}-${ventaId.toString().removePrefix("-")}"
             realm.insertOrUpdate(
                 FinanzaVentaRealm().apply {
                     id = ventaId
@@ -290,6 +299,26 @@ class PosRepositoryImpl(private val context: Context) :
                 val product = realm.where(ProductRealm::class.java).equalTo("id", line.productId).findFirst() ?: return@forEach
                 product.stock = (product.stock - line.quantity).coerceAtLeast(0.0)
             }
+            realm.insert(
+                OutboxRealm().apply {
+                    id = UUID.randomUUID().toString()
+                    moduleKey = "ventas"
+                    operation = "CREATE_SALE"
+                    aggregateType = "sale"
+                    aggregateLocalId = ventaId
+                    payloadJson = salePayloadJson(
+                        lines = lines,
+                        payment = payment,
+                        clientId = idCliente,
+                        cashSessionId = cashSessionId,
+                        customerInfo = customerInfo,
+                        receiptType = receiptType,
+                    )
+                    createdAt = fechaMillis
+                    updatedAt = fechaMillis
+                    state = "PENDING"
+                },
+            )
             receipt = CompletedSaleReceipt(
                 ventaId = ventaId,
                 numeroTicket = numero,
@@ -700,18 +729,117 @@ class PosRepositoryImpl(private val context: Context) :
             .recoverCatching { error -> if (error is IOException) cachedCashSession(cashierId) else throw error }
     }
 
-    override fun openCashSession(cashRegisterId: Long, cashierId: Long, openingAmount: Double): Result<CashSession> =
-        cashApi.openSession(cashRegisterId, cashierId, openingAmount).onSuccess {
+    override fun openCashSession(cashRegisterId: Long, cashierId: Long, openingAmount: Double): Result<CashSession> {
+        val offlineSession = getSession()?.offlineSession == true || ApiSessionStore(context).token.isBlank()
+        val remote = if (offlineSession) {
+            Result.failure(IOException("Modo offline"))
+        } else {
+            cashApi.openSession(cashRegisterId, cashierId, openingAmount)
+        }
+        remote.onSuccess {
             cacheCashSession(it)
             cacheEmitterFromCashRegisters(lastCashRegisters, it.cashRegisterId)
         }
+        if (remote.isSuccess || !remote.exceptionOrNull().isNetworkFailure()) return remote
 
-    override fun cashSummary(sessionId: Long): Result<CashSummary> = cashApi.summary(sessionId)
-
-    override fun closeCashSession(sessionId: Long, countedCash: Double, observations: String): Result<Unit> =
-        cashApi.closeSession(sessionId, countedCash, observations).onSuccess {
-            cacheCashSession(null)
+        val now = System.currentTimeMillis()
+        val local = CashSession(
+            id = -now,
+            cashRegisterId = cashRegisterId,
+            cashRegisterName = lastCashRegisters.firstOrNull { it.id == cashRegisterId }?.name
+                ?: getSession()?.defaultCashRegisterName.orEmpty(),
+            cashierId = cashierId,
+            cashierName = getSession()?.name.orEmpty(),
+            openedAt = now,
+            openingAmount = openingAmount,
+            status = "Abierta (pendiente de sincronizar)",
+        )
+        realmWrite { realm ->
+            realm.insert(
+                OutboxRealm().apply {
+                    id = UUID.randomUUID().toString()
+                    moduleKey = "caja"
+                    operation = "OPEN_CASH"
+                    aggregateType = "cash_session"
+                    aggregateLocalId = local.id
+                    payloadJson = JSONObject()
+                        .put("cash_register_id", cashRegisterId)
+                        .put("cashier_id", cashierId)
+                        .put("opening_amount", openingAmount)
+                        .toString()
+                    createdAt = now
+                    updatedAt = now
+                    state = "PENDING"
+                },
+            )
         }
+        cacheCashSession(local)
+        return Result.success(local)
+    }
+
+    override fun cashSummary(sessionId: Long): Result<CashSummary> {
+        val offlineSession = getSession()?.offlineSession == true || ApiSessionStore(context).token.isBlank()
+        if (sessionId > 0L && !offlineSession) {
+            val remote = cashApi.summary(sessionId)
+            if (remote.isSuccess || !remote.exceptionOrNull().isNetworkFailure()) return remote
+        }
+        return Result.success(localCashSummary(sessionId))
+    }
+
+    override fun closeCashSession(sessionId: Long, countedCash: Double, observations: String): Result<Unit> {
+        val offlineSession = getSession()?.offlineSession == true || ApiSessionStore(context).token.isBlank()
+        if (sessionId > 0L && !offlineSession) {
+            val remote = cashApi.closeSession(sessionId, countedCash, observations)
+            if (remote.isSuccess) {
+                cacheCashSession(null)
+                return Result.success(Unit)
+            }
+            if (!remote.exceptionOrNull().isNetworkFailure()) return remote
+        }
+        val now = System.currentTimeMillis()
+        realmWrite { realm ->
+            realm.insert(
+                OutboxRealm().apply {
+                    id = UUID.randomUUID().toString()
+                    moduleKey = "caja"
+                    operation = "CLOSE_CASH"
+                    aggregateType = "cash_session"
+                    aggregateLocalId = sessionId
+                    payloadJson = JSONObject()
+                        .put("cash_session_id", sessionId)
+                        .put("counted_cash", countedCash)
+                        .put("observations", observations.trim())
+                        .toString()
+                    createdAt = now
+                    updatedAt = now
+                    state = "PENDING"
+                },
+            )
+        }
+        cacheCashSession(null)
+        return Result.success(Unit)
+    }
+
+    private fun localCashSummary(sessionId: Long): CashSummary = realmQuery { realm ->
+        val sales = realm.where(FinanzaVentaRealm::class.java)
+            .equalTo("idSesion", sessionId)
+            .equalTo("estado", "A")
+            .findAll()
+        val opening = prefs.getFloat("pos_cash_opening_amount", 0f).toDouble()
+        val totalSales = sales.sumOf { it.total }
+        val cash = sales.filter { it.tipoPago.equals("EFE", true) || it.tipoPago.contains("efectivo", true) }
+            .sumOf { it.total }
+        CashSummary(
+            openingAmount = opening,
+            totalSales = totalSales,
+            cashAmount = cash,
+            deposit = totalSales - cash,
+            expectedCash = opening + cash,
+            totalFlow = opening + totalSales,
+            income = 0.0,
+            expenses = 0.0,
+        )
+    }
 
     override fun cancelSale(ventaId: Long, comment: String, restoreStock: Boolean): Result<Unit> =
         cashApi.cancelSale(ventaId, comment, restoreStock)
@@ -731,7 +859,7 @@ class PosRepositoryImpl(private val context: Context) :
 
     private fun cachedCashSession(cashierId: Long): CashSession? {
         val id = prefs.getLong("pos_cash_session_id", 0L)
-        if (id <= 0L || prefs.getLong("pos_cashier_id", cashierId) != cashierId) return null
+        if (id == 0L || prefs.getLong("pos_cashier_id", cashierId) != cashierId) return null
         return CashSession(
             id = id,
             cashRegisterId = prefs.getLong("pos_cash_register_id", 0L),
@@ -749,8 +877,11 @@ class PosRepositoryImpl(private val context: Context) :
             ?.let { state -> state.initialSyncDone && state.syncedUserId == userId } ?: false
     }
 
-    override fun syncInitialData(user: UserSession): Result<Unit> {
-        return syncModules(user, allSyncModules.toSet())
+    override fun syncInitialData(
+        user: UserSession,
+        onProgress: (SyncProgress) -> Unit,
+    ): Result<Unit> {
+        return syncModules(user, allSyncModules.toSet(), onProgress)
     }
 
     override fun listSyncModuleStatus(): List<SyncModuleStatus> = realmQuery { realm ->
@@ -760,15 +891,50 @@ class PosRepositoryImpl(private val context: Context) :
                 else -> key.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("es", "PE")) else it.toString() }
             }
             val row = realm.where(SyncModuleStateRealm::class.java).equalTo("moduleKey", key).findFirst()
-            SyncModuleStatus(key = key, label = label, lastSyncAt = row?.lastSyncAt ?: 0L)
+            SyncModuleStatus(
+                key = key,
+                label = label,
+                lastSyncAt = row?.lastSyncAt ?: 0L,
+                pendingCount = realm.where(OutboxRealm::class.java)
+                    .equalTo("moduleKey", key)
+                    .equalTo("state", "PENDING")
+                    .count(),
+                failedCount = realm.where(OutboxRealm::class.java)
+                    .equalTo("moduleKey", key)
+                    .equalTo("state", "FAILED")
+                    .count(),
+            )
         }
     }
 
-    override fun syncModules(user: UserSession, modules: Set<String>): Result<Unit> {
-        val selected = modules.intersect(allSyncModules.toSet())
+    override fun syncModules(
+        user: UserSession,
+        modules: Set<String>,
+        onProgress: (SyncProgress) -> Unit,
+    ): Result<Unit> {
+        val selected = SyncPlan.expand(modules)
         if (selected.isEmpty()) return Result.failure(Exception("Seleccione al menos un módulo para sincronizar."))
+        val selectedInOrder = allSyncModules.filter { it in selected }
+        var completedModules = 0
+        fun reportProgress(completedModuleKey: String) {
+            completedModules++
+            val activeModule = selectedInOrder.getOrNull(completedModules) ?: completedModuleKey
+            onProgress(
+                SyncProgress(
+                    activeModuleKey = activeModule,
+                    completedModules = completedModules,
+                    totalModules = selectedInOrder.size,
+                ),
+            )
+        }
+        onProgress(
+            SyncProgress(
+                activeModuleKey = selectedInOrder.first(),
+                completedModules = 0,
+                totalModules = selectedInOrder.size,
+            ),
+        )
         val includeImageSync = "imagenes_productos" in selected
-        if ("productos" in selected) pendingProducts.syncPendingProducts()
         val remote = remoteCatalog.fetchBestEffort()
         val remoteClients = if ("clientes" in selected) clientApi.list().getOrNull() else null
         val now = System.currentTimeMillis()
@@ -782,8 +948,13 @@ class PosRepositoryImpl(private val context: Context) :
         // Fase 1: escribir datos en Realm (sin I/O de red dentro de la transacción)
         realmWrite { realm ->
             if ("categorias" in selected) {
-                realm.where(CategoryRealm::class.java).findAll().deleteAllFromRealm()
+                val pendingIds = realm.where(OutboxRealm::class.java)
+                    .equalTo("operation", "UPSERT_CATEGORY")
+                    .findAll()
+                    .map { it.aggregateLocalId }
+                    .toSet()
                 remote.categories.forEach { rc ->
+                    if (rc.id in pendingIds) return@forEach
                     realm.insertOrUpdate(CategoryRealm().apply {
                         id = rc.id
                         name = rc.name
@@ -792,8 +963,13 @@ class PosRepositoryImpl(private val context: Context) :
                 }
             }
             if ("subcategorias" in selected && remote.subcategories.isNotEmpty()) {
-                realm.where(SubcategoryRealm::class.java).findAll().deleteAllFromRealm()
+                val pendingIds = realm.where(OutboxRealm::class.java)
+                    .equalTo("operation", "UPSERT_SUBCATEGORY")
+                    .findAll()
+                    .map { it.aggregateLocalId }
+                    .toSet()
                 remote.subcategories.forEach { rs ->
+                    if (rs.id in pendingIds) return@forEach
                     val category = realm.where(CategoryRealm::class.java).equalTo("id", rs.categoryId).findFirst()
                     if (category != null) {
                         realm.insertOrUpdate(SubcategoryRealm().apply {
@@ -948,11 +1124,302 @@ class PosRepositoryImpl(private val context: Context) :
         }
 
         // Fase 2: descargar imágenes FUERA de la transacción (I/O de red separado)
-        if (includeImageSync) {
-            cacheProductImages()
+        val catalogOperations = buildSet {
+            if ("categorias" in selected) add("UPSERT_CATEGORY")
+            if ("subcategorias" in selected) add("UPSERT_SUBCATEGORY")
+        }
+        if (catalogOperations.isNotEmpty()) {
+            processOutboxInternal(catalogOperations).getOrElse { return Result.failure(it) }
+        }
+        if ("categorias" in selected) reportProgress("categorias")
+        if ("subcategorias" in selected) reportProgress("subcategorias")
+
+        if ("proveedores" in selected) {
+            supplierCatalog.listSuppliers()
+            reportProgress("proveedores")
+        }
+        if ("clientes" in selected) reportProgress("clientes")
+
+        if ("productos" in selected) {
+            pendingProducts.syncPendingProducts().getOrElse { return Result.failure(it) }
+            reportProgress("productos")
         }
 
+        if (includeImageSync) {
+            cacheProductImages()
+            reportProgress("imagenes_productos")
+        }
+
+        val transactionalOperations = buildSet {
+            if ("caja" in selected) {
+                add("OPEN_CASH")
+                add("CLOSE_CASH")
+            }
+            if ("ventas" in selected) add("CREATE_SALE")
+            if ("tickets" in selected) add("SEND_RECEIPT_EMAIL")
+        }
+        if (transactionalOperations.isNotEmpty()) {
+            processOutboxInternal(transactionalOperations).getOrElse { return Result.failure(it) }
+        }
+        if ("caja" in selected) reportProgress("caja")
+        if ("ventas" in selected) reportProgress("ventas")
+        if ("tickets" in selected) reportProgress("tickets")
+
         return Result.success(Unit)
+    }
+
+    override fun processOutbox(): Result<Int> = processOutboxInternal()
+
+    private fun processOutboxInternal(allowedOperations: Set<String>? = null): Result<Int> {
+        val now = System.currentTimeMillis()
+        val entries = realmQuery { realm ->
+            realm.where(OutboxRealm::class.java)
+                .lessThanOrEqualTo("nextAttemptAt", now)
+                .findAll()
+                .sortedBy { it.createdAt }
+                .filter { allowedOperations == null || it.operation in allowedOperations }
+                .map {
+                    PendingOutbox(
+                        id = it.id,
+                        operation = it.operation,
+                        aggregateLocalId = it.aggregateLocalId,
+                        payloadJson = it.payloadJson,
+                        attemptCount = it.attemptCount,
+                    )
+                }
+        }
+        var processed = 0
+        entries.forEach { entry ->
+            val result = when (entry.operation) {
+                "UPSERT_CATEGORY" -> pushPendingCategory(entry)
+                "UPSERT_SUBCATEGORY" -> pushPendingSubcategory(entry)
+                "OPEN_CASH" -> pushPendingCashOpen(entry)
+                "CLOSE_CASH" -> pushPendingCashClose(entry)
+                "CREATE_SALE" -> pushPendingSale(entry)
+                "SEND_RECEIPT_EMAIL" -> pushPendingReceiptEmail(entry)
+                else -> Result.failure(Exception("Operacion outbox no soportada: ${entry.operation}"))
+            }
+            result.onSuccess {
+                processed++
+            }.onFailure { error ->
+                val attempt = entry.attemptCount + 1
+                val delayMillis = (5_000L * (1L shl attempt.coerceAtMost(9)))
+                    .coerceAtMost(60 * 60 * 1000L)
+                realmWrite { realm ->
+                    realm.where(OutboxRealm::class.java).equalTo("id", entry.id).findFirst()?.apply {
+                        attemptCount = attempt
+                        nextAttemptAt = System.currentTimeMillis() + delayMillis
+                        updatedAt = System.currentTimeMillis()
+                        state = if (attempt >= 5) "FAILED" else "PENDING"
+                        lastError = error.message.orEmpty()
+                    }
+                }
+                return Result.failure(error)
+            }
+        }
+        return Result.success(processed)
+    }
+
+    private fun pushPendingSale(entry: PendingOutbox): Result<Unit> = runCatching {
+        val payload = JSONObject(entry.payloadJson)
+        val rawLines = payload.getJSONArray("lines")
+        val lines = (0 until rawLines.length()).map { index ->
+            val item = rawLines.getJSONObject(index)
+            CartLine(
+                productId = resolveRemoteId("product", item.getLong("product_id")),
+                productName = item.getString("name"),
+                unitPrice = item.getDouble("unit_price"),
+                quantity = item.getInt("quantity"),
+            )
+        }
+        val paymentJson = payload.getJSONObject("payment")
+        val customerJson = payload.getJSONObject("customer")
+        val registered = remoteSale.registerSale(
+            lines = lines,
+            payment = SalePaymentInfo(
+                tipoPago = paymentJson.getString("type"),
+                montoRecibido = paymentJson.getDouble("received"),
+                vuelto = paymentJson.getDouble("change"),
+            ),
+            clientId = resolveRemoteId("client", payload.getLong("client_id")),
+            cashSessionId = resolveRemoteId("cash_session", payload.getLong("cash_session_id")),
+            customerInfo = ReceiptCustomerInfo(
+                id = customerJson.optLong("id"),
+                name = customerJson.optString("name"),
+                document = customerJson.optString("document"),
+            ),
+            receiptType = TipoComprobanteEmision.valueOf(payload.getString("receipt_type")),
+            idempotencyKey = entry.id,
+        ).getOrThrow()
+
+        realmWrite { realm ->
+            val sale = realm.where(FinanzaVentaRealm::class.java)
+                .equalTo("id", entry.aggregateLocalId)
+                .findFirst()
+            if (sale != null && sale.id != registered.id) {
+                val replacement = realm.copyFromRealm(sale).apply {
+                    id = registered.id
+                    numeroComprobante = registered.number
+                }
+                sale.deleteFromRealm()
+                realm.insertOrUpdate(replacement)
+                realm.where(FinanzaVentaDetalleRealm::class.java)
+                    .equalTo("idVenta", entry.aggregateLocalId)
+                    .findAll()
+                    .forEach { it.idVenta = registered.id }
+                realm.where(FinanzaComprobanteRealm::class.java)
+                    .equalTo("idVenta", entry.aggregateLocalId)
+                    .findAll()
+                    .forEach { it.idVenta = registered.id }
+                realm.insertOrUpdate(
+                    SyncIdMapRealm().apply {
+                        key = "sale:${entry.aggregateLocalId}"
+                        entityType = "sale"
+                        localId = entry.aggregateLocalId
+                        remoteId = registered.id
+                        createdAt = System.currentTimeMillis()
+                    },
+                )
+            }
+            realm.where(OutboxRealm::class.java).equalTo("id", entry.id).findFirst()?.deleteFromRealm()
+        }
+    }
+
+    private fun pushPendingCategory(entry: PendingOutbox): Result<Unit> = runCatching {
+        val payload = JSONObject(entry.payloadJson)
+        val remoteId = categoryApi.saveCategory(
+            CategoryAdminRow(
+                id = entry.aggregateLocalId.takeIf { it > 0L } ?: 0L,
+                name = payload.getString("name"),
+                active = payload.optBoolean("active", true),
+            ),
+        ).getOrThrow()
+        realmWrite { realm ->
+            val local = realm.where(CategoryRealm::class.java)
+                .equalTo("id", entry.aggregateLocalId)
+                .findFirst()
+            if (local != null && entry.aggregateLocalId != remoteId) {
+                val name = local.name
+                val active = local.active
+                local.deleteFromRealm()
+                realm.insertOrUpdate(CategoryRealm().apply {
+                    id = remoteId
+                    this.name = name
+                    this.active = active
+                })
+                realm.where(SubcategoryRealm::class.java)
+                    .equalTo("categoryId", entry.aggregateLocalId)
+                    .findAll()
+                    .forEach { it.categoryId = remoteId }
+                realm.where(ProductRealm::class.java)
+                    .equalTo("categoryId", entry.aggregateLocalId)
+                    .findAll()
+                    .forEach { it.categoryId = remoteId }
+                realm.insertOrUpdate(SyncIdMapRealm().apply {
+                    key = "category:${entry.aggregateLocalId}"
+                    entityType = "category"
+                    localId = entry.aggregateLocalId
+                    this.remoteId = remoteId
+                    createdAt = System.currentTimeMillis()
+                })
+            }
+            realm.where(OutboxRealm::class.java).equalTo("id", entry.id).findFirst()?.deleteFromRealm()
+        }
+    }
+
+    private fun pushPendingSubcategory(entry: PendingOutbox): Result<Unit> = runCatching {
+        val payload = JSONObject(entry.payloadJson)
+        val categoryId = resolveRemoteId("category", payload.getLong("category_id"))
+        val remoteId = categoryApi.saveSubcategory(
+            SubcategoryAdminRow(
+                id = entry.aggregateLocalId.takeIf { it > 0L } ?: 0L,
+                categoryId = categoryId,
+                name = payload.getString("name"),
+                active = payload.optBoolean("active", true),
+            ),
+        ).getOrThrow()
+        realmWrite { realm ->
+            val local = realm.where(SubcategoryRealm::class.java)
+                .equalTo("id", entry.aggregateLocalId)
+                .findFirst()
+            if (local != null && entry.aggregateLocalId != remoteId) {
+                val name = local.name
+                val active = local.active
+                local.deleteFromRealm()
+                realm.insertOrUpdate(SubcategoryRealm().apply {
+                    id = remoteId
+                    this.categoryId = categoryId
+                    this.name = name
+                    this.active = active
+                })
+                realm.where(ProductRealm::class.java)
+                    .equalTo("subcategoryId", entry.aggregateLocalId)
+                    .findAll()
+                    .forEach {
+                        it.subcategoryId = remoteId
+                        it.categoryId = categoryId
+                    }
+                realm.insertOrUpdate(SyncIdMapRealm().apply {
+                    key = "subcategory:${entry.aggregateLocalId}"
+                    entityType = "subcategory"
+                    localId = entry.aggregateLocalId
+                    this.remoteId = remoteId
+                    createdAt = System.currentTimeMillis()
+                })
+            }
+            realm.where(OutboxRealm::class.java).equalTo("id", entry.id).findFirst()?.deleteFromRealm()
+        }
+    }
+
+    private fun pushPendingCashOpen(entry: PendingOutbox): Result<Unit> = runCatching {
+        val payload = JSONObject(entry.payloadJson)
+        val session = cashApi.openSession(
+            cashRegisterId = payload.getLong("cash_register_id"),
+            cashierId = payload.getLong("cashier_id"),
+            openingAmount = payload.getDouble("opening_amount"),
+        ).getOrThrow()
+        realmWrite { realm ->
+            realm.insertOrUpdate(
+                SyncIdMapRealm().apply {
+                    key = "cash_session:${entry.aggregateLocalId}"
+                    entityType = "cash_session"
+                    localId = entry.aggregateLocalId
+                    remoteId = session.id
+                    createdAt = System.currentTimeMillis()
+                },
+            )
+            realm.where(OutboxRealm::class.java).equalTo("id", entry.id).findFirst()?.deleteFromRealm()
+        }
+        if (prefs.getLong("pos_cash_session_id", 0L) == entry.aggregateLocalId) {
+            cacheCashSession(session)
+        }
+    }
+
+    private fun pushPendingCashClose(entry: PendingOutbox): Result<Unit> = runCatching {
+        val payload = JSONObject(entry.payloadJson)
+        cashApi.closeSession(
+            sessionId = resolveRemoteId("cash_session", payload.getLong("cash_session_id")),
+            countedCash = payload.getDouble("counted_cash"),
+            observations = payload.optString("observations"),
+        ).getOrThrow()
+        realmWrite { realm ->
+            realm.where(OutboxRealm::class.java).equalTo("id", entry.id).findFirst()?.deleteFromRealm()
+        }
+    }
+
+    private fun pushPendingReceiptEmail(entry: PendingOutbox): Result<Unit> = runCatching {
+        val payload = JSONObject(entry.payloadJson)
+        val pdf = File(payload.getString("pdf_path"))
+        receiptDelivery.sendByEmail(
+            email = payload.getString("email"),
+            receiptNumber = payload.getString("receipt_number"),
+            customerName = payload.optString("customer_name"),
+            pdf = pdf,
+        ).getOrThrow()
+        realmWrite { realm ->
+            realm.where(OutboxRealm::class.java).equalTo("id", entry.id).findFirst()?.deleteFromRealm()
+        }
+        pdf.delete()
     }
 
     private fun ensureFinanzaSeed(realm: Realm) {
@@ -1129,6 +1596,55 @@ class PosRepositoryImpl(private val context: Context) :
             .putString("session_avatar", user.avatar)
             .putString("session_avatar_base64", user.avatarBase64)
             .apply()
+        if (!user.offlineSession) {
+            prefs.edit().putString(
+                "offline_user_profile",
+                JSONObject()
+                    .put("id", user.id)
+                    .put("email", user.email)
+                    .put("name", user.name)
+                    .put("role", user.role)
+                    .put("cashier_id", user.cashierId)
+                    .put("cash_register_id", user.defaultCashRegisterId)
+                    .put("cash_register_name", user.defaultCashRegisterName)
+                    .put("document", user.document)
+                    .put("phone", user.phone)
+                    .put("address", user.address)
+                    .put("branch_name", user.branchName)
+                    .put("last_name", user.lastName)
+                    .put("document_type", user.documentType)
+                    .put("cashier_state", user.cashierState)
+                    .put("avatar", user.avatar)
+                    .put("avatar_base64", user.avatarBase64)
+                    .toString(),
+            ).apply()
+        }
+    }
+
+    private fun getOfflineProfile(): UserSession? {
+        val raw = prefs.getString("offline_user_profile", null) ?: return null
+        return runCatching {
+            val json = JSONObject(raw)
+            UserSession(
+                id = json.getLong("id"),
+                email = json.getString("email"),
+                name = json.getString("name"),
+                role = json.optString("role", "admin"),
+                offlineSession = true,
+                cashierId = json.optLong("cashier_id"),
+                defaultCashRegisterId = json.optLong("cash_register_id"),
+                defaultCashRegisterName = json.optString("cash_register_name"),
+                document = json.optString("document"),
+                phone = json.optString("phone"),
+                address = json.optString("address"),
+                branchName = json.optString("branch_name"),
+                lastName = json.optString("last_name"),
+                documentType = json.optString("document_type", "DNI"),
+                cashierState = json.optString("cashier_state", "Activo"),
+                avatar = json.optString("avatar"),
+                avatarBase64 = json.optString("avatar_base64"),
+            )
+        }.getOrNull()
     }
 
     private fun formatFechaSunat(millis: Long): String {
@@ -1163,6 +1679,56 @@ class PosRepositoryImpl(private val context: Context) :
     private fun nextId(realm: Realm, clazz: Class<out RealmObject>): Long {
         val max = realm.where(clazz).max("id") as Number?
         return (max?.toLong() ?: 0L) + 1L
+    }
+
+    private fun nextLocalId(realm: Realm, clazz: Class<out RealmObject>): Long {
+        val min = (realm.where(clazz).min("id") as Number?)?.toLong() ?: 0L
+        return if (min < 0L) min - 1L else -1L
+    }
+
+    private fun salePayloadJson(
+        lines: List<CartLine>,
+        payment: SalePaymentInfo,
+        clientId: Long,
+        cashSessionId: Long,
+        customerInfo: ReceiptCustomerInfo,
+        receiptType: TipoComprobanteEmision,
+    ): String = JSONObject().apply {
+        put("client_id", clientId.coerceAtLeast(0L))
+        put("cash_session_id", cashSessionId)
+        put("receipt_type", receiptType.name)
+        put("payment", JSONObject().apply {
+            put("type", payment.tipoPago)
+            put("received", payment.montoRecibido)
+            put("change", payment.vuelto)
+        })
+        put("customer", JSONObject().apply {
+            put("id", customerInfo.id)
+            put("name", customerInfo.name.trim())
+            put("document", customerInfo.document.filter(Char::isDigit))
+        })
+        put("lines", JSONArray().apply {
+            lines.forEach { line ->
+                put(JSONObject().apply {
+                    put("product_id", line.productId)
+                    put("name", line.productName)
+                    put("unit_price", line.unitPrice)
+                    put("quantity", line.quantity)
+                })
+            }
+        })
+    }.toString()
+
+    private fun resolveRemoteId(entityType: String, localId: Long): Long {
+        if (localId >= 0L) return localId
+        return realmQuery { realm ->
+            realm.where(SyncIdMapRealm::class.java)
+                .equalTo("key", "$entityType:$localId")
+                .findFirst()
+                ?.remoteId
+        } ?: throw IllegalStateException(
+            "La dependencia $entityType ($localId) aun no fue sincronizada.",
+        )
     }
 
     private fun resolveSubcategoryId(realm: Realm, categoryId: Long, remoteSubcategoryId: Long, remoteSubcategoryName: String?): Long {
@@ -1283,5 +1849,22 @@ class PosRepositoryImpl(private val context: Context) :
     private fun realmWrite(block: (Realm) -> Unit) = Realm.getDefaultInstance().use { realm ->
         realm.executeTransaction { block(it) }
     }
+
+    private fun Throwable?.isNetworkFailure(): Boolean {
+        var current = this
+        while (current != null) {
+            if (current is IOException) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    private data class PendingOutbox(
+        val id: String,
+        val operation: String,
+        val aggregateLocalId: Long,
+        val payloadJson: String,
+        val attemptCount: Int,
+    )
 }
 

@@ -155,9 +155,9 @@ fun SuppliersCrudScreen(vm: SuppliersViewModel) {
             onEdit = { editing = it },
             onDelete = { supplier ->
                 pendingConfirm = PendingConfirm(
-                    title = "Desactivar proveedor",
-                    body = "¿Desactivar al proveedor ${supplier.businessName}? Dejará de mostrarse como activo.",
-                    confirmButtonText = "Desactivar",
+                    title = "Eliminar proveedor",
+                    body = "¿Eliminar definitivamente al proveedor ${supplier.businessName}? Esta acción también lo eliminará de la web.",
+                    confirmButtonText = "Eliminar",
                     onConfirm = { vm.remove(supplier.id) },
                 )
             },
@@ -363,7 +363,7 @@ private fun SupplierTableRow(
                     },
                 )
                 DropdownMenuItem(
-                    text = { Text("Desactivar") },
+                    text = { Text("Eliminar") },
                     onClick = {
                         menuExpanded = false
                         onDelete(supplier)
