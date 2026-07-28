@@ -52,7 +52,11 @@ class NetworkSyncCoordinator(
                 delay(6_000)
                 val catalogResult = catalog.refreshCatalog()
                 if (catalogResult.isSuccess) {
-                    sync.processOutbox()
+                    val outboxResult = sync.processOutbox()
+                    if (outboxResult.isSuccess) {
+                        // Releer stock después de aplicar las ventas pendientes en el servidor.
+                        catalog.refreshCatalog()
+                    }
                 }
             } finally {
                 syncing.set(false)
