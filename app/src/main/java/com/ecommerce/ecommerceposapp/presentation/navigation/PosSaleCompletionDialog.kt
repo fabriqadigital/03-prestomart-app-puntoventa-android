@@ -65,6 +65,7 @@ import com.ecommerce.ecommerceposapp.presentation.pos.buildReceiptShareText
 import com.ecommerce.ecommerceposapp.presentation.pos.createReceiptPdfForSharing
 import com.ecommerce.ecommerceposapp.presentation.pos.openWhatsapp
 import com.ecommerce.ecommerceposapp.presentation.pos.sanitizePhone51
+import com.ecommerce.ecommerceposapp.presentation.pos.shareReceiptPdfToWhatsapp
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -214,10 +215,12 @@ internal fun SaleCompletedDialog(
                 if (digits.length < 9 || sharingPdf) return
                 scope.launch {
                     sharingPdf = true
+                    var generatedPdf: java.io.File? = null
                     runCatching {
                         val pdf = withContext(Dispatchers.IO) {
                             createReceiptPdfForSharing(context, receipt, issued, clienteNombre, clienteDoc, null)
                         }
+                        generatedPdf = pdf
                         val link = withContext(Dispatchers.IO) {
                             ReceiptDeliveryApiDataSource(context).requestWhatsappLink(
                                 issued.numeroCompleto,
@@ -231,7 +234,14 @@ internal fun SaleCompletedDialog(
                     }.onSuccess {
                         notice = "WhatsApp abierto con el comprobante."
                     }.onFailure {
-                        notice = it.message ?: "No se pudo generar el enlace de WhatsApp."
+                        val localShare = generatedPdf?.let { pdf ->
+                            shareReceiptPdfToWhatsapp(context, pdf, shareText)
+                        }
+                        notice = if (localShare?.isSuccess == true) {
+                            "PDF abierto en WhatsApp. Sin Internet, WhatsApp lo enviará cuando recupere conexión."
+                        } else {
+                            it.message ?: "No se pudo abrir WhatsApp con el comprobante."
+                        }
                     }
                     sharingPdf = false
                 }

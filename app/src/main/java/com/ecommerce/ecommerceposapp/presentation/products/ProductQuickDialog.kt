@@ -88,7 +88,7 @@ fun ProductEditDialog(
     val categoryName = activeCategories.firstOrNull { it.id == categoryId }?.name ?: "Seleccionar categoria"
     val subcategoryName = availableSubcategories.firstOrNull { it.id == subcategoryId }?.name ?: "Sin subcategoria"
     val productTypeName = productTypes.firstOrNull { it.id == productTypeId }?.name ?: "Sin etiqueta"
-    val canSave = name.isNotBlank() && categoryId > 0L && parseDouble(price, 0.0) > 0.0
+    val canSave = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -140,7 +140,7 @@ fun ProductEditDialog(
                             onExpandedChange = { subcategoryExpanded = it },
                             options = availableSubcategories.map { ProductSelectOption(it.id, it.name) },
                             onSelect = { subcategoryId = it }, clearLabel = "Sin subcategoría",
-                            enabled = categoryId > 0L && availableSubcategories.isNotEmpty(), modifier = Modifier.weight(1f),
+                            enabled = categoryId != 0L && availableSubcategories.isNotEmpty(), modifier = Modifier.weight(1f),
                         )
                         ProductSelectField(
                             label = "Etiqueta", value = productTypeName, expanded = productTypeExpanded,

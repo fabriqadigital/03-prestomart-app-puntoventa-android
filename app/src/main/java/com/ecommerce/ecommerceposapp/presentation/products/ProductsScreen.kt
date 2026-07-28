@@ -493,7 +493,7 @@ private fun ProductAdvancedEditorView(
     var categoryId by remember(initial) { mutableStateOf(initial.categoryId) }
     var subcategoryId by remember(initial) { mutableStateOf(initial.subcategoryId) }
     var selectedSubcategoryIds by remember(initial) {
-        mutableStateOf(initial.subcategoryIds.ifEmpty { listOfNotNull(initial.subcategoryId.takeIf { it > 0L }) }.toSet())
+        mutableStateOf(initial.subcategoryIds.ifEmpty { listOfNotNull(initial.subcategoryId.takeIf { it != 0L }) }.toSet())
     }
     var categoryExpanded by remember { mutableStateOf(false) }
     var subcategoryExpanded by remember { mutableStateOf(false) }
@@ -528,7 +528,7 @@ private fun ProductAdvancedEditorView(
     val selectedSubcategoryName = availableSubcategories.filter { it.id in selectedSubcategoryIds }
         .joinToString { it.name }.ifBlank { "Sin subcategoria" }
     val selectedProductTypeName = productTypes.firstOrNull { it.id == productTypeId }?.name ?: "Sin etiqueta"
-    val canSaveProduct = name.isNotBlank() && categoryId > 0L && parseDouble(price, 0.0) > 0.0 &&
+    val canSaveProduct = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0 &&
         parseDouble(stock, -1.0) >= 0.0
     val compactEditor = LocalConfiguration.current.screenWidthDp < 900
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -663,7 +663,7 @@ private fun ProductAdvancedEditorView(
                                 subcategoryId = selectedSubcategoryIds.firstOrNull() ?: 0L
                             },
                             onClear = { subcategoryId = 0L; selectedSubcategoryIds = emptySet() },
-                            enabled = categoryId > 0L && availableSubcategories.isNotEmpty(),
+                            enabled = categoryId != 0L && availableSubcategories.isNotEmpty(),
                             modifier = Modifier.weight(1f),
                         )
                     }

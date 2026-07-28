@@ -199,7 +199,7 @@ internal fun SyncScreen(
                         modifier = Modifier.size(20.dp),
                     )
                     Text(
-                        if (isOnline) "Online - sincronización automática activa" else "Offline - operaciones guardadas localmente",
+                        if (isOnline) "Online - Internet disponible" else "Offline - operaciones guardadas localmente",
                         color = if (isOnline) Color(0xFF15803D) else Color(0xFFC2410C),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold,

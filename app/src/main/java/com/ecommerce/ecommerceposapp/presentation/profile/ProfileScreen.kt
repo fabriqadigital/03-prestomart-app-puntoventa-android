@@ -1,6 +1,8 @@
 package com.ecommerce.ecommerceposapp.presentation.profile
 
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.util.Base64
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -75,9 +77,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.ecommerce.ecommerceposapp.data.remote.api.CashApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.CashierProfileApiDataSource
 import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
+import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -105,10 +107,18 @@ private data class ProfileCashStats(
 @Composable
 fun ProfileScreen(
     session: UserSession,
+    catalogRepository: CatalogRepository,
     onSessionUpdated: (UserSession) -> Unit,
     onNotice: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    fun hasValidatedInternet(): Boolean {
+        val connectivity = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivity.activeNetwork ?: return false
+        val capabilities = connectivity.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
     val scope = rememberCoroutineScope()
     var resolvedSession by remember(session) { mutableStateOf(session) }
     var mode by remember { mutableStateOf(ProfileMode.View) }
@@ -149,16 +159,15 @@ fun ProfileScreen(
             .onFailure { onNotice(it.message ?: "No se pudo cargar la ficha completa del cajero.") }
     }
 
-    LaunchedEffect(resolvedSession.cashierId) {
-        if (resolvedSession.cashierId <= 0L || resolvedSession.offlineSession) return@LaunchedEffect
-        val cash = CashApiDataSource(context)
+    LaunchedEffect(resolvedSession.cashierId, resolvedSession.offlineSession) {
+        if (resolvedSession.cashierId <= 0L) return@LaunchedEffect
         while (isActive) {
             val stats = withContext(Dispatchers.IO) {
                 runCatching {
-                    val open = cash.findOpenSession(resolvedSession.cashierId).getOrThrow()
+                    val open = catalogRepository.findOpenCashSession(resolvedSession.cashierId).getOrThrow()
                         ?: return@runCatching ProfileCashStats()
-                    val summary = cash.summary(open.id).getOrThrow()
-                    val sales = cash.listSales(open.id).getOrDefault(emptyList())
+                    val summary = catalogRepository.cashSummary(open.id).getOrThrow()
+                    val sales = catalogRepository.listSalesHistory()
                         .filter { !it.estado.equals("Anulada", ignoreCase = true) }
                     val hours = ((System.currentTimeMillis() - open.openedAt).coerceAtLeast(0L) / 3_600_000.0)
                     ProfileCashStats(
@@ -228,6 +237,10 @@ fun ProfileScreen(
                     resetForm()
                 },
                 onSave = {
+                    if (!hasValidatedInternet()) {
+                        onNotice("Se necesita Internet para actualizar el perfil.")
+                        return@ProfileEditForm
+                    }
                     scope.launch {
                         saving = true
                         val result = withContext(Dispatchers.IO) {
@@ -269,6 +282,10 @@ fun ProfileScreen(
                     resetForm()
                 },
                 onSave = {
+                    if (!hasValidatedInternet()) {
+                        onNotice("Se necesita Internet para cambiar la contraseña.")
+                        return@SecurityForm
+                    }
                     if (currentPassword.isBlank() || password.isBlank()) {
                         onNotice("Ingrese la contrasena actual y la nueva contrasena.")
                         return@SecurityForm

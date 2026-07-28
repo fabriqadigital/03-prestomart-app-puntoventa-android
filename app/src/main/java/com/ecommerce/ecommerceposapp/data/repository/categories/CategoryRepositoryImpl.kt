@@ -22,7 +22,7 @@ class CategoryRepositoryImpl(context: Context) : CategoryRepository {
     override fun listCategoriesAdmin() = db.query { realm ->
         realm.where(CategoryRealm::class.java).findAll()
             .map { CategoryAdminRow(it.id, it.name, it.active) }
-            .sortedWith(compareByDescending<CategoryAdminRow> { it.id < 0L }.thenByDescending { it.id })
+            .sortedWith(compareByDescending<CategoryAdminRow> { it.id < 0L }.thenBy { it.id })
     }
 
     override fun upsertCategory(row: CategoryAdminRow): Result<Unit> {
@@ -68,18 +68,34 @@ class CategoryRepositoryImpl(context: Context) : CategoryRepository {
             realm.where(ProductRealm::class.java).equalTo("categoryId", id).count() > 0L
         }
         if (hasProducts) return Result.failure(Exception("No se puede eliminar la categoria porque tiene productos asociados."))
-        return api.deleteCategory(id).onSuccess {
+        if (id < 0L) {
             db.write { realm ->
+                realm.where(OutboxRealm::class.java)
+                    .equalTo("operation", "UPSERT_CATEGORY")
+                    .equalTo("aggregateLocalId", id)
+                    .findAll()
+                    .deleteAllFromRealm()
                 realm.where(SubcategoryRealm::class.java).equalTo("categoryId", id).findAll().deleteAllFromRealm()
                 realm.where(CategoryRealm::class.java).equalTo("id", id).findFirst()?.deleteFromRealm()
             }
+            return Result.success(Unit)
         }
+        val remote = api.deleteCategory(id)
+        if (remote.isSuccess) {
+            removeCategoryLocally(id)
+            return remote
+        }
+        val error = remote.exceptionOrNull()
+        if (!error.canQueueOffline()) return Result.failure(error ?: Exception("No se pudo eliminar la categoría."))
+        removeCategoryLocally(id)
+        enqueueDelete("categorias", "DELETE_CATEGORY", "category", id)
+        return Result.success(Unit)
     }
 
     override fun listSubcategoriesAdmin() = db.query { realm ->
         realm.where(SubcategoryRealm::class.java).findAll()
             .map { SubcategoryAdminRow(it.id, it.categoryId, it.name, it.active) }
-            .sortedWith(compareByDescending<SubcategoryAdminRow> { it.id < 0L }.thenByDescending { it.id })
+            .sortedWith(compareByDescending<SubcategoryAdminRow> { it.id < 0L }.thenBy { it.id })
     }
 
     override fun upsertSubcategory(row: SubcategoryAdminRow): Result<Unit> {
@@ -134,10 +150,52 @@ class CategoryRepositoryImpl(context: Context) : CategoryRepository {
             realm.where(ProductRealm::class.java).equalTo("subcategoryId", id).count() > 0L
         }
         if (hasProducts) return Result.failure(Exception("No se puede eliminar la subcategoria porque tiene productos asociados."))
-        return api.deleteSubcategory(id).onSuccess {
+        if (id < 0L) {
             db.write { realm ->
+                realm.where(OutboxRealm::class.java)
+                    .equalTo("operation", "UPSERT_SUBCATEGORY")
+                    .equalTo("aggregateLocalId", id)
+                    .findAll()
+                    .deleteAllFromRealm()
                 realm.where(SubcategoryRealm::class.java).equalTo("id", id).findFirst()?.deleteFromRealm()
             }
+            return Result.success(Unit)
+        }
+        val remote = api.deleteSubcategory(id)
+        if (remote.isSuccess) {
+            removeSubcategoryLocally(id)
+            return remote
+        }
+        val error = remote.exceptionOrNull()
+        if (!error.canQueueOffline()) return Result.failure(error ?: Exception("No se pudo eliminar la subcategoría."))
+        removeSubcategoryLocally(id)
+        enqueueDelete("subcategorias", "DELETE_SUBCATEGORY", "subcategory", id)
+        return Result.success(Unit)
+    }
+
+    private fun removeCategoryLocally(id: Long) = db.write { realm ->
+        realm.where(SubcategoryRealm::class.java).equalTo("categoryId", id).findAll().deleteAllFromRealm()
+        realm.where(CategoryRealm::class.java).equalTo("id", id).findFirst()?.deleteFromRealm()
+    }
+
+    private fun removeSubcategoryLocally(id: Long) = db.write { realm ->
+        realm.where(SubcategoryRealm::class.java).equalTo("id", id).findFirst()?.deleteFromRealm()
+    }
+
+    private fun enqueueDelete(module: String, operation: String, type: String, aggregateId: Long) {
+        val now = System.currentTimeMillis()
+        db.write { realm ->
+            realm.insert(OutboxRealm().apply {
+                id = UUID.randomUUID().toString()
+                moduleKey = module
+                this.operation = operation
+                aggregateType = type
+                aggregateLocalId = aggregateId
+                payloadJson = JSONObject().put("id", aggregateId).toString()
+                createdAt = now
+                updatedAt = now
+                state = "PENDING"
+            })
         }
     }
 

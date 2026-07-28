@@ -37,6 +37,8 @@ class LoginViewModelOfflineTest {
 
         override fun getSession(): UserSession? = null
 
+        override fun resumeOnlineSession(): UserSession? = null
+
         override fun hasStoredToken(): Boolean = false
 
         override fun logout() = Unit

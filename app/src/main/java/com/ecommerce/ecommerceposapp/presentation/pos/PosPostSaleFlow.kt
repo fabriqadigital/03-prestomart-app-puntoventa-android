@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -147,6 +148,22 @@ internal fun openWhatsapp(context: android.content.Context, phone51: String, mes
     val enc = URLEncoder.encode(message, Charsets.UTF_8.name())
     val uri = android.net.Uri.parse("https://wa.me/$phone51?text=$enc")
     val intent = Intent(Intent.ACTION_VIEW, uri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+    context.startActivity(intent)
+}
+
+internal fun shareReceiptPdfToWhatsapp(
+    context: android.content.Context,
+    pdf: File,
+    message: String,
+): Result<Unit> = runCatching {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pdf)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_TEXT, message)
+        setPackage("com.whatsapp")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
     context.startActivity(intent)
 }
 

@@ -4,6 +4,7 @@ import android.content.Context
 import com.ecommerce.ecommerceposapp.data.local.categories.CategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.categories.SubcategoryRealm
 import com.ecommerce.ecommerceposapp.data.local.products.ProductRealm
+import com.ecommerce.ecommerceposapp.data.local.sync.OutboxRealm
 import com.ecommerce.ecommerceposapp.data.local.sync.SyncIdMapRealm
 import com.ecommerce.ecommerceposapp.data.remote.api.ApiConfig
 import com.ecommerce.ecommerceposapp.data.remote.api.ApiSessionStore
@@ -16,6 +17,8 @@ import com.ecommerce.ecommerceposapp.domain.model.products.ProductTypeRow
 import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
 import com.ecommerce.ecommerceposapp.domain.sync.TimestampConflictResolver
 import java.io.IOException
+import java.util.UUID
+import org.json.JSONObject
 
 class ProductRepositoryImpl(context: Context) : ProductRepository {
     private val db = RealmDataSource(context)
@@ -117,24 +120,41 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
     }
 
     override fun deleteProduct(id: Long): Result<Unit> {
-        if (id <= 0L) {
-            return Result.failure(
-                Exception(
-                    "El producto aún no está sincronizado " +
-                            "y no puede eliminarse del servidor.",
-                ),
-            )
+        if (id < 0L) {
+            db.write { realm ->
+                realm.where(ProductRealm::class.java).equalTo("id", id).findFirst()?.deleteFromRealm()
+            }
+            return Result.success(Unit)
         }
 
-        return remote.delete(id).onSuccess {
+        val result = remote.delete(id)
+        if (result.isSuccess) {
             db.write { realm ->
-                realm.where(ProductRealm::class.java)
-                    .equalTo("id", id)
-                    .findFirst()
-                    ?.deleteFromRealm()
+                realm.where(ProductRealm::class.java).equalTo("id", id).findFirst()?.deleteFromRealm()
             }
+            return result
         }
+        val error = result.exceptionOrNull()
+        if (error?.canQueueOffline() != true) return Result.failure(error ?: Exception("No se pudo eliminar el producto."))
+        val now = System.currentTimeMillis()
+        db.write { realm ->
+            realm.where(ProductRealm::class.java).equalTo("id", id).findFirst()?.deleteFromRealm()
+            realm.insert(OutboxRealm().apply {
+                this.id = UUID.randomUUID().toString()
+                moduleKey = "productos"
+                operation = "DELETE_PRODUCT"
+                aggregateType = "product"
+                aggregateLocalId = id
+                payloadJson = JSONObject().put("id", id).toString()
+                createdAt = now
+                updatedAt = now
+                state = "PENDING"
+            })
+        }
+        return Result.success(Unit)
     }
+
+    fun deleteRemote(id: Long): Result<Unit> = remote.delete(id)
 
     override fun syncPendingProducts(): Result<Int> = runCatching {
         val pending = db.query { realm ->

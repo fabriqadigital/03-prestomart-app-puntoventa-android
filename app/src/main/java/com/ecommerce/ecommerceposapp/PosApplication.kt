@@ -8,9 +8,6 @@ import coil.memory.MemoryCache
 import com.ecommerce.ecommerceposapp.data.remote.api.ApiSessionStore
 import com.ecommerce.ecommerceposapp.data.remote.api.HostHeaderInterceptor
 import com.ecommerce.ecommerceposapp.di.appModules
-import com.ecommerce.ecommerceposapp.data.sync.NetworkSyncCoordinator
-import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
-import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository
 import io.realm.Realm
 import io.realm.RealmConfiguration
 import io.realm.RealmMigration
@@ -193,15 +190,10 @@ class PosApplication : Application() {
                 .build(),
         )
 
-        val koin = startKoin {
+        startKoin {
             androidContext(this@PosApplication)
             modules(appModules)
-        }.koin
-        NetworkSyncCoordinator(
-            this,
-            koin.get<CatalogRepository>(),
-            koin.get<SyncRepository>(),
-        ).start()
+        }
     }
 
     /**

@@ -194,6 +194,7 @@ internal fun CobrarVentaDialog(
                 Spacer(Modifier.height(16.dp))
                 ReceiptTypeSelector(
                     selected = receiptType,
+                    online = isOnline,
                     onSelect = { selectedType ->
                         if (selectedType != receiptType) {
                             receiptType = selectedType
@@ -208,6 +209,14 @@ internal fun CobrarVentaDialog(
                         }
                     },
                 )
+                if (!isOnline) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Sin Internet solo se puede emitir ticket. La boleta o factura electrónica requiere validación del servidor.",
+                        color = PaymentBrand,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 if (receiptType != TipoComprobanteEmision.SOLO_TICKET) {
                     Spacer(Modifier.height(14.dp))
                     ReceiptCustomerSection(
@@ -317,6 +326,7 @@ internal fun CobrarVentaDialog(
 @Composable
 private fun ReceiptTypeSelector(
     selected: TipoComprobanteEmision,
+    online: Boolean,
     onSelect: (TipoComprobanteEmision) -> Unit,
 ) {
     Text("Comprobante", color = PaymentMuted, fontWeight = FontWeight.SemiBold)
@@ -330,6 +340,7 @@ private fun ReceiptTypeSelector(
             val active = selected == type
             OutlinedButton(
                 onClick = { onSelect(type) },
+                enabled = online || type == TipoComprobanteEmision.SOLO_TICKET,
                 modifier = Modifier.weight(1f).height(46.dp),
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, if (active) PaymentBrand else PaymentBorder),

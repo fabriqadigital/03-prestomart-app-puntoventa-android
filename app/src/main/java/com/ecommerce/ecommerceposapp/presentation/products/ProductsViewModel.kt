@@ -46,7 +46,7 @@ class ProductsViewModel(
         _uiState.update { it.copy(isLoading = true) }
         runCatching {
             withContext(Dispatchers.IO) {
-                productRepository.syncPendingProducts()
+                runCatching { productRepository.syncPendingProducts() }
                 ProductLoadResult(
                     products = getProducts(),
                     categories = getCategories(),

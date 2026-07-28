@@ -1,6 +1,10 @@
 ﻿package com.ecommerce.ecommerceposapp.presentation.navigation
 
+import android.content.Context
 import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.util.Base64
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -40,6 +44,7 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,6 +56,7 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -62,6 +68,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -81,6 +88,7 @@ import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.res.painterResource
 import com.ecommerce.ecommerceposapp.R
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -98,6 +106,7 @@ import androidx.navigation.compose.rememberNavController
 import com.ecommerce.ecommerceposapp.domain.repository.auth.AuthRepository
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.domain.repository.sync.SyncRepository
+import com.ecommerce.ecommerceposapp.domain.sync.SyncPlan
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.auth.UserSession
 import com.ecommerce.ecommerceposapp.presentation.auth.LoginUiState
@@ -119,7 +128,9 @@ import com.ecommerce.ecommerceposapp.presentation.sales.SalesHistoryScreen
 import com.ecommerce.ecommerceposapp.presentation.sync.SyncViewModel
 import com.ecommerce.ecommerceposapp.presentation.cash.CashModuleScreen
 import com.ecommerce.ecommerceposapp.presentation.cash.CashModuleViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -663,6 +674,18 @@ private fun PosScreen(
     onGoSync: () -> Unit,
 ) {
     val catalog: CatalogRepository = koinInject()
+    val authRepository: AuthRepository = koinInject()
+    val syncRepository: SyncRepository = koinInject()
+    val context = LocalContext.current
+    val connectivity = remember {
+        context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    }
+    fun hasValidatedInternet(): Boolean = connectivity.activeNetwork?.let { network ->
+        connectivity.getNetworkCapabilities(network)?.let { capabilities ->
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        }
+    } == true
     val state by posVm.uiState.collectAsState()
     val clientsState by clientsVm.uiState.collectAsState()
     val productsState by productsVm.uiState.collectAsState()
@@ -675,6 +698,9 @@ private fun PosScreen(
     var selectedModule by remember { mutableStateOf("Punto de venta") }
     var showQuickProductDialog by remember { mutableStateOf(false) }
     var openAdvancedProductForm by remember { mutableStateOf(false) }
+    var isOnline by remember { mutableStateOf(hasValidatedInternet()) }
+    var showReconnectPrompt by remember { mutableStateOf(false) }
+    var reconnectSyncing by remember { mutableStateOf(false) }
     val widthDp = LocalConfiguration.current.screenWidthDp
     val heightDp = LocalConfiguration.current.screenHeightDp
     val responsiveTwoPanels = widthDp >= 900
@@ -690,6 +716,40 @@ private fun PosScreen(
         animationSpec = tween(durationMillis = 220),
         label = "mobileCartHeight",
     )
+
+    DisposableEffect(connectivity) {
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            private fun updateConnection(online: Boolean) {
+                val recovered = online && !isOnline
+                isOnline = online
+                if (recovered) showReconnectPrompt = true
+            }
+
+            override fun onAvailable(network: Network) {
+                updateConnection(hasValidatedInternet())
+            }
+
+            override fun onLost(network: Network) {
+                updateConnection(hasValidatedInternet())
+            }
+
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                updateConnection(
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+                )
+            }
+        }
+        connectivity.registerDefaultNetworkCallback(callback)
+        onDispose { connectivity.unregisterNetworkCallback(callback) }
+    }
+
+    LaunchedEffect(session.id) {
+        if (session.offlineSession && hasValidatedInternet()) {
+            isOnline = true
+            showReconnectPrompt = true
+        }
+    }
 
     LaunchedEffect(session.cashierId) {
         posVm.loadCashSession(session.cashierId)
@@ -852,6 +912,7 @@ private fun PosScreen(
             "Mi perfil" -> Box(Modifier.fillMaxSize().padding(padding)) {
                 ProfileScreen(
                     session = session,
+                    catalogRepository = catalog,
                     onSessionUpdated = onSessionUpdated,
                 ) { notice -> scope.launch { snackbarHostState.showSnackbar(notice) } }
             }
@@ -917,13 +978,13 @@ private fun PosScreen(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(
-                                            if (session.offlineSession) Color(0xFFF3F4F6) else Color(0xFFDCFCE7),
+                                            if (isOnline) Color(0xFFDCFCE7) else Color(0xFFF3F4F6),
                                         )
                                         .padding(horizontal = 10.dp, vertical = 4.dp),
                                 ) {
                                     Text(
-                                        if (session.offlineSession) "OFFLINE" else "ONLINE",
-                                        color = if (session.offlineSession) Brand else Color(0xFF16A34A),
+                                        if (isOnline) "ONLINE" else "OFFLINE",
+                                        color = if (isOnline) Color(0xFF16A34A) else Brand,
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.labelMedium,
                                     )
@@ -983,6 +1044,70 @@ private fun PosScreen(
         },
     ) {
         scaffold()
+    }
+
+    if (showReconnectPrompt) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!reconnectSyncing) showReconnectPrompt = false
+            },
+            title = { Text(if (reconnectSyncing) "Sincronizando datos" else "Conexión recuperada") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        if (reconnectSyncing) {
+                            "Enviando operaciones pendientes y actualizando el catálogo."
+                        } else {
+                            "Se detectó acceso a Internet por Wi-Fi o datos móviles. ¿Deseas sincronizar ahora con la web?"
+                        },
+                    )
+                    if (reconnectSyncing) {
+                        CircularProgressIndicator(color = Brand, modifier = Modifier.size(28.dp))
+                    }
+                }
+            },
+            dismissButton = {
+                if (!reconnectSyncing) {
+                    OutlinedButton(onClick = { showReconnectPrompt = false }) {
+                        Text("Ahora no")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            reconnectSyncing = true
+                            val result = withContext(Dispatchers.IO) {
+                                syncRepository.syncModules(
+                                    session,
+                                    SyncPlan.orderedModules.toSet(),
+                                )
+                            }
+                            reconnectSyncing = false
+                            showReconnectPrompt = false
+                            result.onSuccess {
+                                authRepository.resumeOnlineSession()?.let(onSessionUpdated)
+                                posVm.refreshCatalog()
+                                productsVm.load()
+                                categoriesVm.loadAll()
+                                clientsVm.load()
+                                suppliersVm.load()
+                                snackbarHostState.showSnackbar("Sincronización completada correctamente.")
+                            }.onFailure { error ->
+                                snackbarHostState.showSnackbar(
+                                    error.message ?: "No se pudo completar la sincronización.",
+                                )
+                            }
+                        }
+                    },
+                    enabled = !reconnectSyncing,
+                    colors = ButtonDefaults.buttonColors(containerColor = Brand),
+                ) {
+                    Text("Sincronizar", color = Color.White)
+                }
+            },
+        )
     }
 
     if (showQuickProductDialog) {
