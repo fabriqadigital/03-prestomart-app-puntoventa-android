@@ -17,7 +17,7 @@ class OfflineCredentialVerifier(private val prefs: SharedPreferences) {
             .putString(KEY_SALT, Base64.encodeToString(salt, Base64.NO_WRAP))
             .putString(KEY_VERIFIER, Base64.encodeToString(verifier, Base64.NO_WRAP))
             .putLong(KEY_VERIFIED_AT, System.currentTimeMillis())
-            .apply()
+            .commit()
     }
 
     fun verify(email: String, password: CharArray): Boolean {
@@ -34,6 +34,11 @@ class OfflineCredentialVerifier(private val prefs: SharedPreferences) {
         return prefs.getString(KEY_EMAIL, "") == email.trim().lowercase() &&
             verifiedAt > 0L && System.currentTimeMillis() - verifiedAt <= OFFLINE_VALIDITY_MS
     }
+
+    fun availableEmail(): String? =
+        prefs.getString(KEY_EMAIL, "")
+            ?.takeIf(String::isNotBlank)
+            ?.takeIf(::isAvailableFor)
 
     fun clear() {
         prefs.edit().remove(KEY_EMAIL).remove(KEY_SALT).remove(KEY_VERIFIER).remove(KEY_VERIFIED_AT).apply()

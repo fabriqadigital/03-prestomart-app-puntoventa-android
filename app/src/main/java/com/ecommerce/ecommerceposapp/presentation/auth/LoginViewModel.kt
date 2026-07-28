@@ -22,13 +22,31 @@ data class LoginUiState(
 )
 
 class LoginViewModel(private val authRepository: AuthRepository) : ViewModel() {
-    private val _uiState = MutableStateFlow(LoginUiState())
+    private val rememberedOfflineEmail = authRepository.offlineLoginEmail().orEmpty()
+    private val _uiState = MutableStateFlow(
+        LoginUiState(
+            email = rememberedOfflineEmail,
+            offlineAvailable = rememberedOfflineEmail.isNotBlank(),
+        ),
+    )
     val uiState: StateFlow<LoginUiState> = _uiState
 
     fun setEmail(value: String) = _uiState.update { it.copy(email = value, offlineAvailable = authRepository.canLoginOffline(value)) }
     fun setPassword(value: String) = _uiState.update { it.copy(password = value) }
     fun setOfflineMode(value: Boolean) = _uiState.update { state ->
-        state.copy(offlineMode = value && state.offlineAvailable, error = if (value && !state.offlineAvailable) "Primero inicia sesión online para habilitar el acceso offline." else null)
+        val rememberedEmail = authRepository.offlineLoginEmail().orEmpty()
+        val effectiveEmail = state.email.ifBlank { rememberedEmail }
+        val available = authRepository.canLoginOffline(effectiveEmail)
+        state.copy(
+            email = effectiveEmail,
+            offlineAvailable = available,
+            offlineMode = value && available,
+            error = if (value && !available) {
+                "Primero inicia sesión online para habilitar el acceso offline."
+            } else {
+                null
+            },
+        )
     }
     fun clearError() = _uiState.update { it.copy(error = null) }
 

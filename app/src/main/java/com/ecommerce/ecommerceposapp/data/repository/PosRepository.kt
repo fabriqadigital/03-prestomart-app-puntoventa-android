@@ -119,6 +119,8 @@ class PosRepositoryImpl(private val context: Context) :
 
     override fun canLoginOffline(email: String): Boolean = offlineCredentials.isAvailableFor(email)
 
+    override fun offlineLoginEmail(): String? = offlineCredentials.availableEmail()
+
     override fun loginOffline(email: String, password: String): Result<UserSession> {
         val cached = getSession() ?: getOfflineProfile()
         if (cached == null || cached.email.trim().lowercase() != email.trim().lowercase()) {
@@ -1577,7 +1579,7 @@ class PosRepositoryImpl(private val context: Context) :
     }
 
     private fun saveSession(user: UserSession) {
-        prefs.edit()
+        val editor = prefs.edit()
             .putLong("session_user_id", user.id)
             .putString("session_email", user.email)
             .putString("session_name", user.name)
@@ -1595,9 +1597,8 @@ class PosRepositoryImpl(private val context: Context) :
             .putString("session_cashier_state", user.cashierState)
             .putString("session_avatar", user.avatar)
             .putString("session_avatar_base64", user.avatarBase64)
-            .apply()
         if (!user.offlineSession) {
-            prefs.edit().putString(
+            editor.putString(
                 "offline_user_profile",
                 JSONObject()
                     .put("id", user.id)
@@ -1617,8 +1618,9 @@ class PosRepositoryImpl(private val context: Context) :
                     .put("avatar", user.avatar)
                     .put("avatar_base64", user.avatarBase64)
                     .toString(),
-            ).apply()
+            )
         }
+        editor.commit()
     }
 
     private fun getOfflineProfile(): UserSession? {
