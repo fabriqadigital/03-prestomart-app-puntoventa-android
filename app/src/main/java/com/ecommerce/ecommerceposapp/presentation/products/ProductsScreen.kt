@@ -136,6 +136,7 @@ fun ProductsCrudScreen(
             categories = state.categories,
             subcategories = state.subcategories,
             productTypes = state.productTypes,
+            products = state.products,
             onBack = {
                 creatingAdvanced = false
                 editing = null
@@ -482,6 +483,7 @@ private fun ProductAdvancedEditorView(
     categories: List<CategoryAdminRow>,
     subcategories: List<SubcategoryAdminRow>,
     productTypes: List<ProductTypeRow>,
+    products: List<ProductAdminRow>,
     onBack: () -> Unit,
     onSave: (ProductAdminRow) -> Unit,
 ) {
@@ -489,6 +491,7 @@ private fun ProductAdvancedEditorView(
     var name by remember(initial) { mutableStateOf(initial.name) }
     var code by remember(initial) { mutableStateOf(initial.code) }
     var barcode by remember(initial) { mutableStateOf(initial.barcode) }
+    var barcodeValidationMessage by remember(initial) { mutableStateOf<String?>(null) }
     var imageUrl by remember(initial) { mutableStateOf(initial.imageUrl) }
     var categoryId by remember(initial) { mutableStateOf(initial.categoryId) }
     var subcategoryId by remember(initial) { mutableStateOf(initial.subcategoryId) }
@@ -528,8 +531,15 @@ private fun ProductAdvancedEditorView(
     val selectedSubcategoryName = availableSubcategories.filter { it.id in selectedSubcategoryIds }
         .joinToString { it.name }.ifBlank { "Sin subcategoria" }
     val selectedProductTypeName = productTypes.firstOrNull { it.id == productTypeId }?.name ?: "Sin etiqueta"
+    val duplicateBarcodeProduct = products.firstOrNull { product ->
+        barcode.isNotBlank() &&
+            product.id != initial.id &&
+            product.barcode.trim().equals(barcode.trim(), ignoreCase = true)
+    }
+    val barcodeError = barcodeValidationMessage
+        ?: duplicateBarcodeProduct?.let { "Este producto ya se encuentra en el sistema: ${it.name}." }
     val canSaveProduct = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0 &&
-        parseDouble(stock, -1.0) >= 0.0
+        parseDouble(stock, -1.0) >= 0.0 && duplicateBarcodeProduct == null
     val compactEditor = LocalConfiguration.current.screenWidthDp < 900
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) imageUrl = copyPickedProductImage(context, uri)
@@ -590,10 +600,15 @@ private fun ProductAdvancedEditorView(
                         ) {
                             OutlinedTextField(
                                 value = barcode,
-                                onValueChange = { barcode = it },
+                                onValueChange = {
+                                    barcode = it
+                                    barcodeValidationMessage = null
+                                },
                                 label = { Text("Código Barra") },
                                 modifier = Modifier.weight(1f).focusRequester(barcodeFocusRequester),
                                 singleLine = true,
+                                isError = barcodeError != null,
+                                supportingText = barcodeError?.let { message -> { Text(message) } },
                             )
                             Surface(
                                 shape  = RoundedCornerShape(10.dp),
@@ -619,6 +634,12 @@ private fun ProductAdvancedEditorView(
                         CameraScannerDialog(
                             onBarcodeDetected = { code ->
                                 barcode = code
+                                barcodeValidationMessage = products.firstOrNull { product ->
+                                    product.id != initial.id &&
+                                        product.barcode.trim().equals(code.trim(), ignoreCase = true)
+                                }?.let { product ->
+                                    "Este producto ya se encuentra en el sistema: ${product.name}."
+                                }
                                 showBarcodeCameraScanner = false
                             },
                             onDismiss = { showBarcodeCameraScanner = false },

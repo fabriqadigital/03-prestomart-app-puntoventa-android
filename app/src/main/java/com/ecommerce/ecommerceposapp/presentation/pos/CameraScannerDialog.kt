@@ -7,6 +7,7 @@ import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -19,19 +20,25 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FlashlightOff
+import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,7 +68,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
-import com.ecommerce.ecommerceposapp.ui.theme.BrandRed
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -83,7 +89,11 @@ internal fun CameraScannerDialog(
         )
     }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    var torchEnabled by remember { mutableStateOf(false) }
+    var flashAvailable by remember { mutableStateOf(false) }
     val processed = remember { AtomicBoolean(false) }
+    val analyzing = remember { AtomicBoolean(false) }
     val analyzerExecutor = remember { Executors.newSingleThreadExecutor() }
     val scanner = remember {
         BarcodeScanning.getClient(
@@ -94,6 +104,7 @@ internal fun CameraScannerDialog(
                     Barcode.FORMAT_UPC_A,
                     Barcode.FORMAT_UPC_E,
                     Barcode.FORMAT_CODE_128,
+                    Barcode.FORMAT_QR_CODE,
                 )
                 .build(),
         )
@@ -107,6 +118,7 @@ internal fun CameraScannerDialog(
     }
     DisposableEffect(Unit) {
         onDispose {
+            camera?.cameraControl?.enableTorch(false)
             cameraProvider?.unbindAll()
             analyzerExecutor.shutdown()
             scanner.close()
@@ -115,17 +127,14 @@ internal fun CameraScannerDialog(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
     ) {
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .widthIn(max = 620.dp)
-                .height(540.dp),
-            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxSize(),
             color = Color.Black,
-            shadowElevation = 16.dp,
         ) {
             Box(Modifier.fillMaxSize()) {
                 if (hasCameraPermission) {
@@ -148,12 +157,16 @@ internal fun CameraScannerDialog(
                                         it.setSurfaceProvider(surfaceProvider)
                                     }
                                     val analysis = ImageAnalysis.Builder()
-                                        .setTargetResolution(Size(1280, 720))
+                                        .setTargetResolution(Size(960, 540))
                                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                                         .build()
                                     analysis.setAnalyzer(analyzerExecutor) { imageProxy ->
                                         val mediaImage = imageProxy.image
-                                        if (mediaImage == null || processed.get()) {
+                                        if (
+                                            mediaImage == null ||
+                                            processed.get() ||
+                                            !analyzing.compareAndSet(false, true)
+                                        ) {
                                             imageProxy.close()
                                             return@setAnalyzer
                                         }
@@ -163,85 +176,145 @@ internal fun CameraScannerDialog(
                                                 imageProxy.imageInfo.rotationDegrees,
                                             ),
                                         ).addOnSuccessListener { barcodes ->
-                                            val code = barcodes.firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue
-                                            if (!code.isNullOrBlank() && processed.compareAndSet(false, true)) {
+                                            val code = barcodes.firstOrNull {
+                                                !it.rawValue.isNullOrBlank()
+                                            }?.rawValue
+                                            if (!code.isNullOrBlank() &&
+                                                processed.compareAndSet(false, true)
+                                            ) {
                                                 analysis.clearAnalyzer()
                                                 provider.unbindAll()
                                                 onBarcodeDetected(code)
                                             }
                                         }.addOnCompleteListener {
+                                            analyzing.set(false)
                                             imageProxy.close()
                                         }
                                     }
                                     provider.unbindAll()
-                                    provider.bindToLifecycle(
+                                    camera = provider.bindToLifecycle(
                                         lifecycleOwner,
                                         CameraSelector.DEFAULT_BACK_CAMERA,
                                         preview,
                                         analysis,
-                                    )
+                                    ).also {
+                                        flashAvailable = it.cameraInfo.hasFlashUnit()
+                                    }
                                 }, ContextCompat.getMainExecutor(ctx))
                             }
                         },
                     )
                     ScannerOverlay()
                 } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFF111827))
-                            .padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
+                    PermissionMessage()
+                }
+
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.42f))
+                        .padding(start = 24.dp, end = 12.dp, top = 18.dp, bottom = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Escanear código",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = onDismiss) {
                         Icon(
-                            Icons.Filled.QrCodeScanner,
-                            contentDescription = null,
+                            Icons.Filled.Close,
+                            contentDescription = "Cerrar escáner",
                             tint = Color.White,
-                            modifier = Modifier.size(54.dp),
-                        )
-                        Text(
-                            "Permite el acceso a la cámara para escanear productos.",
-                            color = Color.White,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 16.dp),
+                            modifier = Modifier.size(32.dp),
                         )
                     }
                 }
 
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .background(Color.Black.copy(alpha = 0.62f))
-                        .padding(horizontal = 56.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        "Escanear producto",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        "Centra el código de barras dentro del marco",
-                        color = Color.White.copy(alpha = 0.82f),
-                        style = MaterialTheme.typography.bodySmall,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(10.dp)
-                        .size(38.dp)
-                        .background(Color.Black.copy(alpha = 0.55f), CircleShape),
-                ) {
-                    Icon(Icons.Filled.Close, contentDescription = "Cerrar escáner", tint = Color.White)
+                if (hasCameraPermission) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp, vertical = 50.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .clickable(enabled = flashAvailable) {
+                                    val next = !torchEnabled
+                                    camera?.cameraControl?.enableTorch(next)
+                                    torchEnabled = next
+                                }
+                                .padding(horizontal = 20.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                if (torchEnabled) Icons.Filled.FlashlightOn
+                                else Icons.Filled.FlashlightOff,
+                                contentDescription = null,
+                                tint = if (flashAvailable) Color.White else Color.White.copy(alpha = 0.45f),
+                                modifier = Modifier.size(28.dp),
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                when {
+                                    !flashAvailable -> "Linterna no disponible"
+                                    torchEnabled -> "Apagar la linterna"
+                                    else -> "Encender la linterna"
+                                },
+                                color = if (flashAvailable) Color.White else Color.White.copy(alpha = 0.45f),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Spacer(Modifier.height(24.dp))
+                        Text(
+                            "Centra el código de barras o QR dentro del marco",
+                            color = Color.White.copy(alpha = 0.88f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    width = 1.5.dp,
+                                    color = Color.White,
+                                    shape = RoundedCornerShape(28.dp),
+                                )
+                                .padding(horizontal = 20.dp, vertical = 15.dp),
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PermissionMessage() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF111827))
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            Icons.Filled.QrCodeScanner,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(54.dp),
+        )
+        Text(
+            "Permite el acceso a la cámara para escanear productos.",
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 16.dp),
+        )
     }
 }
 
@@ -258,51 +331,30 @@ private fun ScannerOverlay() {
         label = "scanLine",
     )
     Canvas(Modifier.fillMaxSize()) {
-        val frameWidth = size.width * 0.82f
-        val frameHeight = size.height * 0.34f
-        val left = (size.width - frameWidth) / 2f
-        val top = (size.height - frameHeight) / 2f + 20.dp.toPx()
-        val right = left + frameWidth
-        val bottom = top + frameHeight
-        val mask = Color.Black.copy(alpha = 0.58f)
+        val frameSize = minOf(size.width * 0.58f, 310.dp.toPx())
+        val left = (size.width - frameSize) / 2f
+        val top = (size.height - frameSize) / 2f - 35.dp.toPx()
+        val right = left + frameSize
+        val bottom = top + frameSize
+        val mask = Color.Black.copy(alpha = 0.48f)
 
         drawRect(mask, size = ComposeSize(size.width, top))
         drawRect(mask, topLeft = Offset(0f, bottom), size = ComposeSize(size.width, size.height - bottom))
-        drawRect(mask, topLeft = Offset(0f, top), size = ComposeSize(left, frameHeight))
-        drawRect(mask, topLeft = Offset(right, top), size = ComposeSize(size.width - right, frameHeight))
-
+        drawRect(mask, topLeft = Offset(0f, top), size = ComposeSize(left, frameSize))
+        drawRect(mask, topLeft = Offset(right, top), size = ComposeSize(size.width - right, frameSize))
         drawRoundRect(
-            color = Color.White.copy(alpha = 0.30f),
+            color = Color.White,
             topLeft = Offset(left, top),
-            size = ComposeSize(frameWidth, frameHeight),
-            style = Stroke(width = 1.dp.toPx()),
+            size = ComposeSize(frameSize, frameSize),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(18.dp.toPx()),
+            style = Stroke(width = 3.dp.toPx()),
         )
-        val corner = 28.dp.toPx()
-        val stroke = 4.dp.toPx()
-        fun line(start: Offset, end: Offset) =
-            drawLine(BrandRed, start, end, strokeWidth = stroke, cap = StrokeCap.Round)
-        line(Offset(left, top + corner), Offset(left, top))
-        line(Offset(left, top), Offset(left + corner, top))
-        line(Offset(right - corner, top), Offset(right, top))
-        line(Offset(right, top), Offset(right, top + corner))
-        line(Offset(left, bottom - corner), Offset(left, bottom))
-        line(Offset(left, bottom), Offset(left + corner, bottom))
-        line(Offset(right - corner, bottom), Offset(right, bottom))
-        line(Offset(right, bottom), Offset(right, bottom - corner))
-
-        val scanY = top + 14.dp.toPx() + progress * (frameHeight - 28.dp.toPx())
+        val scanY = top + 16.dp.toPx() + progress * (frameSize - 32.dp.toPx())
         drawLine(
-            color = BrandRed.copy(alpha = 0.28f),
-            start = Offset(left + 12.dp.toPx(), scanY),
-            end = Offset(right - 12.dp.toPx(), scanY),
-            strokeWidth = 10.dp.toPx(),
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color = BrandRed,
-            start = Offset(left + 12.dp.toPx(), scanY),
-            end = Offset(right - 12.dp.toPx(), scanY),
-            strokeWidth = 2.dp.toPx(),
+            color = Color(0xFF32C400),
+            start = Offset(left - 14.dp.toPx(), scanY),
+            end = Offset(right + 14.dp.toPx(), scanY),
+            strokeWidth = 3.dp.toPx(),
             cap = StrokeCap.Round,
         )
     }

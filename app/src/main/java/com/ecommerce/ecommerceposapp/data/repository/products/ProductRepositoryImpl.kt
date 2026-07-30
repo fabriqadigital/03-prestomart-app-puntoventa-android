@@ -18,6 +18,7 @@ import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepositor
 import com.ecommerce.ecommerceposapp.domain.sync.TimestampConflictResolver
 import java.io.IOException
 import java.util.UUID
+import io.realm.Case
 import org.json.JSONObject
 
 class ProductRepositoryImpl(context: Context) : ProductRepository {
@@ -241,6 +242,22 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
             return Result.failure(
                 Exception("Nombre obligatorio."),
             )
+        }
+
+        val barcode = row.barcode.trim()
+        if (barcode.isNotBlank()) {
+            val duplicate = db.query { realm ->
+                realm.where(ProductRealm::class.java)
+                    .equalTo("barcode", barcode, Case.INSENSITIVE)
+                    .notEqualTo("id", row.id)
+                    .findFirst()
+                    ?.name
+            }
+            if (duplicate != null) {
+                return Result.failure(
+                    Exception("Este producto ya se encuentra en el sistema: $duplicate."),
+                )
+            }
         }
 
         val validPath = db.query { realm ->
