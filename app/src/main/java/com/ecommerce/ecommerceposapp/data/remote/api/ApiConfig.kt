@@ -59,6 +59,7 @@ object ApiConfig {
     const val CASH_SALE_DETAIL = "$POS_PREFIX/caja/venta/detalle"
     const val CASH_SALE_CANCEL = "$POS_PREFIX/caja/venta/anular"
     const val CASH_FLOW = "$POS_PREFIX/caja/flujo"
+    const val CASH_MOVEMENT_REGISTER = "$POS_PREFIX/caja/movimiento"
 
     const val SUPPLIER_LIST = "$POS_PREFIX/proveedores/listar"
     const val SUPPLIER_GET = "$POS_PREFIX/proveedores/obtener"

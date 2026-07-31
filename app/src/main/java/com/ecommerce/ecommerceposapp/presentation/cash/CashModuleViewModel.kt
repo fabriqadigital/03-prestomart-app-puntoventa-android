@@ -29,6 +29,9 @@ data class CashModuleUiState(
     val closeLoading: Boolean = false,
     val closeError: String? = null,
     val closedSuccess: Boolean = false,
+    val showMovementDialog: Boolean = false,
+    val movementLoading: Boolean = false,
+    val movementError: String? = null,
 )
 
 class CashModuleViewModel(
@@ -43,12 +46,10 @@ class CashModuleViewModel(
     fun load(session: CashSession) {
         _uiState.update { it.copy(session = session, loading = true, error = null) }
         viewModelScope.launch {
-            // Resumen del turno
             val summaryResult = withContext(Dispatchers.IO) { catalogRepository.cashSummary(session.id) }
             summaryResult
                 .onSuccess { s -> _uiState.update { it.copy(summary = s, loading = false) } }
                 .onFailure { e -> _uiState.update { it.copy(loading = false, error = e.message) } }
-            // Flujo de caja de la sesión actual
             loadFlow(session.id, null, null)
         }
     }
@@ -65,7 +66,6 @@ class CashModuleViewModel(
         _uiState.update { it.copy(flowSearch = value) }
     }
 
-    /** Aplica los filtros de fecha actuales para recargar el flujo. */
     fun applyDateFilter() {
         val state = _uiState.value
         val sessionId = state.session?.id
@@ -132,6 +132,43 @@ class CashModuleViewModel(
                 }
                 .onFailure { e ->
                     _uiState.update { it.copy(closeLoading = false, closeError = e.message) }
+                }
+        }
+    }
+
+    // ── Movimiento de caja ────────────────────────────────────────────────────
+
+    fun requestMovement() {
+        _uiState.update { it.copy(showMovementDialog = true, movementError = null) }
+    }
+
+    fun dismissMovement() {
+        _uiState.update { it.copy(showMovementDialog = false, movementError = null) }
+    }
+
+    fun registerMovement(tipo: String, monto: Double, motivo: String, observaciones: String) {
+        val session = _uiState.value.session ?: return
+        _uiState.update { it.copy(movementLoading = true, movementError = null) }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                cashApi.registerMovement(
+                    sessionId = session.id,
+                    cashRegisterId = session.cashRegisterId,
+                    tipo = tipo,
+                    monto = monto,
+                    motivo = motivo,
+                    observaciones = observaciones,
+                )
+            }
+                .onSuccess {
+                    _uiState.update { it.copy(movementLoading = false, showMovementDialog = false) }
+                    // Refresca el flujo respetando el filtro de fecha actual, y el resumen (montos actualizados)
+                    applyDateFilter()
+                    val summaryResult = withContext(Dispatchers.IO) { catalogRepository.cashSummary(session.id) }
+                    summaryResult.onSuccess { s -> _uiState.update { it.copy(summary = s) } }
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(movementLoading = false, movementError = e.message ?: "No se pudo registrar el movimiento.") }
                 }
         }
     }

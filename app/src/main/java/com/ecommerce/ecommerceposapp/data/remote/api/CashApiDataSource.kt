@@ -204,6 +204,29 @@ class CashApiDataSource(context: Context) {
             )
         }
     }
+
+    fun registerMovement(
+        sessionId: Long,
+        cashRegisterId: Long,
+        tipo: String,
+        monto: Double,
+        motivo: String,
+        observaciones: String,
+    ): Result<Unit> = runCatching {
+        require(monto > 0.0) { "Ingrese un monto válido." }
+        require(motivo.trim().isNotBlank()) { "Ingrese el motivo del movimiento." }
+        executePost(
+            ApiConfig.CASH_MOVEMENT_REGISTER,
+            JSONObject()
+                .put("id_caja_sesion", sessionId)
+                .put("id_caja", cashRegisterId)
+                .put("tipo", tipo)
+                .put("motivo", motivo.trim())
+                .put("monto", monto)
+                .put("observaciones", observaciones.trim().ifBlank { JSONObject.NULL }),
+        )
+        Unit
+    }
     private fun executeGet(path: String, params: Map<String, String> = emptyMap()): JSONObject {
         val url = resolver.endpoint(path).toHttpUrl().newBuilder().apply {
             params.forEach { (key, value) -> addQueryParameter(key, value) }
