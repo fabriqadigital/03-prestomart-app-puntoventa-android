@@ -317,6 +317,11 @@ private fun CashFlowSection(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    CashFlowSearchField(
+                        value = state.flowSearch,
+                        onChange = onSearchChange,
+                        modifier = Modifier.weight(1.6f),
+                    )
                     CashFlowDateField(
                         value = state.filterFrom,
                         onChange = onFromChange,
@@ -331,11 +336,6 @@ private fun CashFlowSection(
                     )
                     FilterApplyButton(onClick = onApply)
                     if (hasDateFilter) FilterClearButton(onClick = onClear)
-                    CashFlowSearchField(
-                        value = state.flowSearch,
-                        onChange = onSearchChange,
-                        modifier = Modifier.weight(1.6f),
-                    )
                 }
             }
         }
