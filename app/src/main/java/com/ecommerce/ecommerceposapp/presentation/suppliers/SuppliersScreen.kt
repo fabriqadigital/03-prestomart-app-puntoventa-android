@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -167,6 +168,16 @@ fun SuppliersCrudScreen(vm: SuppliersViewModel) {
 }
 
 @Composable
+private fun RowScope.HeaderCell(text: String, weight: Float) {
+    Text(
+        text,
+        modifier = Modifier.weight(weight),
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+@Composable
 private fun SuppliersTable(
     suppliers: List<SupplierRow>,
     search: String,
@@ -239,14 +250,14 @@ private fun SuppliersTable(
             }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 12.dp)) {
-                if (!compact) Text("Código", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.SemiBold)
-                Text("Razón social", modifier = Modifier.weight(1.6f), fontWeight = FontWeight.SemiBold)
-                if (!compact) Text("RUC", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                if (!compact) Text("Correo", modifier = Modifier.weight(1.4f), fontWeight = FontWeight.SemiBold)
-                if (!compact) Text("Teléfono", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                Text("Estado", modifier = Modifier.weight(0.9f), fontWeight = FontWeight.SemiBold)
-                if (!compact) Text("Calificación", modifier = Modifier.weight(0.9f), fontWeight = FontWeight.SemiBold)
-                if (!compact) Text("Banco", modifier = Modifier.weight(0.9f), fontWeight = FontWeight.SemiBold)
+                if (!compact) HeaderCell("Código", 0.8f)
+                HeaderCell("Razón social", 1.6f)
+                if (!compact) HeaderCell("RUC", 1f)
+                if (!compact) HeaderCell("Correo", 1.2f)
+                if (!compact) HeaderCell("Teléfono", 0.9f)
+                HeaderCell("Estado", 0.8f)
+                if (!compact) HeaderCell("Calificación", 1.2f)
+                if (!compact) HeaderCell("Banco", 0.9f)
                 Spacer(Modifier.width(48.dp))
             }
             HorizontalDivider(color = DividerColor)
@@ -338,7 +349,13 @@ private fun SupplierTableRow(
             Text(supplier.businessName.ifBlank { "—" }, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
             if (compact) Text(supplier.codigoProveedor.ifBlank { "-" }, color = TextSecondary, style = MaterialTheme.typography.labelSmall)
         }
-        if (!compact) Text(supplier.ruc.ifBlank { "-" }, modifier = Modifier.weight(1f), color = TextPrimary)
+        if (!compact) Text(
+            supplier.ruc.ifBlank { "-" },
+            modifier = Modifier.weight(1f),
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         if (!compact) Text(supplier.correo.ifBlank { "-" }, modifier = Modifier.weight(1.4f), color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (!compact) Text(supplier.phone.ifBlank { "-" }, modifier = Modifier.weight(1f), color = TextPrimary)
         Box(modifier = Modifier.weight(0.9f)) {
@@ -425,22 +442,12 @@ private fun SupplierAdvancedEditorView(
 
     val compactEditor = LocalConfiguration.current.screenWidthDp < 900
 
-    // Código: obligatorio (texto libre). RUC: obligatorio, exactamente 11 dígitos.
-    // Cuenta y CCI ya vienen filtrados a solo dígitos, así que basta validar que no estén en blanco.
+    // Solo los campos marcados con * son obligatorios: Código, Razón social y RUC (11 dígitos).
+    // El resto (correo, teléfono, dirección, contacto, banco, cuenta, cci, observaciones) son opcionales
+    // y no deben bloquear el guardado.
     val canSaveSupplier = codigo.isNotBlank() &&
             name.isNotBlank() &&
-            ruc.length == 11 &&
-            correo.isNotBlank() &&
-            phone.isNotBlank() &&
-            direccion.isNotBlank() &&
-            personaContacto.isNotBlank() &&
-            cargoContacto.isNotBlank() &&
-            telefonoContacto.isNotBlank() &&
-            correoContacto.isNotBlank() &&
-            banco.isNotBlank() &&
-            cuenta.isNotBlank() &&
-            cci.isNotBlank() &&
-            observaciones.isNotBlank()
+            ruc.length == 11
 
     val draftSupplier = {
         SupplierRow(

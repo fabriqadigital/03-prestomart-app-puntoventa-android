@@ -75,10 +75,14 @@ fun CashModuleScreen(
                 CashHeaderCard(session = session, onRequestClose = { viewModel.requestClose() })
             }
 
-            // ── Resumen del turno ────────────────────────────────────────────
-            // item {
-            //     CashSummaryCard(summary = state.summary, loading = state.loading, error = state.error)
-            // }
+            //── Resumen del turno ────────────────────────────────────────────
+             item {
+                 CashSummaryCard(
+                     summary = state.summary,
+                     loading = state.loading,
+                     error = state.error
+                 )
+             }
 
             // ── Filtro fecha + tabla flujo ───────────────────────────────────
             item {
