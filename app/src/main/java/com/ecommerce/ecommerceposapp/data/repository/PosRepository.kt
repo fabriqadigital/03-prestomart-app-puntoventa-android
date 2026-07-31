@@ -26,6 +26,7 @@ import com.ecommerce.ecommerceposapp.data.remote.api.ClientApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.CashApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.CategoryApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.ProductImageApiDataSource
+import com.ecommerce.ecommerceposapp.data.remote.api.ProductImageDownloadResult
 import com.ecommerce.ecommerceposapp.data.remote.api.PosSaleApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.ReceiptDeliveryApiDataSource
 import com.ecommerce.ecommerceposapp.data.remote.api.RemoteCatalogDataSource
@@ -260,7 +261,9 @@ class PosRepositoryImpl(private val context: Context) :
                 require(stock >= line.quantity) { "Stock local insuficiente para ${line.productName}." }
             }
             val ventaId = nextLocalId(realm, FinanzaVentaRealm::class.java)
-            val numero = "LOCAL-${fechaMillis}-${ventaId.toString().removePrefix("-")}"
+            // Mantiene un identificador presentable mientras el backend asigna
+            // el número definitivo durante la sincronización.
+            val numero = "POS-${fechaMillis}-${ventaId.toString().removePrefix("-")}"
             realm.insertOrUpdate(
                 FinanzaVentaRealm().apply {
                     id = ventaId
@@ -863,6 +866,27 @@ class PosRepositoryImpl(private val context: Context) :
             cacheCashSession(it)
             cacheEmitterFromCashRegisters(lastCashRegisters, it.cashRegisterId)
         }
+        if (remote.isFailure && !remote.exceptionOrNull().isNetworkFailure()) {
+            // The session may have been opened from the web (or another device)
+            // between the initial lookup and this request. In that case the
+            // backend rejects a duplicate opening; adopt its current session.
+            val current = cashApi.findOpenSession(cashierId).getOrNull()
+            if (current != null) {
+                cacheCashSession(current)
+                cacheEmitterFromCashRegisters(lastCashRegisters, current.cashRegisterId)
+                return Result.success(current)
+            }
+            val occupied = cashApi.findOpenSessionForRegister(cashRegisterId).getOrNull()
+            if (occupied != null && occupied.cashierId != cashierId) {
+                val registerName = occupied.cashRegisterName.ifBlank {
+                    lastCashRegisters.firstOrNull { it.id == cashRegisterId }?.name ?: "seleccionada"
+                }
+                val cashierName = occupied.cashierName.ifBlank { "otro cajero" }
+                return Result.failure(
+                    Exception("La caja $registerName está siendo utilizada por $cashierName. Selecciona otra caja o solicita que ese cajero cierre su sesión."),
+                )
+            }
+        }
         if (remote.isSuccess || !remote.exceptionOrNull().isNetworkFailure()) return remote
 
         val now = System.currentTimeMillis()
@@ -1070,6 +1094,13 @@ class PosRepositoryImpl(private val context: Context) :
                 else -> key.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("es", "PE")) else it.toString() }
             }
             val row = realm.where(SyncModuleStateRealm::class.java).equalTo("moduleKey", key).findFirst()
+            val localProductPending = if (key == "productos") {
+                realm.where(ProductRealm::class.java)
+                    .equalTo("syncState", "PENDING")
+                    .count()
+            } else {
+                0L
+            }
             SyncModuleStatus(
                 key = key,
                 label = label,
@@ -1077,7 +1108,7 @@ class PosRepositoryImpl(private val context: Context) :
                 pendingCount = realm.where(OutboxRealm::class.java)
                     .equalTo("moduleKey", key)
                     .equalTo("state", "PENDING")
-                    .count(),
+                    .count() + localProductPending,
                 failedCount = realm.where(OutboxRealm::class.java)
                     .equalTo("moduleKey", key)
                     .equalTo("state", "FAILED")
@@ -1125,9 +1156,26 @@ class PosRepositoryImpl(private val context: Context) :
             ),
         )
         val includeImageSync = "imagenes_productos" in selected
-        val remote = remoteCatalog.fetchBestEffort()
+        var remote = remoteCatalog.fetchBestEffort()
+        // Al recuperar la conexión Android puede validar la red unos instantes
+        // antes de que el host termine de responder. Reintentar evita abortar una
+        // sincronización completa por una primera respuesta vacía/transitoria.
+        if ("productos" in selected && remote.products.isEmpty()) {
+            remote = remoteCatalog.fetchBestEffort()
+        }
         val remoteClients = if ("clientes" in selected) clientApi.list().getOrNull() else null
         val now = System.currentTimeMillis()
+        val cachedProductImageFiles = if ("productos" in selected) {
+            realmQuery { realm ->
+                realm.where(ProductRealm::class.java).findAll().mapNotNull { product ->
+                    product.imageUrl.takeIf { path ->
+                        path.startsWith("file://") && File(path.removePrefix("file://")).exists()
+                    }?.let { product.id to it }
+                }.toMap()
+            }
+        } else {
+            emptyMap()
+        }
         if ("categorias" in selected && remote.categories.isEmpty()) {
             return Result.failure(Exception("No se recibieron categorías desde ${ApiSessionStore(context).baseUrl}."))
         }
@@ -1215,7 +1263,8 @@ class PosRepositoryImpl(private val context: Context) :
                         description = rp.description
                         location = rp.location
                         canalVenta = rp.salesChannel.ifBlank { "ambos" }
-                        imageUrl = normalizedProductImageUrl(id, rp.imageUrl)
+                        imageUrl = cachedProductImageFiles[id]
+                            ?: normalizedProductImageUrl(id, rp.imageUrl)
                         price = rp.price
                         stock = rp.stock
                         oldPrice = rp.oldPrice
@@ -1306,19 +1355,6 @@ class PosRepositoryImpl(private val context: Context) :
                     active = true
                 })
             }
-            realm.insertOrUpdate(SyncStateRealm().apply {
-                id = 1
-                syncedUserId = user.id
-                initialSyncDone = true
-            })
-            selected.forEach { key ->
-                realm.insertOrUpdate(
-                    SyncModuleStateRealm().apply {
-                        moduleKey = key
-                        lastSyncAt = now
-                    },
-                )
-            }
         }
 
         // Fase 2: descargar imágenes FUERA de la transacción (I/O de red separado)
@@ -1359,7 +1395,28 @@ class PosRepositoryImpl(private val context: Context) :
         }
 
         if (includeImageSync) {
-            cacheProductImages()
+            val completedBeforeImages = completedModules
+            val imageResult = cacheProductImages { completed, total ->
+                onProgress(
+                    SyncProgress(
+                        activeModuleKey = "imagenes_productos",
+                        completedModules = completedBeforeImages,
+                        totalModules = selectedInOrder.size,
+                        completedItems = completed,
+                        totalItems = total,
+                    ),
+                )
+            }
+            if (imageResult.failed > 0) {
+                return Result.failure(
+                    Exception(
+                        "Se guardaron ${imageResult.downloaded} imágenes nuevas" +
+                            (if (imageResult.missing > 0) " y ${imageResult.missing} productos no tienen archivo de imagen en la web" else "") +
+                            ". ${imageResult.failed} descargas fallaron temporalmente; selecciona Imágenes de productos para reintentarlas." +
+                            imageResult.failureSummary.takeIf { it.isNotBlank() }?.let { " Detalle: $it" }.orEmpty(),
+                    ),
+                )
+            }
             reportProgress("imagenes_productos")
         }
 
@@ -1375,7 +1432,10 @@ class PosRepositoryImpl(private val context: Context) :
                 add("CREATE_SALE")
                 add("CANCEL_SALE")
             }
-            if ("tickets" in selected) add("SEND_RECEIPT_EMAIL")
+            if ("tickets" in selected) {
+                add("SEND_RECEIPT_EMAIL")
+                add("SEND_RECEIPT_WHATSAPP")
+            }
         }
         if (transactionalOperations.isNotEmpty()) {
             processOutboxInternal(transactionalOperations).getOrElse { return Result.failure(it) }
@@ -1384,6 +1444,24 @@ class PosRepositoryImpl(private val context: Context) :
         if ("caja" in selected) reportProgress("caja")
         if ("ventas" in selected) reportProgress("ventas")
         if ("tickets" in selected) reportProgress("tickets")
+
+        // Solo registrar una sincronización como terminada cuando todas sus
+        // fases, incluidas las imágenes y la cola offline, finalizaron bien.
+        realmWrite { realm ->
+            realm.insertOrUpdate(SyncStateRealm().apply {
+                id = 1
+                syncedUserId = user.id
+                initialSyncDone = true
+            })
+            selected.forEach { key ->
+                realm.insertOrUpdate(
+                    SyncModuleStateRealm().apply {
+                        moduleKey = key
+                        lastSyncAt = now
+                    },
+                )
+            }
+        }
 
         return Result.success(Unit)
     }
@@ -1425,6 +1503,7 @@ class PosRepositoryImpl(private val context: Context) :
                 "CREATE_SALE" -> pushPendingSale(entry)
                 "CANCEL_SALE" -> pushPendingSaleCancellation(entry)
                 "SEND_RECEIPT_EMAIL" -> pushPendingReceiptEmail(entry)
+                "SEND_RECEIPT_WHATSAPP" -> pushPendingReceiptWhatsapp(entry)
                 else -> Result.failure(Exception("Operacion outbox no soportada: ${entry.operation}"))
             }
             result.onSuccess {
@@ -1462,6 +1541,18 @@ class PosRepositoryImpl(private val context: Context) :
         }
         val paymentJson = payload.getJSONObject("payment")
         val customerJson = payload.getJSONObject("customer")
+        val localClientId = payload.getLong("client_id")
+        val remoteClientId = resolveRemoteId("client", localClientId)
+        val clientSnapshot = realmQuery { realm ->
+            realm.where(ClientRealm::class.java)
+                .equalTo("id", remoteClientId)
+                .findFirst()
+                ?.let { it.name to it.document }
+        }
+        val customerName = customerJson.optString("name").ifBlank { clientSnapshot?.first.orEmpty() }
+        val customerDocument = customerJson.optString("document")
+            .filter(Char::isDigit)
+            .ifBlank { clientSnapshot?.second.orEmpty().filter(Char::isDigit) }
         val registered = remoteSale.registerSale(
             lines = lines,
             payment = SalePaymentInfo(
@@ -1469,12 +1560,12 @@ class PosRepositoryImpl(private val context: Context) :
                 montoRecibido = paymentJson.getDouble("received"),
                 vuelto = paymentJson.getDouble("change"),
             ),
-            clientId = resolveRemoteId("client", payload.getLong("client_id")),
+            clientId = remoteClientId,
             cashSessionId = resolveRemoteId("cash_session", payload.getLong("cash_session_id")),
             customerInfo = ReceiptCustomerInfo(
-                id = customerJson.optLong("id"),
-                name = customerJson.optString("name"),
-                document = customerJson.optString("document"),
+                id = remoteClientId,
+                name = customerName,
+                document = customerDocument,
             ),
             receiptType = TipoComprobanteEmision.valueOf(payload.getString("receipt_type")),
             idempotencyKey = entry.id,
@@ -1833,6 +1924,20 @@ class PosRepositoryImpl(private val context: Context) :
         val pdf = File(payload.getString("pdf_path"))
         receiptDelivery.sendByEmail(
             email = payload.getString("email"),
+            receiptNumber = payload.getString("receipt_number"),
+            customerName = payload.optString("customer_name"),
+            pdf = pdf,
+        ).getOrThrow()
+        realmWrite { realm ->
+            realm.where(OutboxRealm::class.java).equalTo("id", entry.id).findFirst()?.deleteFromRealm()
+        }
+        pdf.delete()
+    }
+
+    private fun pushPendingReceiptWhatsapp(entry: PendingOutbox): Result<Unit> = runCatching {
+        val payload = JSONObject(entry.payloadJson)
+        val pdf = File(payload.getString("pdf_path"))
+        receiptDelivery.requestWhatsappLink(
             receiptNumber = payload.getString("receipt_number"),
             customerName = payload.optString("customer_name"),
             pdf = pdf,
@@ -2217,7 +2322,17 @@ class PosRepositoryImpl(private val context: Context) :
         }.getOrDefault(fullUrl)
     }
 
-    private fun cacheProductImages() {
+    private data class ProductImageCacheResult(
+        val total: Int,
+        val downloaded: Int,
+        val missing: Int,
+        val failed: Int,
+        val failureSummary: String = "",
+    )
+
+    private fun cacheProductImages(
+        onProgress: (completed: Int, total: Int) -> Unit = { _, _ -> },
+    ): ProductImageCacheResult {
         val dir = File(context.filesDir, "product_images").apply { mkdirs() }
 
         // Fase A: leer datos de productos fuera de transacción
@@ -2237,17 +2352,32 @@ class PosRepositoryImpl(private val context: Context) :
                 }
         }
 
-        if (tasks.isEmpty()) return
+        if (tasks.isEmpty()) return ProductImageCacheResult(0, 0, 0, 0)
 
         // Fase B: descargar imágenes (sin Realm abierto)
         val updates = java.util.concurrent.ConcurrentHashMap<Long, String>()
-        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(6, tasks.size))
+        val missingIds = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+        val failures = java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger>()
+        val completed = java.util.concurrent.atomic.AtomicInteger(0)
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(8, tasks.size))
+        onProgress(0, tasks.size)
         try {
             val futures = tasks.map { task ->
                 pool.submit {
-                    val target = File(dir, "p_${task.id}.${task.ext}")
-                    if (productImagesApi.download(task.sourceUrl, target)) {
-                        updates[task.id] = "file://${target.absolutePath}"
+                    try {
+                        val target = File(dir, "p_${task.id}.${task.ext}")
+                        when (val result = productImagesApi.download(task.sourceUrl, target)) {
+                            ProductImageDownloadResult.Downloaded -> {
+                                updates[task.id] = "file://${target.absolutePath}"
+                            }
+                            is ProductImageDownloadResult.Missing -> missingIds += task.id
+                            is ProductImageDownloadResult.Failed -> {
+                                failures.computeIfAbsent(result.reason) { java.util.concurrent.atomic.AtomicInteger() }
+                                    .incrementAndGet()
+                            }
+                        }
+                    } finally {
+                        onProgress(completed.incrementAndGet(), tasks.size)
                     }
                 }
             }
@@ -2257,13 +2387,26 @@ class PosRepositoryImpl(private val context: Context) :
         }
 
         // Fase C: guardar rutas file:// en Realm con transacción separada
-        if (updates.isNotEmpty()) {
+        if (updates.isNotEmpty() || missingIds.isNotEmpty()) {
             realmWrite { realm ->
                 updates.forEach { (id, filePath) ->
                     realm.where(ProductRealm::class.java).equalTo("id", id).findFirst()?.imageUrl = filePath
                 }
+                missingIds.forEach { id ->
+                    realm.where(ProductRealm::class.java).equalTo("id", id).findFirst()?.imageUrl = ""
+                }
             }
         }
+        return ProductImageCacheResult(
+            total = tasks.size,
+            downloaded = updates.size,
+            missing = missingIds.size,
+            failed = failures.values.sumOf { it.get() },
+            failureSummary = failures.entries
+                .sortedByDescending { it.value.get() }
+                .take(3)
+                .joinToString { "${it.key}: ${it.value.get()}" },
+        )
     }
 
     private fun <T> realmQuery(block: (Realm) -> T): T = Realm.getDefaultInstance().use(block)

@@ -150,6 +150,7 @@ fun ProfileScreen(
 
     LaunchedEffect(session.cashierId) {
         if (session.offlineSession) return@LaunchedEffect
+        if (!hasValidatedInternet()) return@LaunchedEffect
         withContext(Dispatchers.IO) { CashierProfileApiDataSource(context).fetch(session) }
             .onSuccess { fresh ->
                 resolvedSession = fresh

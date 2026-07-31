@@ -74,10 +74,10 @@ fun ProductEditDialog(
     var code by remember(initial) { mutableStateOf(initial.code) }
     var categoryId by remember(initial) { mutableStateOf(initial.categoryId) }
     var subcategoryId by remember(initial) { mutableStateOf(initial.subcategoryId) }
-    var price by remember(initial) { mutableStateOf(initial.price.toString()) }
-    var yapePrice by remember(initial) { mutableStateOf(initial.yapePrice.toString()) }
+    var price by remember(initial) { mutableStateOf(initial.productNumberText(initial.price)) }
+    var yapePrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.yapePrice)) }
     var productTypeId by remember(initial) { mutableStateOf(initial.productTypeId) }
-    var stock by remember(initial) { mutableStateOf(initial.stock.toString()) }
+    var stock by remember(initial) { mutableStateOf(initial.productNumberText(initial.stock)) }
     var salesChannel by remember(initial) { mutableStateOf(initial.salesChannel.ifBlank { "ambos" }) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var subcategoryExpanded by remember { mutableStateOf(false) }
@@ -196,6 +196,9 @@ fun ProductEditDialog(
         }
     }
 }
+
+private fun ProductAdminRow.productNumberText(value: Double): String =
+    if (id == 0L && value == 0.0) "" else value.toString()
 
 @Composable
 private fun RowScope.ChannelChip(value: String, label: String, selected: String, onSelect: (String) -> Unit) {

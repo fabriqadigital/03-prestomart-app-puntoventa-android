@@ -41,4 +41,38 @@ class OfflineReceiptDeliveryQueue(private val context: Context) {
             }
         }
     }
+
+    fun enqueueWhatsapp(
+        phone: String,
+        receiptNumber: String,
+        customerName: String,
+        sourcePdf: File,
+    ): Result<Unit> = runCatching {
+        require(sourcePdf.exists() && sourcePdf.length() > 0L) { "El PDF local no esta disponible." }
+        val destination = File(context.filesDir, "queued_receipts").apply { mkdirs() }
+            .resolve("${UUID.randomUUID()}.pdf")
+        sourcePdf.copyTo(destination, overwrite = true)
+        val now = System.currentTimeMillis()
+        Realm.getDefaultInstance().use { realm ->
+            realm.executeTransaction {
+                it.insert(
+                    OutboxRealm().apply {
+                        id = UUID.randomUUID().toString()
+                        moduleKey = "tickets"
+                        operation = "SEND_RECEIPT_WHATSAPP"
+                        aggregateType = "receipt_delivery"
+                        payloadJson = JSONObject()
+                            .put("phone", phone.filter(Char::isDigit))
+                            .put("receipt_number", receiptNumber.trim())
+                            .put("customer_name", customerName.trim())
+                            .put("pdf_path", destination.absolutePath)
+                            .toString()
+                        createdAt = now
+                        updatedAt = now
+                        state = "PENDING"
+                    },
+                )
+            }
+        }
+    }
 }

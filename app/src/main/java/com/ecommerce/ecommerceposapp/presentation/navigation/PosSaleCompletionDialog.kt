@@ -1,5 +1,9 @@
 package com.ecommerce.ecommerceposapp.presentation.navigation
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -65,7 +69,6 @@ import com.ecommerce.ecommerceposapp.presentation.pos.buildReceiptShareText
 import com.ecommerce.ecommerceposapp.presentation.pos.createReceiptPdfForSharing
 import com.ecommerce.ecommerceposapp.presentation.pos.openWhatsapp
 import com.ecommerce.ecommerceposapp.presentation.pos.sanitizePhone51
-import com.ecommerce.ecommerceposapp.presentation.pos.shareReceiptPdfToWhatsapp
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -85,11 +88,12 @@ private fun receiptTypeLabel(type: TipoComprobanteEmision): String = when (type)
     TipoComprobanteEmision.SOLO_TICKET -> "Ticket"
 }
 
-private fun receiptShareText(receipt: CompletedSaleReceipt, issued: ComprobanteEmitidoResult): String = buildString {
-    appendLine(issued.emisorRazonSocial.ifBlank { "PrestoMart" })
-    appendLine("Comprobante: ${issued.numeroCompleto}")
-    appendLine("Total: S/ ${String.format(Locale.US, "%.2f", receipt.total)}")
-    appendLine("Gracias por su compra.")
+private fun Context.hasValidatedInternet(): Boolean {
+    val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = connectivity.activeNetwork ?: return false
+    val capabilities = connectivity.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
 
 @Composable
@@ -160,7 +164,6 @@ internal fun SaleCompletedDialog(
     var notice by remember { mutableStateOf("") }
     var sharingPdf by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val shareText = remember(receipt, issued) { receiptShareText(receipt, issued) }
 
     LaunchedEffect(notice) {
         if (notice.isNotBlank()) {
@@ -221,6 +224,15 @@ internal fun SaleCompletedDialog(
                             createReceiptPdfForSharing(context, receipt, issued, clienteNombre, clienteDoc, null)
                         }
                         generatedPdf = pdf
+                        if (!context.hasValidatedInternet()) {
+                            OfflineReceiptDeliveryQueue(context).enqueueWhatsapp(
+                                phone = digits,
+                                receiptNumber = issued.numeroCompleto,
+                                customerName = clienteNombre.ifBlank { issued.receptorNombre },
+                                sourcePdf = pdf,
+                            ).getOrThrow()
+                            error("Sin conexión. El comprobante quedó pendiente para WhatsApp y se reintentará al sincronizar tickets.")
+                        }
                         val link = withContext(Dispatchers.IO) {
                             ReceiptDeliveryApiDataSource(context).requestWhatsappLink(
                                 issued.numeroCompleto,
@@ -234,13 +246,27 @@ internal fun SaleCompletedDialog(
                     }.onSuccess {
                         notice = "WhatsApp abierto con el comprobante."
                     }.onFailure {
-                        val localShare = generatedPdf?.let { pdf ->
-                            shareReceiptPdfToWhatsapp(context, pdf, shareText)
+                        val message = it.message.orEmpty()
+                        val queued = if (message.startsWith("Sin conexión")) null else generatedPdf?.let { pdf ->
+                            OfflineReceiptDeliveryQueue(context).enqueueWhatsapp(
+                                phone = digits,
+                                receiptNumber = issued.numeroCompleto,
+                                customerName = clienteNombre.ifBlank { issued.receptorNombre },
+                                sourcePdf = pdf,
+                            )
                         }
-                        notice = if (localShare?.isSuccess == true) {
-                            "PDF abierto en WhatsApp. Sin Internet, WhatsApp lo enviará cuando recupere conexión."
+                        if (message.startsWith("Sin conexión")) {
+                            notice = message
+                            sharingPdf = false
+                            return@launch
+                        }
+                        notice = if (queued?.isSuccess == true) {
+                            "No se pudo enviar ahora. El comprobante quedó pendiente para WhatsApp."
                         } else {
                             it.message ?: "No se pudo abrir WhatsApp con el comprobante."
+                        }
+                        if (queued?.isSuccess == true) {
+                            notice = "No se pudo enviar ahora. El comprobante quedó pendiente para WhatsApp."
                         }
                     }
                     sharingPdf = false

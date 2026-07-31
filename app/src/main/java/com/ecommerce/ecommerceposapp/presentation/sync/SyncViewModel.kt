@@ -140,9 +140,15 @@ class SyncViewModel(
         val labels = current.modules.associate { it.key to it.label }
         val onProgress: (com.ecommerce.ecommerceposapp.domain.model.sync.SyncProgress) -> Unit = { progress ->
             _uiState.update {
+                val moduleLabel = labels[progress.activeModuleKey] ?: progress.activeModuleKey
+                val itemLabel = if (progress.totalItems > 0) {
+                    " (${progress.completedItems}/${progress.totalItems})"
+                } else {
+                    ""
+                }
                 it.copy(
                     progressFraction = progress.fraction.coerceIn(0f, 1f),
-                    activeModuleLabel = labels[progress.activeModuleKey] ?: progress.activeModuleKey,
+                    activeModuleLabel = moduleLabel + itemLabel,
                 )
             }
         }

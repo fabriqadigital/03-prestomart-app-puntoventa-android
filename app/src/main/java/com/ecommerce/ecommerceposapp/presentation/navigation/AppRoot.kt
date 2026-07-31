@@ -574,6 +574,7 @@ private fun PosNavigationDrawerContent(
             .fillMaxHeight()
             .fillMaxWidth()
             .background(SurfaceWhite)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 8.dp, vertical = 16.dp),
     ) {
         // Encabezado
@@ -648,7 +649,7 @@ private fun PosNavigationDrawerContent(
             )
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(24.dp))
         Text(
             "v1.0 · PrestoMart POS",
             color = Color(0xFF9CA3AF),
@@ -698,6 +699,8 @@ private fun PosScreen(
     var selectedModule by remember { mutableStateOf("Punto de venta") }
     var showQuickProductDialog by remember { mutableStateOf(false) }
     var openAdvancedProductForm by remember { mutableStateOf(false) }
+    var newProductCategoryId by remember { mutableStateOf<Long?>(null) }
+    var newProductSubcategoryId by remember { mutableStateOf<Long?>(null) }
     var isOnline by remember { mutableStateOf(hasValidatedInternet()) }
     var showReconnectPrompt by remember { mutableStateOf(false) }
     var reconnectSyncing by remember { mutableStateOf(false) }
@@ -847,7 +850,11 @@ private fun PosScreen(
                                     posVm::setSubcategory,
                                     onAddToCart = posVm::addToCart,
                                     onToggleFeatured = posVm::toggleFeatured,
-                                    onNewProduct = { showQuickProductDialog = true },
+                                    onNewProduct = {
+                                        newProductCategoryId = state.selectedCategoryId
+                                        newProductSubcategoryId = state.selectedSubcategoryId
+                                        showQuickProductDialog = true
+                                    },
                                     onScanMessage = { message ->
                                         scope.launch { snackbarHostState.showSnackbar(message) }
                                     },
@@ -874,7 +881,11 @@ private fun PosScreen(
                                     posVm::setSubcategory,
                                     onAddToCart = posVm::addToCart,
                                     onToggleFeatured = posVm::toggleFeatured,
-                                    onNewProduct = { showQuickProductDialog = true },
+                                    onNewProduct = {
+                                        newProductCategoryId = state.selectedCategoryId
+                                        newProductSubcategoryId = state.selectedSubcategoryId
+                                        showQuickProductDialog = true
+                                    },
                                     onScanMessage = { message ->
                                         scope.launch { snackbarHostState.showSnackbar(message) }
                                     },
@@ -902,6 +913,8 @@ private fun PosScreen(
                 ProductsCrudScreen(
                     vm = productsVm,
                     openCreateAdvanced = openAdvancedProductForm,
+                    initialCategoryId = newProductCategoryId,
+                    initialSubcategoryId = newProductSubcategoryId,
                     onCreateAdvancedConsumed = { openAdvancedProductForm = false },
                 )
             }
@@ -1114,8 +1127,15 @@ private fun PosScreen(
         ProductEditDialog(
             initial = ProductAdminRow(
                 id = 0L,
-                categoryId = productsState.categories.firstOrNull { it.active }?.id ?: 0L,
-                subcategoryId = 0L,
+                categoryId = newProductCategoryId?.takeIf { selectedId ->
+                    productsState.categories.any { it.active && it.id == selectedId }
+                } ?: productsState.categories.firstOrNull { it.active }?.id ?: 0L,
+                subcategoryId = newProductSubcategoryId?.takeIf { selectedId ->
+                    productsState.subcategories.any {
+                        it.active && it.id == selectedId && it.categoryId == newProductCategoryId
+                    }
+                } ?: 0L,
+                subcategoryIds = listOfNotNull(newProductSubcategoryId),
                 name = "",
                 code = "",
                 imageUrl = "",

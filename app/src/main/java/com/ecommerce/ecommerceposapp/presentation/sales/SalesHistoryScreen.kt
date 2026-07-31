@@ -4,9 +4,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -253,6 +255,129 @@ private fun InfoChip(label: String, value: String, modifier: Modifier = Modifier
     }
 }
 
+@Composable
+private fun SaleStatusBadge(isAnulada: Boolean) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(Radius.pill))
+            .background(if (isAnulada) RedDangerLight else GreenSuccessLight)
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text = if (isAnulada) "Anulada" else "Completada",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isAnulada) RedDanger else GreenSuccess,
+        )
+    }
+}
+
+@Composable
+private fun SaleActions(
+    isAnulada: Boolean,
+    onReprint: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onReprint, modifier = Modifier.size(34.dp)) {
+            Icon(Icons.Filled.Print, contentDescription = "Reimprimir", tint = BrandRed, modifier = Modifier.size(17.dp))
+        }
+        if (!isAnulada) {
+            IconButton(onClick = onCancel, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Filled.Cancel, contentDescription = "Anular venta", tint = RedDanger, modifier = Modifier.size(17.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SalesTableHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SurfaceMuted)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TableLabel("ID COMPROBANTE", 1.65f)
+        TableLabel("FECHA / HORA", 1.05f)
+        TableLabel("CLIENTE", 1.15f)
+        TableLabel("CAJERO", 1f)
+        TableLabel("MONTO", .75f)
+        TableLabel("ESTADO", .9f)
+        TableLabel("ACCIONES", .72f)
+    }
+}
+
+@Composable
+private fun RowScope.TableLabel(text: String, weight: Float) {
+    Text(
+        text = text,
+        modifier = Modifier.weight(weight),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = TextSecondary,
+        maxLines = 1,
+    )
+}
+
+@Composable
+private fun SaleHistoryTableRow(
+    row: SalesHistoryRow,
+    onReprint: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val isAnulada = row.estado.equals("Anulada", ignoreCase = true)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SurfaceWhite)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1.65f)) {
+            Text(row.numeroComprobante.ifBlank { "Sin comprobante" }, fontWeight = FontWeight.SemiBold, color = TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(mapPago(row.tipoPago), color = TextTertiary, style = MaterialTheme.typography.labelSmall)
+        }
+        Text(formatVentaFecha(row.fechaMillis), Modifier.weight(1.05f), color = TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+        Text(row.clienteNombre.ifBlank { "General" }, Modifier.weight(1.15f), color = TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(row.cajeroNombre.ifBlank { "—" }, Modifier.weight(1f), color = TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("S/ ${"%.2f".format(row.total)}", Modifier.weight(.75f), color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+        Box(Modifier.weight(.9f)) { SaleStatusBadge(isAnulada) }
+        Box(Modifier.weight(.72f)) { SaleActions(isAnulada, onReprint, onCancel) }
+    }
+}
+
+@Composable
+private fun SaleHistoryCompactRow(
+    row: SalesHistoryRow,
+    onReprint: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val isAnulada = row.estado.equals("Anulada", ignoreCase = true)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.md))
+            .background(SurfaceWhite)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1.45f)) {
+            Text(row.numeroComprobante.ifBlank { "Sin comprobante" }, fontWeight = FontWeight.SemiBold, color = TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(formatVentaFechaShort(row.fechaMillis), color = TextTertiary, style = MaterialTheme.typography.labelSmall)
+            Text(row.clienteNombre.ifBlank { "General" }, color = TextSecondary, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Column(Modifier.weight(.8f), horizontalAlignment = Alignment.End) {
+            Text("S/ ${"%.2f".format(row.total)}", color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(4.dp))
+            SaleStatusBadge(isAnulada)
+        }
+        Spacer(Modifier.width(4.dp))
+        SaleActions(isAnulada, onReprint, onCancel)
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  CANCEL DIALOG
 // ─────────────────────────────────────────────────────────────────────────────
@@ -365,6 +490,39 @@ fun SalesHistoryScreen(
     var pageSizeExpanded by remember { mutableStateOf(false) }
     var currentPage   by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+
+    fun reprint(row: SalesHistoryRow) {
+        scope.launch {
+            loading = true; error = null
+            val rec = withContext(Dispatchers.IO) { catalog.getSaleReceipt(row.ventaId) }
+            if (rec.isFailure) {
+                loading = false
+                error = rec.exceptionOrNull()?.message ?: "Venta no encontrada."
+                return@launch
+            }
+            val receipt = rec.getOrThrow()
+            val tipo = mapTipoForReissue(row.tipoComprobante)
+            val em = withContext(Dispatchers.IO) {
+                catalog.emitComprobanteForVenta(
+                    row.ventaId,
+                    tipo,
+                    row.idCliente.takeIf { it > 0L } ?: receipt.idCliente,
+                    ReceiptCustomerInfo(
+                        id = row.idCliente.takeIf { it > 0L } ?: receipt.idCliente,
+                        name = receipt.clienteNombre,
+                        document = receipt.clienteDocumento,
+                    ),
+                )
+            }
+            loading = false
+            if (em.isSuccess) {
+                previewReceipt = receipt
+                previewComp = em.getOrNull()
+            } else {
+                error = em.exceptionOrNull()?.message ?: "No se pudo reemitir."
+            }
+        }
+    }
 
     fun reload() {
         scope.launch {
@@ -509,49 +667,36 @@ fun SalesHistoryScreen(
                 )
             }
         } else {
-            LazyColumn(
-                modifier              = Modifier.weight(1f),
-                verticalArrangement   = Arrangement.spacedBy(Spacing.sm),
-                contentPadding        = PaddingValues(vertical = Spacing.xs),
-            ) {
-                items(pageRows, key = { it.ventaId }) { row ->
-                    SaleHistoryCard(
-                        row      = row,
-                        onReprint = {
-                            scope.launch {
-                                loading = true; error = null
-                                val rec = withContext(Dispatchers.IO) { catalog.getSaleReceipt(row.ventaId) }
-                                if (rec.isFailure) {
-                                    loading = false
-                                    error = rec.exceptionOrNull()?.message ?: "Venta no encontrada."
-                                    return@launch
-                                }
-                                val receipt = rec.getOrThrow()
-                                val tipo = mapTipoForReissue(row.tipoComprobante)
-                                val em = withContext(Dispatchers.IO) {
-                                    catalog.emitComprobanteForVenta(
-                                        row.ventaId,
-                                        tipo,
-                                        row.idCliente.takeIf { it > 0L } ?: receipt.idCliente,
-                                        ReceiptCustomerInfo(
-                                            id       = row.idCliente.takeIf { it > 0L } ?: receipt.idCliente,
-                                            name     = receipt.clienteNombre,
-                                            document = receipt.clienteDocumento,
-                                        ),
-                                    )
-                                }
-                                loading = false
-                                if (em.isSuccess) {
-                                    previewReceipt = receipt
-                                    previewComp    = em.getOrNull()
-                                } else {
-                                    error = em.exceptionOrNull()?.message
-                                        ?: "No se pudo reemitir."
-                                }
-                            }
-                        },
-                        onCancel = { saleToCancel = row },
-                    )
+            BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                val compact = maxWidth < 720.dp
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().then(
+                        if (compact) Modifier else Modifier
+                            .clip(RoundedCornerShape(Radius.md))
+                            .background(SurfaceWhite)
+                    ),
+                    verticalArrangement = if (compact) Arrangement.spacedBy(Spacing.sm) else Arrangement.Top,
+                    contentPadding = if (compact) PaddingValues(vertical = Spacing.xs) else PaddingValues(0.dp),
+                ) {
+                    if (!compact) {
+                        item(key = "sales-table-header") { SalesTableHeader() }
+                    }
+                    items(pageRows, key = { it.ventaId }) { row ->
+                        if (compact) {
+                            SaleHistoryCompactRow(
+                                row = row,
+                                onReprint = { reprint(row) },
+                                onCancel = { saleToCancel = row },
+                            )
+                        } else {
+                            SaleHistoryTableRow(
+                                row = row,
+                                onReprint = { reprint(row) },
+                                onCancel = { saleToCancel = row },
+                            )
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(BorderDefault))
+                        }
+                    }
                 }
             }
         }

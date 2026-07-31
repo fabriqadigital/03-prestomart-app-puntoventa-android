@@ -40,10 +40,22 @@ class CashApiDataSource(context: Context) {
     }
 
     fun findOpenSession(cashierId: Long): Result<CashSession?> = runCatching {
-        executeGet(ApiConfig.CASH_SESSION_LIST, mapOf("estado" to "Abierta"))
+        // Do not send an exact status label here. The web backend has used both
+        // "Abierta" and other equivalent representations, so an exact server-side
+        // filter can hide a perfectly valid session opened from another client.
+        executeGet(ApiConfig.CASH_SESSION_LIST, mapOf("id_cajero" to cashierId.toString()))
             .resultArray()
             .map(::parseSession)
-            .firstOrNull { it.cashierId == cashierId }
+            .filter { it.id > 0L && it.cashierId == cashierId && it.status.isOpenCashStatus() }
+            .maxByOrNull { it.openedAt }
+    }
+
+    fun findOpenSessionForRegister(cashRegisterId: Long): Result<CashSession?> = runCatching {
+        executeGet(ApiConfig.CASH_SESSION_LIST, mapOf("id_caja" to cashRegisterId.toString()))
+            .resultArray()
+            .map(::parseSession)
+            .filter { it.id > 0L && it.cashRegisterId == cashRegisterId && it.status.isOpenCashStatus() }
+            .maxByOrNull { it.openedAt }
     }
 
     fun openSession(cashRegisterId: Long, cashierId: Long, openingAmount: Double): Result<CashSession> = runCatching {
@@ -215,15 +227,21 @@ class CashApiDataSource(context: Context) {
     }
 
     private fun parseSession(item: JSONObject) = CashSession(
-        id = item.optLong("id_caja_sesion"),
-        cashRegisterId = item.optLong("id_caja"),
-        cashRegisterName = item.cleanString("caja_nombre"),
-        cashierId = item.optLong("id_cajero"),
-        cashierName = item.cleanString("cajero_nombre"),
-        openedAt = parseDate(item.cleanString("hora_apertura")),
-        openingAmount = item.optDoubleFlexible("monto_inicial"),
-        status = item.cleanString("estado"),
+        id = item.firstLong("id_caja_sesion", "sesion_id", "id"),
+        cashRegisterId = item.firstLong("id_caja", "caja_id"),
+        cashRegisterName = item.firstString("caja_nombre", "nombre_caja"),
+        cashierId = item.firstLong("id_cajero", "cajero_id", "id_usuario", "usuario_id"),
+        cashierName = item.firstString("cajero_nombre", "nombre_cajero", "usuario_nombre"),
+        openedAt = parseDate(item.firstString("hora_apertura", "fecha_apertura", "opened_at")),
+        openingAmount = item.firstDouble("monto_inicial", "monto_apertura", "opening_amount"),
+        status = item.firstString("estado", "status"),
     )
+
+    private fun String.isOpenCashStatus(): Boolean {
+        val value = trim().lowercase(Locale.ROOT)
+        return value.isBlank() ||
+            value in setOf("a", "1", "abierta", "abierto", "open", "opened", "activa", "activo", "vigente")
+    }
 
     private fun JSONObject.resultArray(): List<JSONObject> {
         val array = optJSONArray("result") ?: JSONArray()
@@ -242,6 +260,23 @@ class CashApiDataSource(context: Context) {
             if (value.isNotBlank()) return value
         }
         return ""
+    }
+
+    private fun JSONObject.firstLong(vararg keys: String): Long {
+        keys.forEach { key ->
+            when (val value = opt(key)) {
+                is Number -> if (value.toLong() > 0L) return value.toLong()
+                is String -> value.trim().toLongOrNull()?.takeIf { it > 0L }?.let { return it }
+            }
+        }
+        return 0L
+    }
+
+    private fun JSONObject.firstDouble(vararg keys: String): Double {
+        keys.forEach { key ->
+            if (has(key) && !isNull(key)) return optDoubleFlexible(key)
+        }
+        return 0.0
     }
 
     private fun JSONObject.nestedFirstString(containerKey: String, vararg keys: String): String {

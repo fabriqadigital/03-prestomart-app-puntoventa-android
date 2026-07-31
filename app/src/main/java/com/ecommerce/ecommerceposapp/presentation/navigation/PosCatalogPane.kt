@@ -579,19 +579,23 @@ private fun ProductSaleCard(
 
                 // ── Estrella — SIN fondo coloreado ───────────────────────────
                 if (!outOfStock) {
+                    val favoriteShape = RoundedCornerShape(bottomStart = Radius.md)
                     IconButton(
                         onClick  = { onToggleFeatured(product) },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .zIndex(2f)
-                            .size(36.dp),
+                            .shadow(3.dp, favoriteShape)
+                            .clip(favoriteShape)
+                            .background(SurfaceWhite)
+                            .size(38.dp),
                     ) {
                         Icon(
                             imageVector = if (product.featuredInPos) Icons.Filled.Star
                                           else Icons.Outlined.StarBorder,
                             contentDescription = if (product.featuredInPos)
                                 "Quitar de destacados" else "Destacar producto",
-                            tint     = if (product.featuredInPos) BrandRed else GrayMedium,
+                            tint     = BrandRed,
                             modifier = Modifier.size(20.dp),
                         )
                     }

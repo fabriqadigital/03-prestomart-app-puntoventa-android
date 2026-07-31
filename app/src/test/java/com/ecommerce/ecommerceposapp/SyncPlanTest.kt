@@ -1,6 +1,7 @@
 package com.ecommerce.ecommerceposapp
 
 import com.ecommerce.ecommerceposapp.domain.sync.SyncPlan
+import com.ecommerce.ecommerceposapp.domain.model.sync.SyncProgress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -46,5 +47,18 @@ class SyncPlanTest {
         val remaining = SyncPlan.removeWithDependents(selected, "categorias")
 
         assertEquals(setOf("proveedores", "clientes", "caja"), remaining)
+    }
+
+    @Test
+    fun `image items advance progress inside their module`() {
+        val progress = SyncProgress(
+            activeModuleKey = "imagenes_productos",
+            completedModules = 5,
+            totalModules = 9,
+            completedItems = 50,
+            totalItems = 100,
+        )
+
+        assertEquals(5.5f / 9f, progress.fraction, 0.0001f)
     }
 }

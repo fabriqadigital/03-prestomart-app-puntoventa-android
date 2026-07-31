@@ -103,7 +103,11 @@ fun CategoriesCrudScreen(vm: CategoriesViewModel) {
         state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         Spacer(Modifier.height(12.dp))
         CategoriesTable(
-            categories = state.categories.sortedByDescending { it.id },
+            categories = state.categories.sortedWith(
+                compareByDescending<CategoryAdminRow> { it.id < 0L }
+                    .thenBy { it.id }
+                    .thenBy { it.name.lowercase() },
+            ),
             subcategories = state.subcategories,
             onEditCategory = { editingCategory = it },
             onDeleteCategory = { category ->

@@ -93,7 +93,6 @@ class PosViewModel(
 
     suspend fun refreshCatalog() {
         val catalog = withContext(Dispatchers.IO) {
-            catalogRepository.refreshCatalog()
             Triple(catalogRepository.categories(), catalogRepository.subcategories(), catalogRepository.products())
         }
         _uiState.update { it.copy(categories = catalog.first, subcategories = catalog.second, products = catalog.third) }

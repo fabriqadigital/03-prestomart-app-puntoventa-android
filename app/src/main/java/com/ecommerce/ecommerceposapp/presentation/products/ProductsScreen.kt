@@ -87,6 +87,8 @@ import com.ecommerce.ecommerceposapp.util.ScannerDetector
 fun ProductsCrudScreen(
     vm: ProductsViewModel,
     openCreateAdvanced: Boolean = false,
+    initialCategoryId: Long? = null,
+    initialSubcategoryId: Long? = null,
     onCreateAdvancedConsumed: () -> Unit = {},
 ) {
     val state by vm.uiState.collectAsState()
@@ -124,8 +126,13 @@ fun ProductsCrudScreen(
         ProductAdvancedEditorView(
             initial = editing ?: ProductAdminRow(
                 id = 0,
-                categoryId = activeCategories.firstOrNull()?.id ?: 0L,
-                subcategoryId = 0,
+                categoryId = initialCategoryId?.takeIf { id -> activeCategories.any { it.id == id } }
+                    ?: selectedCategoryId
+                    ?: activeCategories.firstOrNull()?.id
+                    ?: 0L,
+                subcategoryId = initialSubcategoryId?.takeIf { id ->
+                    state.subcategories.any { it.id == id && it.categoryId == initialCategoryId }
+                } ?: selectedSubcategoryId ?: 0L,
                 name = "",
                 code = "",
                 imageUrl = "",
@@ -427,6 +434,9 @@ private fun productFilterChipBorder(selected: Boolean) = FilterChipDefaults.filt
     borderWidth = 1.dp,
 )
 
+private fun ProductAdminRow.productNumberText(value: Double): String =
+    if (id == 0L && value == 0.0) "" else value.toString()
+
 @Composable
 private fun ProductTableRow(
     product: ProductAdminRow,
@@ -502,25 +512,25 @@ private fun ProductAdvancedEditorView(
     var subcategoryExpanded by remember { mutableStateOf(false) }
     var productTypeId by remember(initial) { mutableStateOf(initial.productTypeId) }
     var productTypeExpanded by remember { mutableStateOf(false) }
-    var price by remember(initial) { mutableStateOf(initial.price.toString()) }
-    var stock by remember(initial) { mutableStateOf(initial.stock.toString()) }
-    var costPrice by remember(initial) { mutableStateOf(initial.costPrice.toString()) }
-    var oldPrice by remember(initial) { mutableStateOf(initial.oldPrice.toString()) }
-    var wholesalePrice by remember(initial) { mutableStateOf(initial.wholesalePrice.toString()) }
-    var wholesaleOldPrice by remember(initial) { mutableStateOf(initial.wholesaleOldPrice.toString()) }
-    var yapePrice by remember(initial) { mutableStateOf(initial.yapePrice.toString()) }
-    var minimumStock by remember(initial) { mutableStateOf(initial.minimumStock.toString()) }
+    var price by remember(initial) { mutableStateOf(initial.productNumberText(initial.price)) }
+    var stock by remember(initial) { mutableStateOf(initial.productNumberText(initial.stock)) }
+    var costPrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.costPrice)) }
+    var oldPrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.oldPrice)) }
+    var wholesalePrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.wholesalePrice)) }
+    var wholesaleOldPrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.wholesaleOldPrice)) }
+    var yapePrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.yapePrice)) }
+    var minimumStock by remember(initial) { mutableStateOf(initial.productNumberText(initial.minimumStock)) }
     var description by remember(initial) { mutableStateOf(initial.description) }
     var location by remember(initial) { mutableStateOf(initial.location) }
-    var weightKg by remember(initial) { mutableStateOf(initial.weightKg.toString()) }
+    var weightKg by remember(initial) { mutableStateOf(initial.productNumberText(initial.weightKg)) }
     var packageMeasures by remember(initial) { mutableStateOf(initial.packageMeasures) }
     var packageDimension by remember(initial) { mutableStateOf(initial.packageDimension) }
     var promoCutoffTime by remember(initial) { mutableStateOf(initial.promoCutoffTime) }
     var saturdayCutoffTime by remember(initial) { mutableStateOf(initial.saturdayCutoffTime) }
-    var offerMaxQuantity by remember(initial) { mutableStateOf(initial.offerMaxQuantity.toString()) }
-    var offerMaxQuantityPrice by remember(initial) { mutableStateOf(initial.offerMaxQuantityPrice.toString()) }
+    var offerMaxQuantity by remember(initial) { mutableStateOf(initial.productNumberText(initial.offerMaxQuantity)) }
+    var offerMaxQuantityPrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.offerMaxQuantityPrice)) }
     var ratingsEnabled by remember(initial) { mutableStateOf(initial.ratingsEnabled) }
-    var adminRating by remember(initial) { mutableStateOf(initial.adminRating.toString()) }
+    var adminRating by remember(initial) { mutableStateOf(initial.productNumberText(initial.adminRating)) }
     var metaTitle by remember(initial) { mutableStateOf(initial.metaTitle) }
     var metaDescription by remember(initial) { mutableStateOf(initial.metaDescription) }
     var salesChannel by remember(initial) { mutableStateOf(initial.salesChannel.ifBlank { "ambos" }) }
