@@ -686,7 +686,32 @@ class PosRepositoryImpl(private val context: Context) :
 
         return cashApi.listSales(sessionId).fold(
             onSuccess = { remote ->
-                (local + remote)
+                val localBySaleId = local.associateBy { it.ventaId }
+                val enrichedRemote = remote.map { row ->
+                    if (!row.clienteNombre.isGenericCustomerName()) return@map row
+                    val resolvedName = localBySaleId[row.ventaId]?.clienteNombre
+                        ?.takeUnless { it.isGenericCustomerName() }
+                        .orEmpty()
+                        .ifBlank { localReceiptCustomerName(row.ventaId) }
+                        .ifBlank {
+                            cashApi.getSaleReceipt(row.ventaId)
+                                .getOrNull()
+                                ?.clienteNombre
+                                ?.takeUnless { it.isGenericCustomerName() }
+                                .orEmpty()
+                        }
+                    if (resolvedName.isBlank()) row else row.copy(clienteNombre = resolvedName)
+                }
+                val remoteBySaleId = enrichedRemote.associateBy { it.ventaId }
+                val enrichedLocal = local.map { row ->
+                    val remoteName = remoteBySaleId[row.ventaId]?.clienteNombre.orEmpty()
+                    if (row.clienteNombre.isGenericCustomerName() && !remoteName.isGenericCustomerName()) {
+                        row.copy(clienteNombre = remoteName)
+                    } else {
+                        row
+                    }
+                }
+                (enrichedLocal + enrichedRemote)
                     .distinctBy { it.ventaId }
                     .sortedByDescending { it.fechaMillis }
             },
@@ -708,13 +733,22 @@ class PosRepositoryImpl(private val context: Context) :
             .equalTo("idSesion", sessionId)
             .findAll()
             .map { sale ->
-                val clientName = sale.idCliente.takeIf { it != 0L }?.let { clientId ->
+                val registeredClientName = sale.idCliente.takeIf { it != 0L }?.let { clientId ->
                     realm.where(ClientRealm::class.java)
                         .equalTo("id", clientId)
                         .findFirst()
                         ?.name
                         .orEmpty()
                 }.orEmpty()
+                val receiptCustomerName = realm.where(FinanzaComprobanteRealm::class.java)
+                    .equalTo("idVenta", sale.id)
+                    .sort("id", io.realm.Sort.DESCENDING)
+                    .findFirst()
+                    ?.receptorRazonSocial
+                    .orEmpty()
+                    .takeUnless { it.equals("CLIENTE VARIOS", ignoreCase = true) }
+                    .orEmpty()
+                val clientName = receiptCustomerName.ifBlank { registeredClientName }
                 SalesHistoryRow(
                     ventaId = sale.id,
                     numeroComprobante = sale.numeroComprobante,
@@ -2406,6 +2440,28 @@ class PosRepositoryImpl(private val context: Context) :
                 .sortedByDescending { it.value.get() }
                 .take(3)
                 .joinToString { "${it.key}: ${it.value.get()}" },
+        )
+    }
+
+    private fun localReceiptCustomerName(ventaId: Long): String = realmQuery { realm ->
+        realm.where(FinanzaComprobanteRealm::class.java)
+            .equalTo("idVenta", ventaId)
+            .sort("id", io.realm.Sort.DESCENDING)
+            .findFirst()
+            ?.receptorRazonSocial
+            .orEmpty()
+            .takeUnless { it.isGenericCustomerName() }
+            .orEmpty()
+    }
+
+    private fun String.isGenericCustomerName(): Boolean {
+        val normalized = trim().uppercase(Locale.ROOT)
+        return normalized.isBlank() || normalized in setOf(
+            "GENERAL",
+            "CLIENTE GENERAL",
+            "CLIENTE GENERICO",
+            "CLIENTE GENÉRICO",
+            "CLIENTE VARIOS",
         )
     }
 
