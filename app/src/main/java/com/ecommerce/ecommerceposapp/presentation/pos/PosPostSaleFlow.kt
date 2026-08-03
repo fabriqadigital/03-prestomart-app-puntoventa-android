@@ -76,7 +76,9 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import java.net.URLEncoder
 import java.io.File
 import java.text.SimpleDateFormat
@@ -186,7 +188,17 @@ internal fun shareReceiptPdfToWhatsapp(
 }
 
 private fun encodeQrBitmapNow(text: String, size: Int = 240): Bitmap {
-    val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size)
+    val matrix = QRCodeWriter().encode(
+        text,
+        BarcodeFormat.QR_CODE,
+        size,
+        size,
+        mapOf(
+            EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.Q,
+            EncodeHintType.CHARACTER_SET to Charsets.UTF_8.name(),
+            EncodeHintType.MARGIN to 2,
+        ),
+    )
     val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     for (x in 0 until size) {
         for (y in 0 until size) {

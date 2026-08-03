@@ -404,7 +404,7 @@ class PosRepositoryImpl(private val context: Context) :
                         igv = remoteReceipt.igv,
                         total = remoteReceipt.total,
                         fechaSunat = formatFechaSunat(remoteReceipt.fechaMillis),
-                        numeroCompleto = number,
+                        receptorDocumento = customerInfo.document.ifBlank { remoteReceipt.clienteDocumento },
                     ),
                     emisorRuc = emitter.first,
                     emisorRazonSocial = emitter.second,
@@ -445,7 +445,7 @@ class PosRepositoryImpl(private val context: Context) :
                         igv = receipt.totalIgv,
                         total = receipt.total,
                         fechaSunat = receipt.fechaEmision,
-                        numeroCompleto = receipt.numeroCompleto,
+                        receptorDocumento = receipt.receptorNumDoc,
                     ),
                     emisorRuc = receipt.emisorRuc,
                     emisorRazonSocial = receipt.emisorRazonSocial,
@@ -478,7 +478,7 @@ class PosRepositoryImpl(private val context: Context) :
                     igv = venta.igv,
                     total = venta.total,
                     fechaSunat = formatFechaSunat(venta.fechaVenta),
-                    numeroCompleto = venta.numeroComprobante,
+                    receptorDocumento = client?.document.orEmpty(),
                 )
                 Result.success(
                     ComprobanteEmitidoResult(
@@ -554,7 +554,7 @@ class PosRepositoryImpl(private val context: Context) :
                 igv = venta.igv,
                 total = venta.total,
                 fechaSunat = fechaSunat,
-                numeroCompleto = numeroCompleto,
+                receptorDocumento = receptorNum,
             )
             realm.insertOrUpdate(
                 FinanzaComprobanteRealm().apply {
@@ -2222,19 +2222,28 @@ class PosRepositoryImpl(private val context: Context) :
         igv: Double,
         total: Double,
         fechaSunat: String,
-        numeroCompleto: String,
-    ): String = listOf(
-        ruc,
-        tipoDoc,
-        serie,
-        String.format(Locale.US, "%08d", correlativo),
-        String.format(Locale.US, "%.2f", igv),
-        String.format(Locale.US, "%.2f", total),
-        fechaSunat,
-        "0",
-        numeroCompleto,
-        "",
-    ).joinToString("|")
+        receptorDocumento: String,
+        valorResumen: String = "",
+    ): String {
+        val buyerDocument = receptorDocumento.filter(Char::isDigit)
+        val buyerDocumentType = when (buyerDocument.length) {
+            11 -> "6" // RUC
+            8 -> "1" // DNI
+            else -> "" // No corresponde informar documento del adquirente
+        }
+        return listOf(
+            ruc.filter(Char::isDigit),
+            tipoDoc,
+            serie,
+            String.format(Locale.US, "%08d", correlativo),
+            String.format(Locale.US, "%.2f", igv),
+            String.format(Locale.US, "%.2f", total),
+            fechaSunat,
+            buyerDocumentType,
+            buyerDocument,
+            valorResumen,
+        ).joinToString("|") + "|"
+    }
 
     private fun nextId(realm: Realm, clazz: Class<out RealmObject>): Long {
         val max = realm.where(clazz).max("id") as Number?

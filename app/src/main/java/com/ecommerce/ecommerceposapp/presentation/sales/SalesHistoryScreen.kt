@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
@@ -328,6 +329,8 @@ private fun SaleHistoryTableRow(
     onCancel: () -> Unit,
 ) {
     val isAnulada = row.estado.equals("Anulada", ignoreCase = true)
+    val rowDecoration = if (isAnulada) TextDecoration.LineThrough else TextDecoration.None
+    val rowTextColor = if (isAnulada) GrayMedium else TextPrimary
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -336,13 +339,13 @@ private fun SaleHistoryTableRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1.65f)) {
-            Text(row.numeroComprobante.ifBlank { "Sin comprobante" }, fontWeight = FontWeight.SemiBold, color = TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(mapPago(row.tipoPago), color = TextTertiary, style = MaterialTheme.typography.labelSmall)
+            Text(row.numeroComprobante.ifBlank { "Sin comprobante" }, fontWeight = FontWeight.SemiBold, color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
+            Text(mapPago(row.tipoPago), color = if (isAnulada) GrayMedium else TextTertiary, style = MaterialTheme.typography.labelSmall, textDecoration = rowDecoration)
         }
-        Text(formatVentaFecha(row.fechaMillis), Modifier.weight(1.05f), color = TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-        Text(row.clienteNombre.ifBlank { "General" }, Modifier.weight(1.15f), color = TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(row.cajeroNombre.ifBlank { "—" }, Modifier.weight(1f), color = TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text("S/ ${"%.2f".format(row.total)}", Modifier.weight(.75f), color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+        Text(formatVentaFecha(row.fechaMillis), Modifier.weight(1.05f), color = if (isAnulada) GrayMedium else TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, textDecoration = rowDecoration)
+        Text(row.clienteNombre.ifBlank { "General" }, Modifier.weight(1.15f), color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
+        Text(row.cajeroNombre.ifBlank { "—" }, Modifier.weight(1f), color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
+        Text("S/ ${"%.2f".format(row.total)}", Modifier.weight(.75f), color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, textDecoration = rowDecoration)
         Box(Modifier.weight(.9f)) { SaleStatusBadge(isAnulada) }
         Box(Modifier.weight(.72f)) { SaleActions(isAnulada, onReprint, onCancel) }
     }
@@ -355,6 +358,7 @@ private fun SaleHistoryCompactRow(
     onCancel: () -> Unit,
 ) {
     val isAnulada = row.estado.equals("Anulada", ignoreCase = true)
+    val rowDecoration = if (isAnulada) TextDecoration.LineThrough else TextDecoration.None
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -364,12 +368,12 @@ private fun SaleHistoryCompactRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1.45f)) {
-            Text(row.numeroComprobante.ifBlank { "Sin comprobante" }, fontWeight = FontWeight.SemiBold, color = TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(formatVentaFechaShort(row.fechaMillis), color = TextTertiary, style = MaterialTheme.typography.labelSmall)
-            Text(row.clienteNombre.ifBlank { "General" }, color = TextSecondary, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(row.numeroComprobante.ifBlank { "Sin comprobante" }, fontWeight = FontWeight.SemiBold, color = if (isAnulada) GrayMedium else TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
+            Text(formatVentaFechaShort(row.fechaMillis), color = if (isAnulada) GrayMedium else TextTertiary, style = MaterialTheme.typography.labelSmall, textDecoration = rowDecoration)
+            Text(row.clienteNombre.ifBlank { "General" }, color = if (isAnulada) GrayMedium else TextSecondary, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
         }
         Column(Modifier.weight(.8f), horizontalAlignment = Alignment.End) {
-            Text("S/ ${"%.2f".format(row.total)}", color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+            Text("S/ ${"%.2f".format(row.total)}", color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, textDecoration = rowDecoration)
             Spacer(Modifier.height(4.dp))
             SaleStatusBadge(isAnulada)
         }
