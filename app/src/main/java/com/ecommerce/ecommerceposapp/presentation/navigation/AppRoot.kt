@@ -41,6 +41,15 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PointOfSale
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -85,6 +94,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import com.ecommerce.ecommerceposapp.R
 import androidx.compose.ui.platform.LocalConfiguration
@@ -548,16 +558,16 @@ private fun LoginScreen(
     }
 }
 
+private data class DrawerMenuEntry(val label: String, val icon: ImageVector)
+
 private val drawerMenuItems = listOf(
-    "Punto de venta",
-    "Historial de ventas",
-    "Caja",
-    "Productos",
-    "Categorías",
-    "Clientes",
-    "Proveedores",
-    "Sincronizar catálogo",
-    "Cerrar sesión",
+    DrawerMenuEntry("Punto de venta", Icons.Filled.PointOfSale),
+    DrawerMenuEntry("Historial de ventas", Icons.Filled.ReceiptLong),
+    DrawerMenuEntry("Caja", Icons.Filled.AccountBalanceWallet),
+    DrawerMenuEntry("Productos", Icons.Filled.Inventory2),
+    DrawerMenuEntry("Categorías", Icons.Filled.Category),
+    DrawerMenuEntry("Clientes", Icons.Filled.People),
+    DrawerMenuEntry("Proveedores", Icons.Filled.LocalShipping),
 )
 
 @Composable
@@ -565,6 +575,8 @@ private fun PosNavigationDrawerContent(
     selectedLabel: String,
     session: UserSession,
     cashRegisterName: String,
+    isOnline: Boolean,
+    pendingSyncCount: Long,
     onItemClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -573,18 +585,20 @@ private fun PosNavigationDrawerContent(
         modifier = modifier
             .fillMaxHeight()
             .fillMaxWidth()
-            .background(SurfaceWhite)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 8.dp, vertical = 16.dp),
+            .background(Color(0xFFF8FAFC))
+            .padding(horizontal = 14.dp, vertical = 16.dp),
     ) {
-        // Encabezado
+        Text("PRESTOMART", color = Brand, fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(horizontal = 8.dp))
+        Text("Punto de venta", color = Color(0xFF94A3B8), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp))
+        Spacer(Modifier.height(16.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color.White)
                 .clickable { onItemClick("Mi perfil") }
-                .padding(horizontal = 8.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 14.dp),
         ) {
             Box(
                 modifier = Modifier
@@ -614,42 +628,89 @@ private fun PosNavigationDrawerContent(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text("Ver mi perfil", color = Brand, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                if (cashRegisterName.isNotBlank()) {
+                    Text(cashRegisterName, color = Color(0xFF64748B), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .height(1.dp)
-                .background(Divider),
-        )
-
-        Spacer(Modifier.height(4.dp))
-
-        drawerMenuItems.forEach { label ->
-            val selectable = label != "Cerrar sesión" && label != "Sincronizar catálogo"
-            val selected = selectable && label == selectedLabel
+        Spacer(Modifier.height(14.dp))
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            Text("NAVEGACIÓN", color = Color(0xFF94A3B8), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+            drawerMenuItems.forEach { item ->
+                val selected = item.label == selectedLabel
+                NavigationDrawerItem(
+                    icon = {
+                        Box(
+                            Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(if (selected) Color.White else Color.Transparent),
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(item.icon, contentDescription = null, modifier = Modifier.size(20.dp)) }
+                    },
+                    label = { Text(item.label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium) },
+                    selected = selected,
+                    onClick = { onItemClick(item.label) },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = NavigationDrawerItemDefaults.colors(
+                        selectedContainerColor = Color(0xFFFFE8E8),
+                        unselectedContainerColor = Color.Transparent,
+                        selectedIconColor = Brand,
+                        unselectedIconColor = Color(0xFF64748B),
+                        selectedTextColor = Brand,
+                        unselectedTextColor = Color(0xFF334155),
+                    ),
+                    modifier = Modifier.padding(vertical = 2.dp),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            val syncNeedsAttention = !isOnline || pendingSyncCount > 0
             NavigationDrawerItem(
+                icon = { Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(22.dp)) },
                 label = {
-                    Text(
-                        label,
-                        color = if (selected) Brand else TextPrimary,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    )
+                    Column {
+                        Text("Sincronizar catálogo", fontWeight = FontWeight.Bold)
+                        Text(
+                            when {
+                                !isOnline && pendingSyncCount > 0 -> "$pendingSyncCount cambio(s) · Sin conexión"
+                                !isOnline -> "Sin conexión"
+                                pendingSyncCount > 0 -> "$pendingSyncCount cambio(s) por enviar"
+                                else -> "Todo actualizado"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                 },
-                selected = selected,
-                onClick = { onItemClick(label) },
+                badge = {
+                    if (syncNeedsAttention) {
+                        Box(
+                            Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFFFFEDD5)).padding(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Text(if (pendingSyncCount > 0) "↕ $pendingSyncCount" else "↕", color = Color(0xFFC2410C), fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                },
+                selected = false,
+                onClick = { onItemClick("Sincronizar catálogo") },
+                shape = RoundedCornerShape(14.dp),
                 colors = NavigationDrawerItemDefaults.colors(
-                    selectedContainerColor = Color(0xFFF3F4F6),
-                    unselectedContainerColor = Color.Transparent,
-                    selectedTextColor = Brand,
-                    unselectedTextColor = TextPrimary,
+                    unselectedContainerColor = if (syncNeedsAttention) Color(0xFFFFF7ED) else Color(0xFFF1F5F9),
+                    unselectedIconColor = if (syncNeedsAttention) Color(0xFFC2410C) else Color(0xFF475569),
+                    unselectedTextColor = if (syncNeedsAttention) Color(0xFF9A3412) else Color(0xFF334155),
                 ),
             )
         }
-
-        Spacer(Modifier.height(24.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE2E8F0)))
+        Spacer(Modifier.height(10.dp))
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Filled.Logout, contentDescription = null) },
+            label = { Text("Cerrar sesión", fontWeight = FontWeight.Bold) },
+            selected = false,
+            onClick = { onItemClick("Cerrar sesión") },
+            shape = RoundedCornerShape(14.dp),
+            colors = NavigationDrawerItemDefaults.colors(
+                unselectedContainerColor = Color(0xFFFFE4E6),
+                unselectedIconColor = Color(0xFFDC2626),
+                unselectedTextColor = Color(0xFFDC2626),
+            ),
+        )
         Text(
             "v1.0 · PrestoMart POS",
             color = Color(0xFF9CA3AF),
@@ -704,6 +765,7 @@ private fun PosScreen(
     var isOnline by remember { mutableStateOf(hasValidatedInternet()) }
     var showReconnectPrompt by remember { mutableStateOf(false) }
     var reconnectSyncing by remember { mutableStateOf(false) }
+    var pendingSyncCount by remember { mutableStateOf(0L) }
     val widthDp = LocalConfiguration.current.screenWidthDp
     val heightDp = LocalConfiguration.current.screenHeightDp
     val responsiveTwoPanels = widthDp >= 900
@@ -751,6 +813,14 @@ private fun PosScreen(
         if (session.offlineSession && hasValidatedInternet()) {
             isOnline = true
             showReconnectPrompt = true
+        }
+    }
+
+    LaunchedEffect(drawerState.isOpen, isOnline, selectedModule) {
+        if (drawerState.isOpen) {
+            pendingSyncCount = withContext(Dispatchers.IO) {
+                syncRepository.listSyncModuleStatus().sumOf { it.pendingCount + it.failedCount }
+            }
         }
     }
 
@@ -1036,6 +1106,8 @@ private fun PosScreen(
                     selectedLabel = selectedModule,
                     session = session,
                     cashRegisterName = state.cashSession?.cashRegisterName.orEmpty(),
+                    isOnline = isOnline,
+                    pendingSyncCount = pendingSyncCount,
                     onItemClick = { label ->
                         when (label) {
                             "Cerrar sesión" -> {
