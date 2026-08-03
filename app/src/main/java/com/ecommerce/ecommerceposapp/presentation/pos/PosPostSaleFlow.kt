@@ -1,11 +1,15 @@
 package com.ecommerce.ecommerceposapp.presentation.pos
 
 import android.content.Intent
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,19 +21,20 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Print
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -39,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,13 +60,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
+import com.ecommerce.ecommerceposapp.data.remote.api.ReceiptDeliveryApiDataSource
+import com.ecommerce.ecommerceposapp.R
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
@@ -149,6 +159,14 @@ internal fun openWhatsapp(context: android.content.Context, phone51: String, mes
     val uri = android.net.Uri.parse("https://wa.me/$phone51?text=$enc")
     val intent = Intent(Intent.ACTION_VIEW, uri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
     context.startActivity(intent)
+}
+
+private fun Context.hasValidatedInternet(): Boolean {
+    val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = manager.activeNetwork ?: return false
+    val capabilities = manager.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
 
 internal fun shareReceiptPdfToWhatsapp(
@@ -402,28 +420,66 @@ fun EmitirComprobanteDialog(
 @Composable
 fun WhatsappDestinoDialog(
     clients: List<ClientRow>,
+    initialPhone: String = "",
     onDismiss: () -> Unit,
     onEnviarTelefono: (String) -> Unit,
     onElegirCliente: (ClientRow) -> Unit,
 ) {
     var busqueda by remember { mutableStateOf("") }
-    var manual by remember { mutableStateOf("") }
+    var manual by remember(initialPhone) { mutableStateOf(initialPhone.filter(Char::isDigit)) }
     val filtrados = remember(clients, busqueda) {
         clients.filter { it.active }.filter {
             busqueda.isBlank() ||
                 it.name.contains(busqueda, ignoreCase = true) ||
                 it.phone.contains(busqueda, ignoreCase = true) ||
                 it.document.contains(busqueda, ignoreCase = true)
-        }.take(40)
+        }
     }
-    AlertDialog(
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = Color.White,
+        unfocusedContainerColor = Color.White,
+        focusedBorderColor = Color(0xFF16A34A),
+        unfocusedBorderColor = Color(0xFFCBD5E1),
+        focusedLabelColor = Color(0xFF15803D),
+        unfocusedLabelColor = Color(0xFF64748B),
+        cursorColor = Color(0xFF15803D),
+    )
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Enviar por WhatsApp") },
-        text = {
-            Column(Modifier.fillMaxWidth()) {
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .padding(horizontal = 16.dp, vertical = 20.dp)
+                .widthIn(max = 520.dp)
+                .heightIn(max = 680.dp),
+            shape = RoundedCornerShape(18.dp),
+            color = Color.White,
+            contentColor = Color(0xFF172033),
+            shadowElevation = 18.dp,
+        ) {
+            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Enviar por WhatsApp", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Seleccione un cliente o ingrese un celular.", color = Color(0xFF64748B), style = MaterialTheme.typography.bodySmall)
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Filled.Close, contentDescription = "Cerrar", tint = Color(0xFF64748B))
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
                 Text(
-                    "Busque un cliente o escriba un celular (9 dígitos o con código 51).",
+                    "CLIENTES",
                     style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF475569),
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -432,27 +488,50 @@ fun WhatsappDestinoDialog(
                     label = { Text("Buscar cliente") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = fieldColors,
                 )
                 Spacer(Modifier.height(8.dp))
-                Column(
+                Surface(
                     modifier = Modifier
-                        .height(160.dp)
-                        .verticalScroll(rememberScrollState()),
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .heightIn(min = 100.dp, max = 220.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White,
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                 ) {
-                    filtrados.forEach { c ->
-                        Text(
-                            "${c.name} — ${c.phone.ifBlank { "sin teléfono" }}",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    if (c.phone.isNotBlank()) onElegirCliente(c)
+                    if (filtrados.isEmpty()) {
+                        Box(Modifier.fillMaxWidth().height(130.dp), contentAlignment = Alignment.Center) {
+                            Text("No se encontraron clientes", color = Color(0xFF94A3B8))
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            items(filtrados, key = { it.id }) { c ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable(enabled = c.phone.isNotBlank()) { onElegirCliente(c) }
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                ) {
+                                    Text(
+                                        c.name.ifBlank { "Cliente sin nombre" },
+                                        color = Color(0xFF1E293B),
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                    )
+                                    Text(
+                                        c.phone.ifBlank { "Sin teléfono registrado" },
+                                        color = if (c.phone.isNotBlank()) Color(0xFF64748B) else Color(0xFF94A3B8),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
                                 }
-                                .padding(vertical = 6.dp),
-                            color = if (c.phone.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                        )
+                                HorizontalDivider(color = Color(0xFFF1F5F9))
+                            }
+                        }
                     }
                 }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(Modifier.padding(vertical = 14.dp), color = Color(0xFFE2E8F0))
                 OutlinedTextField(
                     value = manual,
                     onValueChange = { manual = it },
@@ -460,21 +539,23 @@ fun WhatsappDestinoDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     placeholder = { Text("987654321 o 51987654321") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = fieldColors,
                 )
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar", color = Color(0xFF475569)) }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { sanitizePhone51(manual)?.let(onEnviarTelefono) },
+                        enabled = sanitizePhone51(manual) != null,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A), contentColor = Color.White),
+                        shape = RoundedCornerShape(12.dp),
+                    ) { Text("Abrir WhatsApp") }
+                }
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    sanitizePhone51(manual)?.let(onEnviarTelefono)
-                },
-                enabled = sanitizePhone51(manual) != null,
-            ) { Text("Abrir WhatsApp") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancelar") }
-        },
-    )
+        }
+    }
 }
 
 @Composable
@@ -484,13 +565,55 @@ fun VistaPreviaReciboDialog(
     clienteNombre: String?,
     clienteDoc: String?,
     whatsappPhone: String,
+    clients: List<ClientRow> = emptyList(),
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     val (fecha, hora) = formatFechaHoraPeru(receipt.fechaMillis)
     val (customerName, customerDocument) = resolveReceiptCustomer(emitido, clienteNombre, clienteDoc)
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var showWhatsappDestination by remember { mutableStateOf(false) }
+    var whatsappBusy by remember { mutableStateOf(false) }
+    var whatsappNotice by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(emitido.qrPayload) {
         qrBitmap = encodeQrBitmap(emitido.qrPayload)
+    }
+
+    fun sendToWhatsapp(phone: String) {
+        if (!context.hasValidatedInternet()) {
+            whatsappNotice = "WhatsApp no está disponible sin conexión."
+            showWhatsappDestination = false
+            return
+        }
+        scope.launch {
+            whatsappBusy = true
+            whatsappNotice = ""
+            runCatching {
+                val pdf = withContext(Dispatchers.IO) {
+                    createReceiptPdfForSharing(context, receipt, emitido, customerName, customerDocument, qrBitmap)
+                }
+                val link = withContext(Dispatchers.IO) {
+                    ReceiptDeliveryApiDataSource(context).requestWhatsappLink(
+                        emitido.numeroCompleto,
+                        customerName,
+                        pdf,
+                    ).getOrThrow()
+                }
+                val phone51 = sanitizePhone51(phone) ?: error("Número de WhatsApp inválido.")
+                openWhatsapp(
+                    context,
+                    phone51,
+                    buildReceiptShareText(receipt, emitido, customerName, customerDocument, link.url),
+                )
+            }.onSuccess {
+                whatsappNotice = "WhatsApp abierto con el comprobante."
+                showWhatsappDestination = false
+            }.onFailure {
+                whatsappNotice = it.message ?: "No se pudo abrir WhatsApp. Verifique su conexión."
+            }
+            whatsappBusy = false
+        }
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -651,7 +774,27 @@ fun VistaPreviaReciboDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 ) {
+                    if (whatsappNotice.isNotBlank()) {
+                        Text(
+                            whatsappNotice,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (whatsappNotice.startsWith("WhatsApp abierto")) Color(0xFF15803D) else Color(0xFFB91C1C),
+                        )
+                    } else Spacer(Modifier.weight(1f))
                     OutlinedButton(onClick = onDismiss) { Text("Cancelar") }
+                    OutlinedButton(
+                        onClick = { showWhatsappDestination = true },
+                        enabled = context.hasValidatedInternet() && !whatsappBusy,
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_whatsapp),
+                            contentDescription = "Enviar por WhatsApp",
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (whatsappBusy) "Preparando..." else "WhatsApp")
+                    }
                     Button(
                         onClick = { /* impresión térmica: integrar en fase siguiente */ },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFfd0505)),
@@ -663,5 +806,14 @@ fun VistaPreviaReciboDialog(
                 }
             }
         }
+    }
+    if (showWhatsappDestination) {
+        WhatsappDestinoDialog(
+            clients = clients,
+            initialPhone = whatsappPhone,
+            onDismiss = { showWhatsappDestination = false },
+            onEnviarTelefono = ::sendToWhatsapp,
+            onElegirCliente = { sendToWhatsapp(it.phone) },
+        )
     }
 }

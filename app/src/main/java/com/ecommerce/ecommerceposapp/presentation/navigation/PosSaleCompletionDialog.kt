@@ -215,23 +215,15 @@ internal fun SaleCompletedDialog(
             }
             ShareMode.Whatsapp -> {
                 val digits = destination.filter(Char::isDigit)
-                if (digits.length < 9 || sharingPdf) return
+                if (digits.length < 9 || sharingPdf || !context.hasValidatedInternet()) {
+                    if (!context.hasValidatedInternet()) notice = "WhatsApp no está disponible sin conexión. Puede usar correo y quedará en cola."
+                    return
+                }
                 scope.launch {
                     sharingPdf = true
-                    var generatedPdf: java.io.File? = null
                     runCatching {
                         val pdf = withContext(Dispatchers.IO) {
                             createReceiptPdfForSharing(context, receipt, issued, clienteNombre, clienteDoc, null)
-                        }
-                        generatedPdf = pdf
-                        if (!context.hasValidatedInternet()) {
-                            OfflineReceiptDeliveryQueue(context).enqueueWhatsapp(
-                                phone = digits,
-                                receiptNumber = issued.numeroCompleto,
-                                customerName = clienteNombre.ifBlank { issued.receptorNombre },
-                                sourcePdf = pdf,
-                            ).getOrThrow()
-                            error("Sin conexión. El comprobante quedó pendiente para WhatsApp y se reintentará al sincronizar tickets.")
                         }
                         val link = withContext(Dispatchers.IO) {
                             ReceiptDeliveryApiDataSource(context).requestWhatsappLink(
@@ -246,28 +238,7 @@ internal fun SaleCompletedDialog(
                     }.onSuccess {
                         notice = "WhatsApp abierto con el comprobante."
                     }.onFailure {
-                        val message = it.message.orEmpty()
-                        val queued = if (message.startsWith("Sin conexión")) null else generatedPdf?.let { pdf ->
-                            OfflineReceiptDeliveryQueue(context).enqueueWhatsapp(
-                                phone = digits,
-                                receiptNumber = issued.numeroCompleto,
-                                customerName = clienteNombre.ifBlank { issued.receptorNombre },
-                                sourcePdf = pdf,
-                            )
-                        }
-                        if (message.startsWith("Sin conexión")) {
-                            notice = message
-                            sharingPdf = false
-                            return@launch
-                        }
-                        notice = if (queued?.isSuccess == true) {
-                            "No se pudo enviar ahora. El comprobante quedó pendiente para WhatsApp."
-                        } else {
-                            it.message ?: "No se pudo abrir WhatsApp con el comprobante."
-                        }
-                        if (queued?.isSuccess == true) {
-                            notice = "No se pudo enviar ahora. El comprobante quedó pendiente para WhatsApp."
-                        }
+                        notice = it.message ?: "No se pudo abrir WhatsApp con el comprobante. Verifique su conexión."
                     }
                     sharingPdf = false
                 }
@@ -277,7 +248,7 @@ internal fun SaleCompletedDialog(
 
     val destinationValid = when (shareMode) {
         ShareMode.Email -> destination.contains('@')
-        ShareMode.Whatsapp -> destination.filter(Char::isDigit).length >= 9
+        ShareMode.Whatsapp -> destination.filter(Char::isDigit).length >= 9 && context.hasValidatedInternet()
     }
 
     Dialog(onDismissRequest = {}, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -329,7 +300,7 @@ internal fun SaleCompletedDialog(
                     }) { shareMode = it; destination = ""; notice = "" }
                     ShareButton(ShareMode.Whatsapp, shareMode, "WhatsApp", {
                         Image(painterResource(R.drawable.ic_whatsapp), contentDescription = "WhatsApp", modifier = Modifier.size(24.dp))
-                    }) { shareMode = it; destination = initialPhone; notice = "" }
+                    }, enabled = context.hasValidatedInternet()) { shareMode = it; destination = initialPhone; notice = "" }
                 }
                 Spacer(Modifier.height(10.dp))
                 when (shareMode) {
@@ -442,6 +413,7 @@ private fun ShareButton(
     selected: ShareMode,
     description: String,
     icon: @Composable (tint: Color) -> Unit,
+    enabled: Boolean = true,
     onSelect: (ShareMode) -> Unit,
 ) {
     Surface(
@@ -449,7 +421,7 @@ private fun ShareButton(
         color = if (mode == selected) Color(0xFFF3F4F6) else Color.White,
         border = BorderStroke(1.dp, if (mode == selected) CompletionBrand else Color.Transparent),
     ) {
-        IconButton(onClick = { onSelect(mode) }) {
+        IconButton(onClick = { onSelect(mode) }, enabled = enabled) {
             icon(if (mode == selected) CompletionBrand else CompletionMuted)
         }
     }

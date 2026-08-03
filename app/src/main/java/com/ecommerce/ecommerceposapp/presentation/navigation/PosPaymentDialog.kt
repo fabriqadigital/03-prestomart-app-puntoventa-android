@@ -129,9 +129,10 @@ internal fun CobrarVentaDialog(
             document = customerDoc.filter(Char::isDigit),
         )
     }
+    val hasCustomerData = selectedClient != null || customerInfo.name.isNotBlank() || customerInfo.document.isNotBlank()
     val customerValid = when (receiptType) {
-        TipoComprobanteEmision.BOLETA -> customerInfo.name.isNotBlank() && customerInfo.document.length == 8
-        TipoComprobanteEmision.FACTURA -> customerInfo.name.isNotBlank() && customerInfo.document.length == 11
+        TipoComprobanteEmision.BOLETA -> !hasCustomerData || (customerInfo.name.isNotBlank() && customerInfo.document.length == 8)
+        TipoComprobanteEmision.FACTURA -> !hasCustomerData || (customerInfo.name.isNotBlank() && customerInfo.document.length == 11)
         TipoComprobanteEmision.SOLO_TICKET -> true
     }
     val canContinue = !processing && customerValid && method != null && (method != PaymentMethod.Cash || received >= total)
@@ -239,17 +240,22 @@ internal fun CobrarVentaDialog(
                         onDocChange = { value ->
                             val maxLength = if (receiptType == TipoComprobanteEmision.FACTURA) 11 else 8
                             val document = value.filter(Char::isDigit).take(maxLength)
+                            val hadSelectedClient = selectedClient != null
                             val matchingClient = clients.firstOrNull {
                                 it.active && it.document.filter(Char::isDigit) == document && document.length == maxLength
                             }
                             selectedClient = matchingClient
                             customerDoc = document
-                            customerName = matchingClient?.let { it.businessName.ifBlank { it.name } }.orEmpty()
+                            customerName = when {
+                                matchingClient != null -> matchingClient.businessName.ifBlank { matchingClient.name }
+                                document.isBlank() && hadSelectedClient -> ""
+                                else -> customerName
+                            }
                             errorText = ""
                         },
                     )
                 }
-                if (!customerValid) {
+                if (hasCustomerData && !customerValid) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         if (receiptType == TipoComprobanteEmision.FACTURA) "Ingrese RUC de 11 digitos y razon social." else "Ingrese DNI de 8 digitos y nombre del cliente.",
@@ -367,52 +373,62 @@ private fun ReceiptCustomerSection(
     var expanded by remember { mutableStateOf(false) }
     val activeClients = remember(clients) { clients.filter { it.active } }
     val isInvoice = receiptType == TipoComprobanteEmision.FACTURA
+    val manualEntry = selectedClient == null && (customerName.isNotBlank() || customerDoc.isNotBlank())
 
     Text("Cliente del comprobante", color = PaymentMuted, fontWeight = FontWeight.SemiBold)
     Spacer(Modifier.height(7.dp))
-    Box(Modifier.fillMaxWidth()) {
-        OutlinedButton(
-            onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth().height(46.dp),
-            shape = RoundedCornerShape(8.dp),
-            border = BorderStroke(1.dp, PaymentBorder),
-        ) {
-            Text(
-                selectedClient?.let { it.businessName.ifBlank { it.name } } ?: "Cliente manual o general",
-                modifier = Modifier.weight(1f),
-                color = PaymentText,
-                maxLines = 1,
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.widthIn(min = 260.dp, max = 420.dp).heightIn(max = 280.dp),
-        ) {
-            DropdownMenuItem(
-                text = { Text("Cliente manual o general") },
-                onClick = {
-                    onClientSelected(null)
-                    expanded = false
-                },
-            )
-            activeClients.forEach { client ->
+    if (!manualEntry) {
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = { expanded = true },
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, PaymentBorder),
+            ) {
+                Text(
+                    selectedClient?.let { it.businessName.ifBlank { it.name } } ?: "Cliente genérico (sin datos)",
+                    modifier = Modifier.weight(1f),
+                    color = PaymentText,
+                    maxLines = 1,
+                )
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.widthIn(min = 260.dp, max = 420.dp).heightIn(max = 280.dp),
+            ) {
                 DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(client.businessName.ifBlank { client.name })
-                            if (client.document.isNotBlank()) Text(client.document, color = PaymentMuted, style = MaterialTheme.typography.bodySmall)
-                        }
-                    },
+                    text = { Text("Cliente genérico (sin datos)") },
                     onClick = {
-                        onClientSelected(client)
+                        onClientSelected(null)
                         expanded = false
                     },
                 )
+                activeClients.forEach { client ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(client.businessName.ifBlank { client.name })
+                                if (client.document.isNotBlank()) Text(client.document, color = PaymentMuted, style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        onClick = {
+                            onClientSelected(client)
+                            expanded = false
+                        },
+                    )
+                }
             }
         }
+        Spacer(Modifier.height(8.dp))
+    } else {
+        Text(
+            "Datos ingresados manualmente. Borre el nombre y documento para volver a seleccionar un cliente.",
+            color = PaymentMuted,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(8.dp))
     }
-    Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = customerDoc,
         onValueChange = onDocChange,
