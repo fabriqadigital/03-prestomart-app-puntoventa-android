@@ -43,6 +43,7 @@ fun CashModuleScreen(
     onCashClosed: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
+    val compact = LocalConfiguration.current.screenWidthDp < 760
 
     LaunchedEffect(session.id) {
         viewModel.load(session)
@@ -54,10 +55,14 @@ fun CashModuleScreen(
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 90.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = if (compact) 90.dp else 104.dp,
+                bottom = 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 16.dp else 24.dp),
         ) {
-            // ── Header turno activo ──────────────────────────────────────────
             item {
                 CashHeaderCard(
                     session = session,
@@ -66,7 +71,12 @@ fun CashModuleScreen(
                 )
             }
 
-            // ── Filtro fecha + tabla flujo ───────────────────────────────────
+            if (!compact) {
+                item {
+                    HorizontalDivider(color = Divider, thickness = 1.dp)
+                }
+            }
+
             item {
                 CashFlowSection(
                     state = state,
@@ -77,6 +87,10 @@ fun CashModuleScreen(
                     onSearchChange = viewModel::setFlowSearch,
                     onRefresh = { viewModel.applyDateFilter() },
                 )
+            }
+
+            if (!compact) {
+                item { Spacer(Modifier.height(8.dp)) }
             }
 
             val filtered = state.flowItems.filter { item ->
@@ -117,9 +131,9 @@ fun CashModuleScreen(
 
             item { Spacer(Modifier.height(80.dp)) }
         }
+
     }
 
-    // ── Dialog cerrar caja ───────────────────────────────────────────────────
     if (state.showCloseDialog) {
         CashCloseDialog(
             summary = state.summary,
@@ -130,7 +144,6 @@ fun CashModuleScreen(
         )
     }
 
-    // ── Dialog movimiento de caja ────────────────────────────────────────────
     if (state.showMovementDialog) {
         CashMovementDialog(
             loading = state.movementLoading,
@@ -141,25 +154,23 @@ fun CashModuleScreen(
     }
 }
 
-// ── Header Card ──────────────────────────────────────────────────────────────
-
 @Composable
 private fun CashHeaderCard(
     session: CashSession,
     onRequestClose: () -> Unit,
     onRequestMovement: () -> Unit,
 ) {
-    // Mismo umbral que la tabla de flujo y el resto de módulos (Proveedores, etc.)
     val compact = LocalConfiguration.current.screenWidthDp < 760
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = Color.White,
-        shadowElevation = 2.dp,
-        tonalElevation = 0.dp,
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+    val content: @Composable () -> Unit = {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (compact) Modifier.padding(horizontal = 18.dp, vertical = 16.dp)
+                    else Modifier.padding(vertical = 4.dp) // aire mínimo, sin bloque de card
+                )
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -200,8 +211,19 @@ private fun CashHeaderCard(
             }
         }
     }
-}
 
+    if (compact) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White,
+            shadowElevation = 2.dp,
+            tonalElevation = 0.dp,
+        ) { content() }
+    } else {
+        content()
+    }
+}
 @Composable
 private fun MovementButton(onClick: () -> Unit, fullWidth: Boolean = false) {
     OutlinedButton(
@@ -246,15 +268,15 @@ private fun CashFlowSection(
     val compact = LocalConfiguration.current.screenWidthDp < 760
     val hasDateFilter = state.filterFrom.isNotBlank() || state.filterTo.isNotBlank()
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = Color.White,
-        shadowElevation = 2.dp,
-        tonalElevation = 0.dp,
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(18.dp)) {
-            // Title row
+    val content: @Composable () -> Unit = {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(
+                    if (compact) Modifier.padding(12.dp)
+                    else Modifier.padding(vertical = 4.dp)
+                )
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -280,65 +302,47 @@ private fun CashFlowSection(
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
 
             if (compact) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    CashFlowDateField(
-                        value = state.filterFrom,
-                        onChange = onFromChange,
-                        label = "Desde",
-                        modifier = Modifier.weight(1f),
-                    )
-                    CashFlowDateField(
-                        value = state.filterTo,
-                        onChange = onToChange,
-                        label = "Hasta",
-                        modifier = Modifier.weight(1f),
-                    )
+                    CashFlowDateField(value = state.filterFrom, onChange = onFromChange, label = "Desde", modifier = Modifier.weight(1f))
+                    CashFlowDateField(value = state.filterTo, onChange = onToChange, label = "Hasta", modifier = Modifier.weight(1f))
                     FilterApplyButton(onClick = onApply)
                     if (hasDateFilter) FilterClearButton(onClick = onClear)
                 }
-
-                Spacer(Modifier.height(10.dp))
-
-                CashFlowSearchField(
-                    value = state.flowSearch,
-                    onChange = onSearchChange,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Spacer(Modifier.height(12.dp))
+                CashFlowSearchField(value = state.flowSearch, onChange = onSearchChange, modifier = Modifier.fillMaxWidth())
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    CashFlowSearchField(
-                        value = state.flowSearch,
-                        onChange = onSearchChange,
-                        modifier = Modifier.weight(1.6f),
-                    )
-                    CashFlowDateField(
-                        value = state.filterFrom,
-                        onChange = onFromChange,
-                        label = "Desde",
-                        modifier = Modifier.weight(0.8f),
-                    )
-                    CashFlowDateField(
-                        value = state.filterTo,
-                        onChange = onToChange,
-                        label = "Hasta",
-                        modifier = Modifier.weight(0.8f),
-                    )
+                    CashFlowSearchField(value = state.flowSearch, onChange = onSearchChange, modifier = Modifier.weight(1.6f))
+                    CashFlowDateField(value = state.filterFrom, onChange = onFromChange, label = "Desde", modifier = Modifier.weight(0.8f))
+                    CashFlowDateField(value = state.filterTo, onChange = onToChange, label = "Hasta", modifier = Modifier.weight(0.8f))
                     FilterApplyButton(onClick = onApply)
                     if (hasDateFilter) FilterClearButton(onClick = onClear)
                 }
             }
         }
+    }
+
+    if (compact) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = Color.White,
+            shadowElevation = 2.dp,
+            tonalElevation = 0.dp,
+        ) { content() }
+    } else {
+        content()
     }
 }
 
@@ -370,6 +374,7 @@ private fun CashFlowSearchField(
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
+        label = { Text("Buscar") },
         placeholder = { Text("Buscar en flujo...", style = MaterialTheme.typography.bodySmall) },
         modifier = modifier,
         singleLine = true,
@@ -449,7 +454,6 @@ private fun CashFlowTable(items: List<CashFlowItem>) {
                 }
             }
 
-            // ── Paginación (idéntica a Proveedores: sin divisor extra antes) ───
             val paginationInfo: @Composable () -> Unit = {
                 val from = if (items.isEmpty()) 0 else currentPage * pageSize + 1
                 val to = minOf(items.size, (currentPage + 1) * pageSize)

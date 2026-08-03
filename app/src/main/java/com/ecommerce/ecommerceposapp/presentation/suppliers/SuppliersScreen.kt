@@ -58,6 +58,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -78,6 +79,11 @@ private val DividerColor = Color(0xFFE2E8F0)
 private val SurfaceMutedLocal = Color(0xFFF1F5F9)
 private val BorderDefaultLocal = Color(0xFFCBD5E1)
 
+private fun isValidEmail(value: String): Boolean {
+    if (value.isBlank()) return true
+    val regex = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
+    return regex.matches(value.trim())
+}
 @Composable
 fun SuppliersCrudScreen(vm: SuppliersViewModel) {
     val state by vm.uiState.collectAsState()
@@ -431,6 +437,8 @@ private fun SupplierAdvancedEditorView(
     var banco by remember(initial) { mutableStateOf(initial.banco) }
     var cuenta by remember(initial) { mutableStateOf(initial.cuenta) }
     var cci by remember(initial) { mutableStateOf(initial.cci) }
+    var correoError by remember { mutableStateOf(false) }
+    var correoContactoError by remember { mutableStateOf(false) }
     // Fecha de registro: si el proveedor es nuevo (viene vacía), se autocompleta con la fecha actual
     val fechaRegistro = remember(initial) {
         initial.fechaRegistro.ifBlank {
@@ -442,9 +450,6 @@ private fun SupplierAdvancedEditorView(
 
     val compactEditor = LocalConfiguration.current.screenWidthDp < 900
 
-    // Solo los campos marcados con * son obligatorios: Código, Razón social y RUC (11 dígitos).
-    // El resto (correo, teléfono, dirección, contacto, banco, cuenta, cci, observaciones) son opcionales
-    // y no deben bloquear el guardado.
     val canSaveSupplier = codigo.isNotBlank() &&
             name.isNotBlank() &&
             ruc.length == 11
@@ -477,6 +482,8 @@ private fun SupplierAdvancedEditorView(
         var hasError = false
         if (codigo.isBlank()) { codigoError = true; hasError = true }
         if (ruc.length != 11) { rucError = true; hasError = true }
+        if (!isValidEmail(correo)) { correoError = true; hasError = true }
+        if (!isValidEmail(correoContacto)) { correoContactoError = true; hasError = true }
         if (!hasError) onSave(draftSupplier())
     }
 
@@ -529,8 +536,27 @@ private fun SupplierAdvancedEditorView(
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
-                        OutlinedTextField(correo, { correo = it }, label = { Text("Correo") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(phone, { phone = it }, label = { Text("Teléfono") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(
+                            value = correo,
+                            onValueChange = { correo = it; correoError = false },
+                            label = { Text("Correo") },
+                            isError = correoError,
+                            supportingText = {
+                                if (correoError) Text("Ingresa un correo válido, ej: nombre@dominio.com", color = MaterialTheme.colorScheme.error)
+                            },
+                            modifier = Modifier.weight(1f).onFocusChanged {
+                                if (!it.isFocused && correo.isNotBlank() && !isValidEmail(correo)) correoError = true
+                            },
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = phone,
+                            onValueChange = { input -> phone = input.filter { it.isDigit() } },
+                            label = { Text("Teléfono") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
                         OutlinedTextField(direccion, { direccion = it }, label = { Text("Dirección") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
 
@@ -538,8 +564,27 @@ private fun SupplierAdvancedEditorView(
                     FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 2, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(personaContacto, { personaContacto = it }, label = { Text("Persona de contacto") }, modifier = Modifier.weight(1f), singleLine = true)
                         OutlinedTextField(cargoContacto, { cargoContacto = it }, label = { Text("Cargo de contacto") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(telefonoContacto, { telefonoContacto = it }, label = { Text("Teléfono de contacto") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(correoContacto, { correoContacto = it }, label = { Text("Correo de contacto") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(
+                            value = telefonoContacto,
+                            onValueChange = { input -> telefonoContacto = input.filter { it.isDigit() } },
+                            label = { Text("Teléfono de contacto") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        OutlinedTextField(
+                            value = correoContacto,
+                            onValueChange = { correoContacto = it; correoContactoError = false },
+                            label = { Text("Correo de contacto") },
+                            isError = correoContactoError,
+                            supportingText = {
+                                if (correoContactoError) Text("Ingresa un correo válido, ej: nombre@dominio.com", color = MaterialTheme.colorScheme.error)
+                            },
+                            modifier = Modifier.weight(1f).onFocusChanged {
+                                if (!it.isFocused && correo.isNotBlank() && !isValidEmail(correo)) correoError = true
+                            },
+                            singleLine = true,
+                        )
                     }
 
                     Text("Calificación y estado", fontWeight = FontWeight.Bold)

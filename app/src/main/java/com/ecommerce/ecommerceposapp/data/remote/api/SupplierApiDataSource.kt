@@ -102,25 +102,28 @@ class SupplierApiDataSource(context: Context) {
         put("cci", row.cci.trim())
     }
 
+    private fun JSONObject.optStringSafe(key: String, fallback: String = ""): String =
+        if (isNull(key)) fallback else optString(key, fallback)
+
     private fun parseSupplier(o: JSONObject) = SupplierRow(
         id = o.optLong("id_proveedor"),
-        codigoProveedor = o.optString("codigo_proveedor", ""),
-        businessName = o.optString("razon_social", ""),
-        ruc = o.optString("ruc", ""),
-        correo = o.optString("correo", ""),
-        phone = o.optString("telefono", ""),
-        direccion = o.optString("direccion", ""),
-        personaContacto = o.optString("persona_contacto", ""),
-        cargoContacto = o.optString("cargo_contacto", ""),
-        telefonoContacto = o.optString("telefono_contacto", ""),
-        correoContacto = o.optString("correo_contacto", ""),
+        codigoProveedor = o.optStringSafe("codigo_proveedor"),
+        businessName = o.optStringSafe("razon_social"),
+        ruc = o.optStringSafe("ruc"),
+        correo = o.optStringSafe("correo"),
+        phone = o.optStringSafe("telefono"),
+        direccion = o.optStringSafe("direccion"),
+        personaContacto = o.optStringSafe("persona_contacto"),
+        cargoContacto = o.optStringSafe("cargo_contacto"),
+        telefonoContacto = o.optStringSafe("telefono_contacto"),
+        correoContacto = o.optStringSafe("correo_contacto"),
         calificacion = o.optInt("calificacion", 0),
-        estado = o.optString("estado", "Activo"),
-        fechaRegistro = o.optString("fecha_registro", ""),
-        observaciones = o.optString("observaciones", ""),
-        banco = o.optString("banco", ""),
-        cuenta = o.optString("cuenta", ""),
-        cci = o.optString("cci", ""),
-        active = o.optString("estado", "Activo") == "Activo",
+        estado = o.optStringSafe("estado", "Activo"),
+        fechaRegistro = o.optStringSafe("fecha_registro"),
+        observaciones = o.optStringSafe("observaciones"),
+        banco = o.optStringSafe("banco"),
+        cuenta = o.optStringSafe("cuenta"),
+        cci = o.optStringSafe("cci"),
+        active = o.optStringSafe("estado", "Activo") == "Activo",
     )
 }
