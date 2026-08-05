@@ -3,6 +3,12 @@ package com.ecommerce.ecommerceposapp.util
 import android.content.Context
 import android.hardware.input.InputManager
 import android.view.InputDevice
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+
 
 /**
  * Detecta si hay un escáner físico conectado (USB o Bluetooth en modo HID).
@@ -28,4 +34,36 @@ object ScannerDetector {
         android.util.Log.d("ScannerDetector", "Resultado final: $result")
         return result
     }
+}
+
+/**
+ * Observa dinámicamente la presencia de un escáner físico (HID) usando
+ * InputManager.InputDeviceListener. A diferencia de isPhysicalScannerConnected(),
+ * que es una foto fija, esto se actualiza automáticamente cuando el
+ * dispositivo se conecta o desconecta mientras la pantalla está abierta.
+ */
+@Composable
+fun rememberPhysicalScannerConnected(context: Context): State<Boolean> {
+    val connected = remember { mutableStateOf(ScannerDetector.isPhysicalScannerConnected(context)) }
+
+    DisposableEffect(context) {
+        val inputManager = context.getSystemService(Context.INPUT_SERVICE) as InputManager
+        val listener = object : InputManager.InputDeviceListener {
+            override fun onInputDeviceAdded(deviceId: Int) {
+                connected.value = ScannerDetector.isPhysicalScannerConnected(context)
+            }
+
+            override fun onInputDeviceRemoved(deviceId: Int) {
+                connected.value = ScannerDetector.isPhysicalScannerConnected(context)
+            }
+
+            override fun onInputDeviceChanged(deviceId: Int) {
+                connected.value = ScannerDetector.isPhysicalScannerConnected(context)
+            }
+        }
+        inputManager.registerInputDeviceListener(listener, null)
+        onDispose { inputManager.unregisterInputDeviceListener(listener) }
+    }
+
+    return connected
 }

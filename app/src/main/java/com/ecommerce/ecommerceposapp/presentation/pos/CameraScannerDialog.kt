@@ -182,6 +182,10 @@ internal fun CameraScannerDialog(
                                             if (!code.isNullOrBlank() &&
                                                 processed.compareAndSet(false, true)
                                             ) {
+                                                android.util.Log.d(
+                                                    "BarcodeSearch",
+                                                    "CameraScanner detected: rawValue='$code' (length=${code.length})"
+                                                )
                                                 analysis.clearAnalyzer()
                                                 provider.unbindAll()
                                                 onBarcodeDetected(code)
