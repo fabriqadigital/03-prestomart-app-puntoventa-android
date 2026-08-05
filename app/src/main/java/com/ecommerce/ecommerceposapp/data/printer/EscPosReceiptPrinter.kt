@@ -55,6 +55,7 @@ class EscPosReceiptPrinter(private val context: Context) {
             socket.outputStream.use { output ->
                 output.write(buildTicket(receipt, issued, customerName, customerDocument))
                 output.flush()
+                Thread.sleep(PRINT_DRAIN_DELAY_MS)
             }
         } finally {
             runCatching { socket.close() }
@@ -112,10 +113,11 @@ class EscPosReceiptPrinter(private val context: Context) {
             qr(it)
         }
         line("")
-        line("Gracias por su compra")
-        line("")
-        line("")
-        command(0x1D, 0x56, 0x00) // Corte total
+        bold(true)
+        line("Gracias por su compra / Vuelva pronto")
+        bold(false)
+        command(0x1B, 0x64, 0x05)
+        command(0x1D, 0x56, 0x42, 0x00)
     }.toByteArray()
 
     private fun ByteArrayOutputStream.line(value: String) {
@@ -166,6 +168,7 @@ class EscPosReceiptPrinter(private val context: Context) {
 
     private companion object {
         const val COLUMNS = 48
+        const val PRINT_DRAIN_DELAY_MS = 1_200L
         val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     }
 }
