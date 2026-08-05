@@ -100,6 +100,8 @@ import com.ecommerce.ecommerceposapp.ui.theme.TextPrimary
 import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 import com.ecommerce.ecommerceposapp.ui.theme.TextTertiary
 import kotlinx.coroutines.delay
+import com.ecommerce.ecommerceposapp.util.rememberPhysicalScannerConnected
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ONBOARDING STEPS  (sin cambios estructurales, solo ajuste de colores)
@@ -196,6 +198,18 @@ private fun SetupStepRow(
     }
 }
 
+private const val MIN_CODE_MATCH_LENGTH = 6
+
+private fun findExactProductMatch(products: List<ProductItem>, scannedCode: String): ProductItem? {
+    return products.firstOrNull { p ->
+        val barcodeMatch = p.barcode.isNotBlank() && p.barcode.equals(scannedCode, ignoreCase = false)
+        val codeMatch = p.code.isNotBlank() &&
+                p.code.equals(scannedCode, ignoreCase = false) &&
+                scannedCode.length >= MIN_CODE_MATCH_LENGTH
+        codeMatch || barcodeMatch
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  CATALOG PANE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,16 +232,25 @@ internal fun CatalogPane(
     val context = LocalContext.current
     var showCameraScanner by remember { mutableStateOf(false) }
 
+    val physicalScannerConnected by rememberPhysicalScannerConnected(context)
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(physicalScannerConnected) {
+        if (physicalScannerConnected) {
+            scanFocusRequester.requestFocus()
+        } else {
+            scanMode = false
+        }
+    }
+
     fun tryProcessScan(rawCode: String) {
         val scannedCode = rawCode.trim()
         if (scannedCode.isBlank() || scannedCode == lastProcessedScan) return
-        val product = state.products.firstOrNull {
-            (it.code.isNotBlank() && it.code.equals(scannedCode, ignoreCase = true)) ||
-                    (it.barcode.isNotBlank() && it.barcode.equals(scannedCode, ignoreCase = true))
-        }
+
+        val product = findExactProductMatch(state.products, scannedCode)
         lastProcessedScan = scannedCode
         when {
-            product == null -> onScanMessage("Producto no encontrado en el sistema")
+            product == null -> onScanMessage("Producto no encontrado: \"$scannedCode\"")
             product.stock <= 0.0 -> onScanMessage("Producto sin stock disponible")
             else -> onAddToCart(product)
         }
@@ -236,16 +259,20 @@ internal fun CatalogPane(
     }
 
     LaunchedEffect(state.search, state.products) {
+        if (scanMode) return@LaunchedEffect
+
         val scannedCode = state.search.trim()
         if (scannedCode.isBlank()) {
             lastProcessedScan = null
             return@LaunchedEffect
         }
         if (scannedCode == lastProcessedScan) return@LaunchedEffect
-        val exactProduct = state.products.firstOrNull {
-            (it.code.isNotBlank() && it.code.equals(scannedCode, ignoreCase = true)) ||
-                (it.barcode.isNotBlank() && it.barcode.equals(scannedCode, ignoreCase = true))
-        }
+
+        delay(200)
+
+        if (state.search.trim() != scannedCode) return@LaunchedEffect
+
+        val exactProduct = findExactProductMatch(state.products, scannedCode)
         if (exactProduct != null) {
             lastProcessedScan = scannedCode
             if (exactProduct.stock > 0.0) {
@@ -254,6 +281,10 @@ internal fun CatalogPane(
                 onScanMessage("Producto sin stock disponible")
             }
             onSearch("")
+
+            if (physicalScannerConnected) {
+                scanMode = true
+            }
         }
     }
 
@@ -266,19 +297,27 @@ internal fun CatalogPane(
     LaunchedEffect(scanMode) {
         if (scanMode) {
             scanFocusRequester.requestFocus()
+            keyboardController?.hide()
             scanBuffer = ""
+            lastProcessedScan = null
         } else {
             lastProcessedScan = null
         }
     }
 
+    LaunchedEffect(scanMode, state.products) {
+        if (scanMode) {
+            scanFocusRequester.requestFocus()
+        }
+    }
+
     val products = state.products.filter {
         (state.selectedCategoryId == null || it.categoryId == state.selectedCategoryId) &&
-            (state.selectedSubcategoryId == null || it.subcategoryId == state.selectedSubcategoryId) &&
-            (state.search.isBlank() ||
-                it.name.contains(state.search, ignoreCase = true) ||
-                (it.code.isNotBlank() && it.code.contains(state.search, ignoreCase = true)) ||
-                (it.barcode.isNotBlank() && it.barcode.contains(state.search, ignoreCase = true)))
+                (state.selectedSubcategoryId == null || it.subcategoryId == state.selectedSubcategoryId) &&
+                (state.search.isBlank() ||
+                        it.name.contains(state.search, ignoreCase = true) ||
+                        (it.code.isNotBlank() && it.code.contains(state.search, ignoreCase = true)) ||
+                        (it.barcode.isNotBlank() && it.barcode.contains(state.search, ignoreCase = true)))
     }
 
     val visibleSubcategories = state.subcategories.filter { it.categoryId == state.selectedCategoryId }
@@ -299,7 +338,13 @@ internal fun CatalogPane(
         val searchField: @Composable (Modifier) -> Unit = { fieldMod ->
             OutlinedTextField(
                 value       = if (scanMode) scanBuffer else state.search,
-                onValueChange = { if (scanMode) scanBuffer = if (it.length > 14) it.takeLast(14) else it  else { onSearch(it)}},
+                onValueChange = { v ->
+                    if (scanMode) {
+                        scanBuffer = if (v.length > 50) v.takeLast(50) else v
+                    } else {
+                        onSearch(v)
+                    }
+                },
                 placeholder = {
                     Text(
                         if (scanMode) "Escanear código de barras..." else "Buscar producto o código...",
@@ -353,7 +398,7 @@ internal fun CatalogPane(
                     onClick = {
                         when {
                             scanMode -> { scanMode = false; onSearch("") }
-                            ScannerDetector.isPhysicalScannerConnected(context) -> scanMode = true
+                            physicalScannerConnected -> scanMode = true
                             else -> showCameraScanner = true
                         }
                     },
@@ -592,7 +637,7 @@ private fun ProductSaleCard(
                     ) {
                         Icon(
                             imageVector = if (product.featuredInPos) Icons.Filled.Star
-                                          else Icons.Outlined.StarBorder,
+                            else Icons.Outlined.StarBorder,
                             contentDescription = if (product.featuredInPos)
                                 "Quitar de destacados" else "Destacar producto",
                             tint     = BrandRed,
