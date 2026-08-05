@@ -53,8 +53,10 @@ class EscPosReceiptPrinter(private val context: Context) {
         try {
             socket.connect()
             socket.outputStream.use { output ->
-                output.write(buildTicket(receipt, issued, customerName, customerDocument))
-                output.flush()
+                EscPosBluetoothWriter.writePaced(
+                    output = output,
+                    payload = buildTicket(receipt, issued, customerName, customerDocument),
+                )
                 Thread.sleep(PRINT_DRAIN_DELAY_MS)
             }
         } finally {
