@@ -137,7 +137,7 @@ class PosViewModel(
         _uiState.update {
             it.copy(
                 cart = current,
-                message = "${product.name} agregado al carrito. Cantidad: $nextQuantity",
+                message = "Producto agregado",
             )
         }
     }
@@ -153,7 +153,7 @@ class PosViewModel(
                     cart = it.cart.map { row ->
                         if (row.productId == line.productId) row.copy(quantity = nextQuantity) else row
                     },
-                    message = "${line.productName} agregado al carrito. Cantidad: $nextQuantity",
+                    message = "Producto agregado",
                 )
             }
         }

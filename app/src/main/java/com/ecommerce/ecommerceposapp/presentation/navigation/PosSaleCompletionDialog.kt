@@ -334,7 +334,7 @@ internal fun SaleCompletedDialog(
                 }
                 Spacer(Modifier.height(22.dp))
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    val compact = maxWidth < 360.dp
+                    val compact = maxWidth < 420.dp
                     if (compact) {
                         Column(Modifier.fillMaxWidth()) {
                             PrintButton(onPrint, Modifier.fillMaxWidth())

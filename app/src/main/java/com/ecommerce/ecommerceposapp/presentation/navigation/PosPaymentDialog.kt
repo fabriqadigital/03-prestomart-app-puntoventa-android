@@ -268,11 +268,14 @@ internal fun CobrarVentaDialog(
                 if (step == PaymentStep.Methods) {
                     PaymentMethodSelection(onSelect = ::selectMethod)
                     Spacer(Modifier.height(24.dp))
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.align(Alignment.End).width(140.dp).height(50.dp),
-                        shape = RoundedCornerShape(8.dp),
-                    ) { Text("Cancelar") }
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = if (maxWidth < 360.dp) Modifier.fillMaxWidth().height(50.dp)
+                            else Modifier.align(Alignment.CenterEnd).width(140.dp).height(50.dp),
+                            shape = RoundedCornerShape(8.dp),
+                        ) { Text("Cancelar") }
+                    }
                 } else {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                         TextButton(
@@ -307,21 +310,42 @@ internal fun CobrarVentaDialog(
                         Text(errorText, color = PaymentBrand, style = MaterialTheme.typography.bodySmall)
                     }
                     Spacer(Modifier.height(24.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            enabled = !processing,
-                            modifier = Modifier.width(130.dp).height(50.dp),
-                            shape = RoundedCornerShape(8.dp),
-                        ) { Text("Cancelar") }
-                        Spacer(Modifier.width(10.dp))
-                        Button(
-                            onClick = ::confirmPayment,
-                            enabled = canContinue,
-                            modifier = Modifier.width(150.dp).height(50.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = PaymentBrand, contentColor = Color.White),
-                        ) { Text(if (processing) "Procesando..." else "Continuar") }
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        if (maxWidth < 360.dp) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Button(
+                                    onClick = ::confirmPayment,
+                                    enabled = canContinue,
+                                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = PaymentBrand, contentColor = Color.White),
+                                ) { Text(if (processing) "Procesando..." else "Continuar") }
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedButton(
+                                    onClick = onDismiss,
+                                    enabled = !processing,
+                                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                ) { Text("Cancelar") }
+                            }
+                        } else {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                OutlinedButton(
+                                    onClick = onDismiss,
+                                    enabled = !processing,
+                                    modifier = Modifier.width(130.dp).height(50.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                ) { Text("Cancelar") }
+                                Spacer(Modifier.width(10.dp))
+                                Button(
+                                    onClick = ::confirmPayment,
+                                    enabled = canContinue,
+                                    modifier = Modifier.width(150.dp).height(50.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = PaymentBrand, contentColor = Color.White),
+                                ) { Text(if (processing) "Procesando..." else "Continuar") }
+                            }
+                        }
                     }
                 }
             }
@@ -337,17 +361,19 @@ private fun ReceiptTypeSelector(
 ) {
     Text("Comprobante", color = PaymentMuted, fontWeight = FontWeight.SemiBold)
     Spacer(Modifier.height(7.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(
+    val options = listOf(
             TipoComprobanteEmision.SOLO_TICKET to "Ticket",
             TipoComprobanteEmision.BOLETA to "Boleta",
             TipoComprobanteEmision.FACTURA to "Factura",
-        ).forEach { (type, label) ->
+        )
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val compact = maxWidth < 330.dp
+        val optionButton: @Composable (TipoComprobanteEmision, String, Modifier) -> Unit = { type, label, modifier ->
             val active = selected == type
             OutlinedButton(
                 onClick = { onSelect(type) },
                 enabled = online || type == TipoComprobanteEmision.SOLO_TICKET,
-                modifier = Modifier.weight(1f).height(46.dp),
+                modifier = modifier.height(46.dp),
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, if (active) PaymentBrand else PaymentBorder),
                 colors = ButtonDefaults.outlinedButtonColors(
@@ -355,6 +381,15 @@ private fun ReceiptTypeSelector(
                     contentColor = if (active) PaymentBrand else PaymentMuted,
                 ),
             ) { Text(label, maxLines = 1) }
+        }
+        if (compact) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                options.forEach { (type, label) -> optionButton(type, label, Modifier.fillMaxWidth()) }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                options.forEach { (type, label) -> optionButton(type, label, Modifier.weight(1f)) }
+            }
         }
     }
 }
@@ -452,7 +487,16 @@ private fun ReceiptCustomerSection(
 @Composable
 private fun PaymentMethodSelection(onSelect: (PaymentMethod) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val columns = if (maxWidth >= 620.dp) 4 else 2
+        val columns = when {
+            maxWidth >= 620.dp -> 4
+            maxWidth >= 250.dp -> 2
+            else -> 1
+        }
+        val itemWidth = when (columns) {
+            4 -> 150.dp
+            2 -> (maxWidth - 12.dp) / 2
+            else -> maxWidth
+        }
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             maxItemsInEachRow = columns,
@@ -462,7 +506,7 @@ private fun PaymentMethodSelection(onSelect: (PaymentMethod) -> Unit) {
             PaymentMethod.entries.forEach { method ->
                 Surface(
                     modifier = Modifier
-                        .width(if (columns == 4) 150.dp else 138.dp)
+                        .width(itemWidth)
                         .height(122.dp)
                         .clickable { onSelect(method) },
                     shape = RoundedCornerShape(8.dp),

@@ -1,5 +1,6 @@
 package com.ecommerce.ecommerceposapp.presentation.pos
 
+import android.Manifest
 import android.content.Intent
 import android.content.Context
 import android.graphics.Bitmap
@@ -7,13 +8,19 @@ import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -70,6 +77,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.data.remote.api.ReceiptDeliveryApiDataSource
+import com.ecommerce.ecommerceposapp.data.printer.EscPosReceiptPrinter
 import com.ecommerce.ecommerceposapp.R
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
@@ -586,6 +594,7 @@ fun VistaPreviaReciboDialog(
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var showWhatsappDestination by remember { mutableStateOf(false) }
     var whatsappBusy by remember { mutableStateOf(false) }
+    var printingTicket by remember { mutableStateOf(false) }
     var whatsappNotice by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     LaunchedEffect(emitido.qrPayload) {
@@ -625,6 +634,35 @@ fun VistaPreviaReciboDialog(
                 whatsappNotice = it.message ?: "No se pudo abrir WhatsApp. Verifique su conexión."
             }
             whatsappBusy = false
+        }
+    }
+
+    fun printTicket() {
+        if (printingTicket) return
+        scope.launch {
+            printingTicket = true
+            whatsappNotice = ""
+            val result = withContext(Dispatchers.IO) {
+                EscPosReceiptPrinter(context).print(receipt, emitido, customerName, customerDocument)
+            }
+            whatsappNotice = result.getOrElse { it.message ?: "No se pudo imprimir el ticket." }
+            printingTicket = false
+        }
+    }
+
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) printTicket() else whatsappNotice = "Autorice Dispositivos cercanos para imprimir."
+    }
+
+    fun requestPrint() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) {
+            bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            printTicket()
         }
     }
 
@@ -781,39 +819,57 @@ fun VistaPreviaReciboDialog(
                         Text("Gracias por su compra / Vuelva pronto", fontFamily = FontFamily.Monospace, fontSize = 8.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                     }
                 }
-                Row(
-                    Modifier.fillMaxWidth().padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                ) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
                     if (whatsappNotice.isNotBlank()) {
                         Text(
                             whatsappNotice,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (whatsappNotice.startsWith("WhatsApp abierto")) Color(0xFF15803D) else Color(0xFFB91C1C),
+                            color = if (
+                                whatsappNotice.startsWith("WhatsApp abierto") ||
+                                whatsappNotice.startsWith("Ticket enviado")
+                            ) Color(0xFF15803D) else Color(0xFFB91C1C),
                         )
-                    } else Spacer(Modifier.weight(1f))
-                    OutlinedButton(onClick = onDismiss) { Text("Cancelar") }
-                    OutlinedButton(
-                        onClick = { showWhatsappDestination = true },
-                        enabled = context.hasValidatedInternet() && !whatsappBusy,
-                    ) {
-                        Image(
-                            painter = painterResource(R.drawable.ic_whatsapp),
-                            contentDescription = "Enviar por WhatsApp",
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (whatsappBusy) "Preparando..." else "WhatsApp")
+                        Spacer(Modifier.height(8.dp))
                     }
-                    Button(
-                        onClick = { /* impresión térmica: integrar en fase siguiente */ },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFfd0505)),
-                    ) {
-                        Icon(Icons.Filled.Print, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Imprimir")
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val compact = maxWidth < 420.dp
+                        val whatsappButton: @Composable (Modifier) -> Unit = { modifier ->
+                            OutlinedButton(
+                                onClick = { showWhatsappDestination = true },
+                                enabled = context.hasValidatedInternet() && !whatsappBusy,
+                                modifier = modifier,
+                            ) {
+                                Image(painterResource(R.drawable.ic_whatsapp), contentDescription = "Enviar por WhatsApp", modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (whatsappBusy) "Preparando..." else "WhatsApp", maxLines = 1)
+                            }
+                        }
+                        val printButton: @Composable (Modifier) -> Unit = { modifier ->
+                            Button(
+                                onClick = ::requestPrint,
+                                enabled = !printingTicket,
+                                modifier = modifier,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFfd0505)),
+                            ) {
+                                Icon(Icons.Filled.Print, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (printingTicket) "Imprimiendo..." else "Imprimir", maxLines = 1)
+                            }
+                        }
+                        if (compact) {
+                            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                printButton(Modifier.fillMaxWidth().height(48.dp))
+                                whatsappButton(Modifier.fillMaxWidth().height(48.dp))
+                                OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Cancelar") }
+                            }
+                        } else {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                                OutlinedButton(onClick = onDismiss) { Text("Cancelar") }
+                                whatsappButton(Modifier)
+                                printButton(Modifier)
+                            }
+                        }
                     }
                 }
             }
