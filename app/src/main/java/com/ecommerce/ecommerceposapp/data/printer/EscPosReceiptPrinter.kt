@@ -72,10 +72,10 @@ class EscPosReceiptPrinter(private val context: Context) {
         command(0x1B, 0x40) // Inicializar
         align(1)
         bold(true)
-        line(issued.emisorRazonSocial.ifBlank { "EMISOR" })
+        wrappedLine(issued.emisorRazonSocial.ifBlank { "EMISOR" })
         bold(false)
         line("RUC: ${issued.emisorRuc}")
-        issued.emisorDireccion.takeIf(String::isNotBlank)?.let { line(it) }
+        issued.emisorDireccion.takeIf(String::isNotBlank)?.let { wrappedLine(it) }
         separator()
         bold(true)
         line(receiptTitle(issued.tipoSunat))
@@ -87,12 +87,14 @@ class EscPosReceiptPrinter(private val context: Context) {
             timeZone = TimeZone.getTimeZone("America/Lima")
         }
         line("Emision: ${dateFormat.format(Date(receipt.fechaMillis))}")
-        if (customerName.isNotBlank()) line("Cliente: $customerName")
-        if (customerDocument.isNotBlank()) line("Documento: $customerDocument")
-        line("Cajero: ${receipt.vendedorNombre}")
+        if (customerName.isNotBlank()) wrappedLine("Cliente: $customerName")
+        if (customerDocument.isNotBlank()) wrappedLine("Documento: $customerDocument")
+        wrappedLine("Cajero: ${receipt.vendedorNombre}")
+        separator()
+        line(columns("CANT. / PRECIO", "IMPORTE"))
         separator()
         receipt.lines.forEach { item ->
-            line(item.productName)
+            wrappedLine(item.productName)
             val left = "${item.quantity} x S/ ${money(item.unitPrice)}"
             line(columns(left, "S/ ${money(item.lineTotal)}"))
         }
@@ -100,14 +102,12 @@ class EscPosReceiptPrinter(private val context: Context) {
         line(columns("OP. GRAVADAS", "S/ ${money(receipt.subtotal)}"))
         line(columns("IGV (18%)", "S/ ${money(receipt.igv)}"))
         bold(true)
-        doubleSize(true)
-        line(columns("TOTAL", "S/ ${money(receipt.total)}", 24))
-        doubleSize(false)
+        line(columns("TOTAL", "S/ ${money(receipt.total)}"))
         bold(false)
         line("Pago: ${paymentLabel(receipt.tipoPago)}")
         line(columns("Recibido", "S/ ${money(receipt.montoRecibido)}"))
         line(columns("Vuelto", "S/ ${money(receipt.vuelto)}"))
-        issued.totalLetras.takeIf(String::isNotBlank)?.let { line(it) }
+        issued.totalLetras.takeIf(String::isNotBlank)?.let { wrappedLine(it) }
         issued.qrPayload.takeIf(String::isNotBlank)?.let {
             align(1)
             qr(it)
@@ -125,10 +125,35 @@ class EscPosReceiptPrinter(private val context: Context) {
         write('\n'.code)
     }
 
+    private fun ByteArrayOutputStream.wrappedLine(value: String) {
+        val words = ascii(value).trim().split(Regex("\\s+")).filter(String::isNotBlank)
+        if (words.isEmpty()) {
+            line("")
+            return
+        }
+        var current = ""
+        words.forEach { word ->
+            var remaining = word
+            if (current.isNotEmpty() && current.length + 1 + remaining.length > COLUMNS) {
+                line(current)
+                current = ""
+            }
+            while (remaining.length > COLUMNS) {
+                if (current.isNotEmpty()) {
+                    line(current)
+                    current = ""
+                }
+                line(remaining.take(COLUMNS))
+                remaining = remaining.drop(COLUMNS)
+            }
+            if (remaining.isNotEmpty()) current = if (current.isEmpty()) remaining else "$current $remaining"
+        }
+        if (current.isNotEmpty()) line(current)
+    }
+
     private fun ByteArrayOutputStream.separator() = line("-".repeat(COLUMNS))
     private fun ByteArrayOutputStream.align(value: Int) = command(0x1B, 0x61, value)
     private fun ByteArrayOutputStream.bold(enabled: Boolean) = command(0x1B, 0x45, if (enabled) 1 else 0)
-    private fun ByteArrayOutputStream.doubleSize(enabled: Boolean) = command(0x1D, 0x21, if (enabled) 0x11 else 0)
     private fun ByteArrayOutputStream.command(vararg values: Int) = write(values.map(Int::toByte).toByteArray())
 
     private fun ByteArrayOutputStream.qr(payload: String) {
