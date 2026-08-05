@@ -1,11 +1,16 @@
 ﻿package com.ecommerce.ecommerceposapp.presentation.navigation
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.os.SystemClock
 import android.util.Base64
+import android.util.Log
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -99,6 +104,7 @@ import androidx.compose.ui.res.painterResource
 import com.ecommerce.ecommerceposapp.R
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -134,6 +140,7 @@ import com.ecommerce.ecommerceposapp.presentation.suppliers.SuppliersViewModel
 import com.ecommerce.ecommerceposapp.presentation.users.UsersCrudScreen
 import com.ecommerce.ecommerceposapp.presentation.users.UsersViewModel
 import com.ecommerce.ecommerceposapp.presentation.pos.PosViewModel
+import com.ecommerce.ecommerceposapp.util.DataWedgeScanner
 import com.ecommerce.ecommerceposapp.presentation.sales.SalesHistoryScreen
 import com.ecommerce.ecommerceposapp.presentation.sync.SyncViewModel
 import com.ecommerce.ecommerceposapp.presentation.cash.CashModuleScreen
@@ -809,6 +816,75 @@ private fun PosScreen(
         onDispose { connectivity.unregisterNetworkCallback(callback) }
     }
 
+    var dataWedgeSequence by remember { mutableStateOf(0) }
+    var dataWedgeCode by remember { mutableStateOf("") }
+    var lastDataWedgeCode by remember { mutableStateOf("") }
+    var lastDataWedgeTime by remember { mutableStateOf(0L) }
+
+    DisposableEffect(context, selectedModule) {
+        if (selectedModule != "Punto de venta") {
+            onDispose { }
+        } else {
+            val filter = IntentFilter(DataWedgeScanner.SCAN_ACTION).apply {
+                addCategory(Intent.CATEGORY_DEFAULT)
+            }
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(c: Context?, intent: Intent?) {
+                    // LOG: TODO broadcast recibido, incluso si no es un escaneo válido.
+                    Log.d(
+                        "DataWedge",
+                        "Broadcast recibido: action=${intent?.action} data=${intent?.dataString} " +
+                            "extras=${intent?.extras?.keySet()}",
+                    )
+                    val code = DataWedgeScanner.extractBarcode(intent)
+                    if (code == null) {
+                        Log.d("DataWedge", "Broadcast ignorado: action no es SCAN o falta data_string.")
+                        return
+                    }
+                    Log.d("DataWedge", "Barcode recibido desde DataWedge: $code")
+                    val now = SystemClock.elapsedRealtime()
+                    if (code == lastDataWedgeCode && now - lastDataWedgeTime < DataWedgeScanner.DATAWEDGE_DEDUP_MS) {
+                        Log.d("DataWedge", "Escaneo duplicado ignorado (ventana 2s): $code")
+                        return
+                    }
+                    lastDataWedgeCode = code
+                    lastDataWedgeTime = now
+                    dataWedgeCode = code
+                    dataWedgeSequence += 1
+                }
+            }
+
+            Log.d("DataWedge", "Registrando receiver para acción=${DataWedgeScanner.SCAN_ACTION}")
+            ContextCompat.registerReceiver(
+                context,
+                receiver,
+                filter,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+            onDispose {
+                context.unregisterReceiver(receiver)
+                Log.d("DataWedge", "Receiver desregistrado")
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        DataWedgeScanner.setupProfile(context.applicationContext)
+    }
+
+    val externalScan = if (dataWedgeSequence > 0) {
+        DataWedgeScanner.DataWedgeScan(dataWedgeSequence, dataWedgeCode)
+    } else {
+        null
+    }
+
+    LaunchedEffect(selectedModule) {
+        if (selectedModule != "Punto de venta") {
+            dataWedgeSequence = 0
+            dataWedgeCode = ""
+        }
+    }
+
     LaunchedEffect(session.id) {
         if (session.offlineSession && hasValidatedInternet()) {
             isOnline = true
@@ -914,6 +990,7 @@ private fun PosScreen(
                             Row(modifier = Modifier.fillMaxSize()) {
                                 CatalogPane(
                                     Modifier.weight(1f).fillMaxHeight(),
+                                    externalScan = externalScan,
                                     state,
                                     posVm::setSearch,
                                     posVm::setCategory,
@@ -945,6 +1022,7 @@ private fun PosScreen(
                             Column(modifier = Modifier.fillMaxSize()) {
                                 CatalogPane(
                                     Modifier.weight(1f).fillMaxWidth().fillMaxHeight(),
+                                    externalScan = externalScan,
                                     state,
                                     posVm::setSearch,
                                     posVm::setCategory,

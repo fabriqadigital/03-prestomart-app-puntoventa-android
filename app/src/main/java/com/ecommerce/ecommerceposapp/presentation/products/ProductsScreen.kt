@@ -5,6 +5,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,8 +82,18 @@ import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.SystemClock
+import android.util.Log
+import androidx.compose.runtime.DisposableEffect
+import androidx.core.content.ContextCompat
 import com.ecommerce.ecommerceposapp.presentation.pos.CameraScannerDialog
+import com.ecommerce.ecommerceposapp.util.DataWedgeScanner
 import com.ecommerce.ecommerceposapp.util.ScannerDetector
+import com.ecommerce.ecommerceposapp.util.rememberPhysicalScannerConnected
 
 @Composable
 fun ProductsCrudScreen(
@@ -104,6 +116,76 @@ fun ProductsCrudScreen(
         if (openCreateAdvanced) {
             creatingAdvanced = true
             onCreateAdvancedConsumed()
+        }
+    }
+
+    // ===== Integración Zebra DataWedge (MÉTODO ADICIONAL; convive con la cámara
+    // y el lector físico HID, que no se tocan) =====
+    // Este receiver se registra SOLO mientras el módulo Productos está en
+    // composición (mismo patrón que el receiver del POS en AppRoot, pero
+    // autocontenido: no requiere cambios en AppRoot y no interfiere con él).
+    // Reutiliza el broadcast com.symbol.datawedge.scan y enruta el código a:
+    //   - El buscador/filtro existente cuando se muestra el listado.
+    //   - El campo "Código Barra" cuando el formulario crear/editar está abierto.
+    val context = LocalContext.current
+    var dataWedgeSequence by remember { mutableStateOf(0) }
+    var dataWedgeCode by remember { mutableStateOf("") }
+    var lastDataWedgeCode by remember { mutableStateOf("") }
+    var lastDataWedgeTime by remember { mutableStateOf(0L) }
+    var editorDataWedgeScan by remember { mutableStateOf<DataWedgeScanner.DataWedgeScan?>(null) }
+
+    DisposableEffect(context) {
+        val filter = IntentFilter(DataWedgeScanner.SCAN_ACTION).apply {
+            addCategory(Intent.CATEGORY_DEFAULT)
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, intent: Intent?) {
+                Log.d(
+                    "DataWedge",
+                    "Productos: broadcast recibido action=${intent?.action} extras=${intent?.extras?.keySet()}",
+                )
+                val code = DataWedgeScanner.extractBarcode(intent)
+                if (code == null) {
+                    Log.d("DataWedge", "Productos: broadcast ignorado (no es SCAN o falta data_string).")
+                    return
+                }
+                Log.d("DataWedge", "Productos: Barcode recibido desde DataWedge: $code")
+                val now = SystemClock.elapsedRealtime()
+                if (code == lastDataWedgeCode && now - lastDataWedgeTime < DataWedgeScanner.DATAWEDGE_DEDUP_MS) {
+                    Log.d("DataWedge", "Productos: escaneo duplicado ignorado (ventana 2s): $code")
+                    return
+                }
+                lastDataWedgeCode = code
+                lastDataWedgeTime = now
+                dataWedgeCode = code
+                dataWedgeSequence += 1
+            }
+        }
+        Log.d("DataWedge", "Productos: registrando receiver para acción=${DataWedgeScanner.SCAN_ACTION}")
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+        onDispose {
+            context.unregisterReceiver(receiver)
+            Log.d("DataWedge", "Productos: receiver desregistrado")
+        }
+    }
+
+    val externalScan = if (dataWedgeSequence > 0) {
+        DataWedgeScanner.DataWedgeScan(dataWedgeSequence, dataWedgeCode)
+    } else {
+        null
+    }
+
+    // Enrutado: si el formulario crear/editar está abierto, el escaneo se entrega al
+    // formulario (campo "Código Barra"); si no, se coloca en el buscador, que dispara
+    // el MISMO filtro existente (sin lógica nueva).
+    LaunchedEffect(externalScan) {
+        val scan = externalScan ?: return@LaunchedEffect
+        if (creatingAdvanced || editing != null) {
+            Log.d("DataWedge", "Productos: escaneo enrutado al formulario: ${scan.code} (seq=${scan.sequence})")
+            editorDataWedgeScan = scan
+        } else {
+            Log.d("DataWedge", "Productos: escaneo al buscador: ${scan.code} (seq=${scan.sequence})")
+            search = scan.code
         }
     }
 
@@ -144,15 +226,18 @@ fun ProductsCrudScreen(
             subcategories = state.subcategories,
             productTypes = state.productTypes,
             products = state.products,
+            externalScan = editorDataWedgeScan,
             onBack = {
                 creatingAdvanced = false
                 editing = null
+                editorDataWedgeScan = null
                 vm.clearMessages()
             },
             onSave = {
                 vm.save(it)
                 creatingAdvanced = false
                 editing = null
+                editorDataWedgeScan = null
             },
         )
         return
@@ -215,6 +300,7 @@ fun ProductsCrudScreen(
     ConfirmDestructiveDialog(pendingConfirm) { pendingConfirm = null }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProductsTable(
     products: List<ProductAdminRow>,
@@ -238,6 +324,20 @@ private fun ProductsTable(
     val context = LocalContext.current
     val searchFocusRequester = remember { FocusRequester() }
     var showSearchCameraScanner by remember { mutableStateOf(false) }
+    // Lector físico HID (USB/Bluetooth): si hay uno conectado, el buscador recibe
+    // el foco automáticamente para que el escaneo fluya al filtro EXISTENTE sin
+    // necesidad de presionar el icono de código de barras. El icono solo se usa
+    // para abrir la cámara cuando NO hay lector físico (ScannerDetector).
+    val physicalScannerConnected by rememberPhysicalScannerConnected(context)
+    LaunchedEffect(physicalScannerConnected) {
+        // Foco automático del buscador: si hay lector físico detectado, o si es un
+        // Zebra con DataWedge (en TC26 el escáner puede inyectar teclas sin
+        // enumerarse como InputDevice). Con el campo enfocado, el código cae en el
+        // buscador y ejecuta el filtro EXISTENTE, sin presionar el icono.
+        if (physicalScannerConnected || DataWedgeScanner.isDataWedgeInstalled(context)) {
+            searchFocusRequester.requestFocus()
+        }
+    }
     Surface(
         modifier = Modifier.fillMaxSize(),
         shape = RoundedCornerShape(8.dp),
@@ -273,17 +373,28 @@ private fun ProductsTable(
                     color           = Color.White,
                     border          = androidx.compose.foundation.BorderStroke(1.dp, BorderDefault),
                 ) {
-                    IconButton(
-                        onClick = {
-                            if (ScannerDetector.isPhysicalScannerConnected(context)) {
-                                searchFocusRequester.requestFocus()
-                            } else {
-                                showSearchCameraScanner = true
-                            }
-                        },
-                        modifier = Modifier.size(50.dp),
+                    Box(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .combinedClickable(
+                                onClick = {
+                                    if (ScannerDetector.isPhysicalScannerConnected(context)) {
+                                        searchFocusRequester.requestFocus()
+                                    } else {
+                                        showSearchCameraScanner = true
+                                    }
+                                },
+                                // Mantén pulsado (long-press) para abrir SIEMPRE la cámara,
+                                // incluso cuando hay lector físico (Zebra con DataWedge).
+                                onLongClick = { showSearchCameraScanner = true },
+                            ),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Filled.QrCodeScanner, contentDescription = "Filtrar por código escaneado", tint = TextSecondary)
+                        Icon(
+                            Icons.Filled.QrCodeScanner,
+                            contentDescription = "Filtrar por código escaneado (mantén pulsado para cámara)",
+                            tint = TextSecondary,
+                        )
                     }
                 }
             }
@@ -487,6 +598,7 @@ private fun ProductTableRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProductAdvancedEditorView(
     initial: ProductAdminRow,
@@ -494,6 +606,7 @@ private fun ProductAdvancedEditorView(
     subcategories: List<SubcategoryAdminRow>,
     productTypes: List<ProductTypeRow>,
     products: List<ProductAdminRow>,
+    externalScan: DataWedgeScanner.DataWedgeScan? = null,
     onBack: () -> Unit,
     onSave: (ProductAdminRow) -> Unit,
 ) {
@@ -556,6 +669,34 @@ private fun ProductAdvancedEditorView(
     }
     val barcodeFocusRequester = remember { FocusRequester() }
     var showBarcodeCameraScanner by remember { mutableStateOf(false) }
+    // Lector físico HID: al abrir el formulario con un lector conectado, el campo
+    // "Código Barra" recibe el foco automáticamente para que el escaneo se escriba
+    // allí sin presionar el icono. La validación de duplicados es la MISMA que ya
+    // existe (onValueChange → duplicateBarcodeProduct); no se agrega lógica nueva.
+    val physicalScannerConnected by rememberPhysicalScannerConnected(context)
+    LaunchedEffect(physicalScannerConnected, initial.id) {
+        // Foco automático del campo "Código Barra": si hay lector físico detectado,
+        // o si es un Zebra con DataWedge (el escáner puede inyectar teclas sin
+        // enumerarse como InputDevice). Con el campo enfocado, el código se escribe
+        // allí y pasa por la validación EXISTENTE, sin presionar el icono.
+        if (physicalScannerConnected || DataWedgeScanner.isDataWedgeInstalled(context)) {
+            barcodeFocusRequester.requestFocus()
+        }
+    }
+    // Escaneo Zebra DataWedge → campo "Código Barra" (MISMA validación que la
+    // cámara: detecta duplicados contra el resto de productos y enfoca el campo).
+    LaunchedEffect(externalScan) {
+        val scan = externalScan ?: return@LaunchedEffect
+        Log.d("DataWedge", "Productos: escaneo al campo Código Barra: ${scan.code} (seq=${scan.sequence})")
+        barcode = scan.code
+        barcodeValidationMessage = products.firstOrNull { product ->
+            product.id != initial.id &&
+                product.barcode.trim().equals(scan.code.trim(), ignoreCase = true)
+        }?.let { product ->
+            "Este producto ya se encuentra en el sistema: ${product.name}."
+        }
+        barcodeFocusRequester.requestFocus()
+    }
     val draftProduct = {
         initial.copy(
             categoryId = categoryId, subcategoryId = selectedSubcategoryIds.firstOrNull() ?: 0L,
@@ -625,17 +766,28 @@ private fun ProductAdvancedEditorView(
                                 color  = Color.White,
                                 border = androidx.compose.foundation.BorderStroke(1.dp, BorderDefault),
                             ) {
-                                IconButton(
-                                    onClick = {
-                                        if (ScannerDetector.isPhysicalScannerConnected(context)) {
-                                            barcodeFocusRequester.requestFocus()
-                                        } else {
-                                            showBarcodeCameraScanner = true
-                                        }
-                                    },
-                                    modifier = Modifier.size(54.dp),
+                                Box(
+                                    modifier = Modifier
+                                        .size(54.dp)
+                                        .combinedClickable(
+                                            onClick = {
+                                                if (ScannerDetector.isPhysicalScannerConnected(context)) {
+                                                    barcodeFocusRequester.requestFocus()
+                                                } else {
+                                                    showBarcodeCameraScanner = true
+                                                }
+                                            },
+                                            // Mantén pulsado (long-press) para abrir SIEMPRE la cámara,
+                                            // incluso cuando hay lector físico (Zebra con DataWedge).
+                                            onLongClick = { showBarcodeCameraScanner = true },
+                                        ),
+                                    contentAlignment = Alignment.Center,
                                 ) {
-                                    Icon(Icons.Filled.QrCodeScanner, contentDescription = "Escanear código de barra", tint = TextSecondary)
+                                    Icon(
+                                        Icons.Filled.QrCodeScanner,
+                                        contentDescription = "Escanear código de barra (mantén pulsado para cámara)",
+                                        tint = TextSecondary,
+                                    )
                                 }
                             }
                         }

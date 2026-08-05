@@ -3,7 +3,9 @@ package com.ecommerce.ecommerceposapp.presentation.navigation
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,7 +77,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
+import android.util.Log
 import com.ecommerce.ecommerceposapp.util.ScannerDetector
+import com.ecommerce.ecommerceposapp.util.DataWedgeScanner
 import coil.compose.AsyncImage
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
 import com.ecommerce.ecommerceposapp.presentation.pos.CameraScannerDialog
@@ -213,9 +217,11 @@ private fun findExactProductMatch(products: List<ProductItem>, scannedCode: Stri
 // ─────────────────────────────────────────────────────────────────────────────
 //  CATALOG PANE
 // ─────────────────────────────────────────────────────────────────────────────
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun CatalogPane(
     modifier: Modifier,
+    externalScan: DataWedgeScanner.DataWedgeScan? = null,
     state: PosUiState,
     onSearch: (String) -> Unit,
     onCategory: (Long?) -> Unit,
@@ -256,6 +262,12 @@ internal fun CatalogPane(
         }
         scanBuffer = ""
         lastProcessedScan = null
+    }
+
+    LaunchedEffect(externalScan) {
+        val scan = externalScan ?: return@LaunchedEffect
+        Log.d("DataWedge", "Procesando escaneo DataWedge: ${scan.code} (seq=${scan.sequence})")
+        tryProcessScan(scan.code)
     }
 
     LaunchedEffect(state.search, state.products) {
@@ -394,19 +406,26 @@ internal fun CatalogPane(
                 color           = if (scanMode) BrandRedLight else SurfaceWhite,
                 shadowElevation = 1.dp,
             ) {
-                IconButton(
-                    onClick = {
-                        when {
-                            scanMode -> { scanMode = false; onSearch("") }
-                            physicalScannerConnected -> scanMode = true
-                            else -> showCameraScanner = true
-                        }
-                    },
-                    modifier = Modifier.size(50.dp),
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .combinedClickable(
+                            onClick = {
+                                when {
+                                    scanMode -> { scanMode = false; onSearch("") }
+                                    physicalScannerConnected -> scanMode = true
+                                    else -> showCameraScanner = true
+                                }
+                            },
+                            // Mantén pulsado (long-press) para abrir SIEMPRE la cámara,
+                            // incluso cuando hay lector físico (Zebra con DataWedge).
+                            onLongClick = { showCameraScanner = true },
+                        ),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         if (scanMode) Icons.Filled.Close else Icons.Filled.QrCodeScanner,
-                        contentDescription = if (scanMode) "Cerrar escaneo" else "Escanear código",
+                        contentDescription = if (scanMode) "Cerrar escaneo" else "Escanear código (mantén pulsado para cámara)",
                         tint = if (scanMode) BrandRed else TextSecondary,
                     )
                 }
