@@ -40,6 +40,9 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
+import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryPage
+import com.ecommerce.ecommerceposapp.domain.model.sales.paginateSalesHistoryLocal
+import com.ecommerce.ecommerceposapp.domain.model.sales.mergePendingSalesWithRemotePage
 import com.ecommerce.ecommerceposapp.domain.model.sync.SyncModuleStatus
 import com.ecommerce.ecommerceposapp.domain.model.sync.SyncProgress
 import com.ecommerce.ecommerceposapp.domain.sync.SyncPlan
@@ -677,17 +680,18 @@ class PosRepositoryImpl(private val context: Context) :
         return Result.success(Unit)
     }
 
-    override fun listSalesHistory(): List<SalesHistoryRow> {
+    override fun listSalesHistory(page: Int, perPage: Int, search: String): SalesHistoryPage {
         val sessionId = prefs.getLong("pos_cash_session_id", 0L)
-        if (sessionId == 0L) return emptyList()
+        if (sessionId == 0L) return SalesHistoryPage(emptyList(), 0, page, perPage)
         val local = localSalesHistory(sessionId)
         val offlineSession = getSession()?.offlineSession == true || ApiSessionStore(context).token.isBlank()
-        if (sessionId < 0L || offlineSession) return local
+        fun localPage() = paginateSalesHistoryLocal(local, page, perPage, search)
+        if (sessionId < 0L || offlineSession) return localPage()
 
-        return cashApi.listSales(sessionId).fold(
+        return cashApi.listSales(sessionId, page, perPage, search).fold(
             onSuccess = { remote ->
                 val localBySaleId = local.associateBy { it.ventaId }
-                val enrichedRemote = remote.map { row ->
+                val enrichedRemote = remote.rows.map { row ->
                     if (!row.clienteNombre.isGenericCustomerName()) return@map row
                     val resolvedName = localBySaleId[row.ventaId]?.clienteNombre
                         ?.takeUnless { it.isGenericCustomerName() }
@@ -711,12 +715,10 @@ class PosRepositoryImpl(private val context: Context) :
                         row
                     }
                 }
-                (enrichedLocal + enrichedRemote)
-                    .distinctBy { it.ventaId }
-                    .sortedByDescending { it.fechaMillis }
+                mergePendingSalesWithRemotePage(remote.copy(rows = enrichedRemote), enrichedLocal, search)
             },
             onFailure = { error ->
-                if (error.isNetworkFailure()) local else throw error
+                if (error.isNetworkFailure()) localPage() else throw error
             },
         )
     }

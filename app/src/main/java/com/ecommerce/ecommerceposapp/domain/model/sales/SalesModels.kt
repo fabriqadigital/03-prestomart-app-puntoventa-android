@@ -73,3 +73,10 @@ data class SalesHistoryRow(
     val estado: String,
     val idCliente: Long,
 )
+
+data class SalesHistoryPage(
+    val rows: List<SalesHistoryRow>,
+    val total: Int,
+    val page: Int,
+    val perPage: Int,
+)
