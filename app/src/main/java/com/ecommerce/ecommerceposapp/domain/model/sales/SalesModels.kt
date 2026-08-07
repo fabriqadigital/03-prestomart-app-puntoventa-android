@@ -5,8 +5,12 @@ data class CartLine(
     val productName: String,
     val unitPrice: Double,
     val quantity: Int,
+    val conversionId: Long? = null,
+    val conversionName: String = "",
+    val stockFactor: Double = 1.0,
 ) {
     val lineTotal: Double get() = unitPrice * quantity
+    val lineKey: String get() = "$productId:${conversionId ?: 0L}"
 }
 
 data class SalePaymentInfo(

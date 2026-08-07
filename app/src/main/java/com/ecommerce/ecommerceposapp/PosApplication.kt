@@ -28,7 +28,7 @@ class PosApplication : Application() {
         Realm.init(this)
         val config = RealmConfiguration.Builder()
             .name("ecommerce_pos.realm")
-            .schemaVersion(17)
+            .schemaVersion(18)
             .migration(RealmMigration { realm, oldVersion, _ ->
                 if (oldVersion < 9L) {
                     realm.schema.get("ProductRealm")?.apply {
@@ -160,6 +160,13 @@ class PosApplication : Application() {
                     }
                     realm.schema.get("SyncIdMapRealm")?.let { schema ->
                         if (!schema.isRequired("key")) schema.setRequired("key", true)
+                    }
+                }
+                if (oldVersion < 18L) {
+                    realm.schema.get("ProductRealm")?.apply {
+                        addField("conversionsJson", String::class.java)
+                        transform { product -> product.setString("conversionsJson", "[]") }
+                        setRequired("conversionsJson", true)
                     }
                 }
             })

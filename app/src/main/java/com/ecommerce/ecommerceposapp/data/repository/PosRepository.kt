@@ -52,6 +52,7 @@ import com.ecommerce.ecommerceposapp.domain.model.catalog.CategoryItem
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
+import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion
 import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.catalog.SubcategoryItem
 import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
@@ -222,6 +223,18 @@ class PosRepositoryImpl(private val context: Context) :
                     salesChannel = p.canalVenta.ifBlank { "ambos" },
                     featuredInPos = p.id.toString() in featuredIds,
                     active = p.active,
+                    conversions = runCatching {
+                        val array = JSONArray(p.conversionsJson)
+                        (0 until array.length()).mapNotNull { index ->
+                            val item = array.optJSONObject(index) ?: return@mapNotNull null
+                            val id = item.optLong("id_producto_conversion")
+                            val name = item.optString("nombre").trim()
+                            val factor = item.optDouble("factor_stock", 0.0)
+                            val finalPrice = item.optDouble("precio_final", 0.0)
+                            if (id <= 0L || name.isBlank() || factor <= 0.0 || finalPrice <= 0.0) null
+                            else ProductConversion(id, name, item.optString("codigo"), factor, finalPrice)
+                        }
+                    }.getOrDefault(emptyList()),
                 )
             }
             .sortedWith(compareByDescending<ProductItem> { it.featuredInPos }.thenBy { it.name.lowercase(Locale.getDefault()) })
@@ -305,7 +318,7 @@ class PosRepositoryImpl(private val context: Context) :
                     },
                 )
                 val product = realm.where(ProductRealm::class.java).equalTo("id", line.productId).findFirst() ?: return@forEach
-                product.stock = (product.stock - line.quantity).coerceAtLeast(0.0)
+                product.stock = (product.stock - (line.quantity * line.stockFactor)).coerceAtLeast(0.0)
             }
             realm.insert(
                 OutboxRealm().apply {
@@ -1321,6 +1334,7 @@ class PosRepositoryImpl(private val context: Context) :
                         offerMaxQuantityPrice = rp.offerMaxQuantityPrice
                         metaTitle = rp.metaTitle
                         metaDescription = rp.metaDescription
+                        conversionsJson = rp.conversionsJson
                         active = rp.active
                         localCreatedAt = rp.createdAt
                         remoteCreatedAt = rp.createdAt
