@@ -7,6 +7,7 @@ import com.ecommerce.ecommerceposapp.domain.model.cash.CashSummary
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
+import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryPage
 import java.text.SimpleDateFormat
 import java.util.Locale
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -113,8 +114,16 @@ class CashApiDataSource(context: Context) {
         Unit
     }
 
-    fun listSales(sessionId: Long): Result<List<SalesHistoryRow>> = runCatching {
-        executeGet(ApiConfig.CASH_SALES, mapOf("id_caja_sesion" to sessionId.toString())).resultArray().map { item ->
+    fun listSales(sessionId: Long, page: Int, perPage: Int, search: String): Result<SalesHistoryPage> = runCatching {
+        val root = executeGet(ApiConfig.CASH_SALES, mapOf(
+            "id_caja_sesion" to sessionId.toString(),
+            "page" to page.toString(),
+            "per_page" to perPage.toString(),
+            "search" to search,
+        ))
+        val result = root.optJSONObject("result") ?: JSONObject()
+        val data = result.optJSONArray("data") ?: JSONArray()
+        val rows = (0 until data.length()).mapNotNull(data::optJSONObject).map { item ->
             SalesHistoryRow(
                 ventaId = item.optLong("id_venta"),
                 numeroComprobante = item.cleanString("numero"),
@@ -128,6 +137,12 @@ class CashApiDataSource(context: Context) {
                 idCliente = item.optLong("id_cliente"),
             )
         }
+        SalesHistoryPage(
+            rows = rows,
+            total = result.optInt("total", rows.size),
+            page = result.optInt("current_page", page),
+            perPage = result.optInt("per_page", perPage),
+        )
     }
 
     fun getSaleReceipt(saleId: Long): Result<CompletedSaleReceipt> = runCatching {

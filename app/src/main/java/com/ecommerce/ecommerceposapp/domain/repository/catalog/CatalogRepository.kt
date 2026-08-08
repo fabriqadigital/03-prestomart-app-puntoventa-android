@@ -7,6 +7,7 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
+import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryPage
 import com.ecommerce.ecommerceposapp.domain.model.catalog.SubcategoryItem
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
@@ -31,7 +32,7 @@ interface CatalogRepository {
     fun getClienteDisplay(idCliente: Long): Pair<String, String>?
     fun getClienteTelefono(idCliente: Long): String?
     fun actualizarClienteEnVenta(ventaId: Long, idCliente: Long): Result<Unit>
-    fun listSalesHistory(): List<SalesHistoryRow>
+    fun listSalesHistory(page: Int, perPage: Int, search: String = ""): SalesHistoryPage
     fun getSaleReceipt(ventaId: Long): Result<CompletedSaleReceipt>
     fun listCashRegisters(): Result<List<CashRegister>>
     fun findOpenCashSession(cashierId: Long): Result<CashSession?>

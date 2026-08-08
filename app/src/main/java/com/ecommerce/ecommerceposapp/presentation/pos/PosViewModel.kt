@@ -10,6 +10,7 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.domain.model.catalog.CategoryItem
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
+import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion
 import com.ecommerce.ecommerceposapp.domain.model.catalog.SubcategoryItem
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashRegister
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashSession
@@ -113,16 +114,21 @@ class PosViewModel(
         }
     }
 
-    fun addToCart(product: ProductItem) {
+    fun addToCart(product: ProductItem, conversion: ProductConversion? = null) {
         val current = _uiState.value.cart.toMutableList()
-        val index = current.indexOfFirst { it.productId == product.id }
+        val conversionId = conversion?.id
+        val stockFactor = conversion?.stockFactor ?: 1.0
+        val index = current.indexOfFirst { it.productId == product.id && it.conversionId == conversionId }
+        val consumedByOtherLines = current.filterIndexed { itemIndex, line ->
+            line.productId == product.id && itemIndex != index
+        }.sumOf { it.quantity * it.stockFactor }
         val nextQuantity: Int
         if (index >= 0) {
             val row = current[index]
-            if (row.quantity >= product.stock.toInt()) {
+            if (consumedByOtherLines + ((row.quantity + 1) * row.stockFactor) > product.stock) {
                 _uiState.update {
                     it.copy(
-                        message = "Stock insuficiente. Máximo ${product.stock.toInt()} unidad(es) disponible(s)."
+                        message = "Stock insuficiente para ${conversion?.name ?: product.name}."
                     )
                 }
                 return
@@ -130,9 +136,17 @@ class PosViewModel(
             nextQuantity = row.quantity + 1
             current[index] = row.copy(quantity = nextQuantity)
         } else {
-            if (product.stock <= 0.0) return
+            if (product.stock <= 0.0 || consumedByOtherLines + stockFactor > product.stock) return
             nextQuantity = 1
-            current.add(CartLine(product.id, product.name, product.price, 1))
+            current.add(CartLine(
+                productId = product.id,
+                productName = product.name,
+                unitPrice = conversion?.finalPrice ?: product.price,
+                quantity = 1,
+                conversionId = conversionId,
+                conversionName = conversion?.name.orEmpty(),
+                stockFactor = stockFactor,
+            ))
         }
         _uiState.update {
             it.copy(
@@ -144,14 +158,17 @@ class PosViewModel(
 
     fun increase(line: CartLine) {
         _uiState.update {
-            val productStock = it.products.firstOrNull { p -> p.id == line.productId }?.stock?.toInt() ?: Int.MAX_VALUE
-            if (line.quantity >= productStock) {
-                it.copy(message = "Stock insuficiente. Máximo $productStock unidad(es) de ${line.productName}.")
+            val productStock = it.products.firstOrNull { p -> p.id == line.productId }?.stock ?: Double.MAX_VALUE
+            val consumedByOtherLines = it.cart
+                .filter { row -> row.productId == line.productId && row.lineKey != line.lineKey }
+                .sumOf { row -> row.quantity * row.stockFactor }
+            if (consumedByOtherLines + ((line.quantity + 1) * line.stockFactor) > productStock) {
+                it.copy(message = "Stock insuficiente para ${line.conversionName.ifBlank { line.productName }}.")
             } else {
                 val nextQuantity = line.quantity + 1
                 it.copy(
                     cart = it.cart.map { row ->
-                        if (row.productId == line.productId) row.copy(quantity = nextQuantity) else row
+                        if (row.lineKey == line.lineKey) row.copy(quantity = nextQuantity) else row
                     },
                     message = "Producto agregado",
                 )
@@ -162,7 +179,7 @@ class PosViewModel(
     fun decrease(line: CartLine) {
         _uiState.update {
             val next = it.cart.mapNotNull { row ->
-                if (row.productId != line.productId) return@mapNotNull row
+                if (row.lineKey != line.lineKey) return@mapNotNull row
                 val quantity = row.quantity - 1
                 if (quantity <= 0) null else row.copy(quantity = quantity)
             }

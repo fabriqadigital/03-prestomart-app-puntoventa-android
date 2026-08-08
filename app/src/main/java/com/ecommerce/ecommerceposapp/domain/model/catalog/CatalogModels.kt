@@ -13,6 +13,14 @@ data class SubcategoryItem(
     val active: Boolean = true,
 )
 
+data class ProductConversion(
+    val id: Long,
+    val name: String,
+    val code: String = "",
+    val stockFactor: Double,
+    val finalPrice: Double,
+)
+
 data class ProductItem(
     val id: Long,
     val categoryId: Long,
@@ -26,4 +34,5 @@ data class ProductItem(
     val salesChannel: String = "ambos",
     val featuredInPos: Boolean = false,
     val active: Boolean = true,
+    val conversions: List<ProductConversion> = emptyList(),
 )

@@ -52,6 +52,7 @@ class PosSaleApiDataSource(context: Context) {
                             put("id_producto", line.productId)
                             put("cantidad", line.quantity)
                             put("precio_unitario", line.unitPrice)
+                            line.conversionId?.let { put("id_producto_conversion", it) }
                         })
                     }
                 })
