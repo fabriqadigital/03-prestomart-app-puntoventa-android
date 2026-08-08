@@ -1,5 +1,6 @@
 package com.ecommerce.ecommerceposapp.presentation.pos
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
@@ -114,6 +115,7 @@ class PosViewModel(
     }
 
     fun addToCart(product: ProductItem) {
+        Log.d("BarcodeDebug", "Antes de agregar al carrito: [${product.barcode}] code: [${product.code}]")
         val current = _uiState.value.cart.toMutableList()
         val index = current.indexOfFirst { it.productId == product.id }
         val nextQuantity: Int

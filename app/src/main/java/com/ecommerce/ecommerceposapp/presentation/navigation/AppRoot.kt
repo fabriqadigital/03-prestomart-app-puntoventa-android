@@ -830,7 +830,6 @@ private fun PosScreen(
             }
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(c: Context?, intent: Intent?) {
-                    // LOG: TODO broadcast recibido, incluso si no es un escaneo válido.
                     Log.d(
                         "DataWedge",
                         "Broadcast recibido: action=${intent?.action} data=${intent?.dataString} " +
@@ -841,6 +840,7 @@ private fun PosScreen(
                         Log.d("DataWedge", "Broadcast ignorado: action no es SCAN o falta data_string.")
                         return
                     }
+                    Log.d("BarcodeDebug", "Broadcast DataWedge procesado: [$code] (length=${code.length})")
                     Log.d("DataWedge", "Barcode recibido desde DataWedge: $code")
                     val now = SystemClock.elapsedRealtime()
                     if (code == lastDataWedgeCode && now - lastDataWedgeTime < DataWedgeScanner.DATAWEDGE_DEDUP_MS) {

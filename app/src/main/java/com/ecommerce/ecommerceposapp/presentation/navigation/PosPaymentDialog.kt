@@ -210,14 +210,6 @@ internal fun CobrarVentaDialog(
                         }
                     },
                 )
-                if (!isOnline) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Sin Internet solo se puede emitir ticket. La boleta o factura electrónica requiere validación del servidor.",
-                        color = PaymentBrand,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
                 if (receiptType != TipoComprobanteEmision.SOLO_TICKET) {
                     Spacer(Modifier.height(14.dp))
                     ReceiptCustomerSection(
@@ -372,7 +364,6 @@ private fun ReceiptTypeSelector(
             val active = selected == type
             OutlinedButton(
                 onClick = { onSelect(type) },
-                enabled = online || type == TipoComprobanteEmision.SOLO_TICKET,
                 modifier = modifier.height(46.dp),
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, if (active) PaymentBrand else PaymentBorder),

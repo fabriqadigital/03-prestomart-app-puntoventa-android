@@ -176,15 +176,34 @@ internal fun CameraScannerDialog(
                                                 imageProxy.imageInfo.rotationDegrees,
                                             ),
                                         ).addOnSuccessListener { barcodes ->
-                                            val code = barcodes.firstOrNull {
+                                            val detected = barcodes.firstOrNull {
                                                 !it.rawValue.isNullOrBlank()
-                                            }?.rawValue
+                                            }
+                                            val rawValue = detected?.rawValue
+                                            val code = if (
+                                                detected != null &&
+                                                detected.format == Barcode.FORMAT_UPC_A &&
+                                                rawValue != null &&
+                                                rawValue.length == 12
+                                            ) {
+                                                android.util.Log.d(
+                                                    "BarcodeDebug",
+                                                    "Cámara formato UPC_A (12 dígitos): [$rawValue] → restaurado 0 inicial como EAN-13"
+                                                )
+                                                "0$rawValue"
+                                            } else {
+                                                rawValue
+                                            }
                                             if (!code.isNullOrBlank() &&
                                                 processed.compareAndSet(false, true)
                                             ) {
                                                 android.util.Log.d(
                                                     "BarcodeSearch",
-                                                    "CameraScanner detected: rawValue='$code' (length=${code.length})"
+                                                    "CameraScanner detected: rawValue='$rawValue' format=${detected?.format} final='$code' (length=${code.length})"
+                                                )
+                                                android.util.Log.d(
+                                                    "BarcodeDebug",
+                                                    "Cámara detectada: [$code] (length=${code.length})"
                                                 )
                                                 analysis.clearAnalyzer()
                                                 provider.unbindAll()

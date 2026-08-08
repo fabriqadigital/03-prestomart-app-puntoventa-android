@@ -3,9 +3,7 @@ package com.ecommerce.ecommerceposapp.presentation.navigation
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +49,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -104,6 +103,7 @@ import com.ecommerce.ecommerceposapp.ui.theme.TextPrimary
 import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 import com.ecommerce.ecommerceposapp.ui.theme.TextTertiary
 import kotlinx.coroutines.delay
+import com.ecommerce.ecommerceposapp.util.PhysicalScannerInput
 import com.ecommerce.ecommerceposapp.util.rememberPhysicalScannerConnected
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 
@@ -205,19 +205,24 @@ private fun SetupStepRow(
 private const val MIN_CODE_MATCH_LENGTH = 6
 
 private fun findExactProductMatch(products: List<ProductItem>, scannedCode: String): ProductItem? {
-    return products.firstOrNull { p ->
+    val match = products.firstOrNull { p ->
         val barcodeMatch = p.barcode.isNotBlank() && p.barcode.equals(scannedCode, ignoreCase = false)
         val codeMatch = p.code.isNotBlank() &&
                 p.code.equals(scannedCode, ignoreCase = false) &&
                 scannedCode.length >= MIN_CODE_MATCH_LENGTH
         codeMatch || barcodeMatch
     }
+    if (match != null) {
+        Log.d("BarcodeDebug", "Producto encontrado con barcode: [${match.barcode}] code: [${match.code}] para escaneo: [$scannedCode]")
+    } else {
+        Log.d("BarcodeDebug", "Producto NO encontrado para escaneo: [$scannedCode]")
+    }
+    return match
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  CATALOG PANE
 // ─────────────────────────────────────────────────────────────────────────────
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun CatalogPane(
     modifier: Modifier,
@@ -240,20 +245,26 @@ internal fun CatalogPane(
 
     val physicalScannerConnected by rememberPhysicalScannerConnected(context)
     val keyboardController = LocalSoftwareKeyboardController.current
+    val currentState by rememberUpdatedState(state)
 
     LaunchedEffect(physicalScannerConnected) {
-        if (physicalScannerConnected) {
-            scanFocusRequester.requestFocus()
-        } else {
-            scanMode = false
-        }
+        if (!physicalScannerConnected) scanMode = false
     }
 
     fun tryProcessScan(rawCode: String) {
         val scannedCode = rawCode.trim()
+        Log.d("BarcodeDebug", "Antes de buscar producto: [$scannedCode] (length=${scannedCode.length})")
         if (scannedCode.isBlank() || scannedCode == lastProcessedScan) return
 
-        val product = findExactProductMatch(state.products, scannedCode)
+        var product = findExactProductMatch(currentState.products, scannedCode)
+        if (product == null && scannedCode.length == 12) {
+            val ean13Candidate = "0$scannedCode"
+            Log.d(
+                "BarcodeDebug",
+                "Sin coincidencia con 12 dígitos [$scannedCode] → reintento EAN-13 con 0 inicial: [$ean13Candidate] (length=${ean13Candidate.length})",
+            )
+            product = findExactProductMatch(currentState.products, ean13Candidate)
+        }
         lastProcessedScan = scannedCode
         when {
             product == null -> onScanMessage("Producto no encontrado: \"$scannedCode\"")
@@ -262,6 +273,19 @@ internal fun CatalogPane(
         }
         scanBuffer = ""
         lastProcessedScan = null
+    }
+
+    LaunchedEffect(Unit) {
+        PhysicalScannerInput.scans.collect { rawCode ->
+            // Códigos del catálogo (String, sin conversión numérica) para poder
+            // restaurar el 0 inicial cuando el lector HID decodificó EAN-13→UPC-A.
+            val knownCodes = currentState.products.flatMap { listOfNotNull(it.barcode, it.code) }
+            val normalized = PhysicalScannerInput.normalizeBarcode(rawCode, knownCodes)
+            Log.d("PhysicalScanner", "SCANNER PROCESSED: $normalized")
+            Log.d("PhysicalScanner", "SCANNER MODE: PHYSICAL")
+            Log.d("PhysicalScanner", "TARGET: POS")
+            tryProcessScan(normalized)
+        }
     }
 
     LaunchedEffect(externalScan) {
@@ -302,6 +326,7 @@ internal fun CatalogPane(
 
     LaunchedEffect(scanBuffer) {
         if (!scanMode || scanBuffer.length < 8) return@LaunchedEffect
+        Log.d("BarcodeDebug", "Scanner físico buffer: [$scanBuffer] (length=${scanBuffer.length})")
         delay(200)
         tryProcessScan(scanBuffer)
     }
@@ -406,26 +431,20 @@ internal fun CatalogPane(
                 color           = if (scanMode) BrandRedLight else SurfaceWhite,
                 shadowElevation = 1.dp,
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .combinedClickable(
-                            onClick = {
-                                when {
-                                    scanMode -> { scanMode = false; onSearch("") }
-                                    physicalScannerConnected -> scanMode = true
-                                    else -> showCameraScanner = true
-                                }
-                            },
-                            // Mantén pulsado (long-press) para abrir SIEMPRE la cámara,
-                            // incluso cuando hay lector físico (Zebra con DataWedge).
-                            onLongClick = { showCameraScanner = true },
-                        ),
-                    contentAlignment = Alignment.Center,
+                IconButton(
+                    onClick = {
+                        when {
+                            scanMode -> { scanMode = false; onSearch("") }
+                            physicalScannerConnected ->
+                                onScanMessage("Lector físico conectado: pasa el producto por el escáner")
+                            else -> showCameraScanner = true
+                        }
+                    },
+                    modifier = Modifier.size(50.dp),
                 ) {
                     Icon(
                         if (scanMode) Icons.Filled.Close else Icons.Filled.QrCodeScanner,
-                        contentDescription = if (scanMode) "Cerrar escaneo" else "Escanear código (mantén pulsado para cámara)",
+                        contentDescription = if (scanMode) "Cerrar escaneo" else "Escanear código",
                         tint = if (scanMode) BrandRed else TextSecondary,
                     )
                 }
@@ -560,6 +579,7 @@ internal fun CatalogPane(
     if (showCameraScanner) {
         CameraScannerDialog(
             onBarcodeDetected = { code ->
+                Log.d("BarcodeDebug", "Cámara recibida: [$code] (length=${code.length})")
                 showCameraScanner = false
                 tryProcessScan(code)
             },

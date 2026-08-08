@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!-- Requerido para recibir el broadcast ACTION_USB_DEVICE_ATTACHED y detectar
+         la (re)conexión del lector físico USB sin reiniciar la app. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
     <application
         android:name=".PosApplication"

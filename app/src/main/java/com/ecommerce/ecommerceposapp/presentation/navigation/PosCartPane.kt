@@ -534,6 +534,7 @@ internal fun CartPane(
                             receiptType,
                             customerInfo.id.takeIf { it > 0L } ?: selectedCliente?.id ?: receipt.idCliente,
                             customerInfo,
+                            allowOffline = true,
                         )
                     }
                     delay(900)

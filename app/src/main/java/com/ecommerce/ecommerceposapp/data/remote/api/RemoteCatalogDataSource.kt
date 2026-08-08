@@ -1,6 +1,7 @@
 package com.ecommerce.ecommerceposapp.data.remote.api
 
 import android.content.Context
+import android.util.Log
 import java.net.HttpURLConnection
 import java.net.URL
 import org.json.JSONArray
@@ -208,6 +209,10 @@ class RemoteCatalogDataSource(context: Context) {
 
         fun optAnyString(obj: JSONObject, keys: List<String>): String {
             keys.forEach { key ->
+                val raw = obj.opt(key)
+                if (raw is Number) {
+                    Log.d("BarcodeDebug", "JSON número en campo '$key': $raw (class=${raw.javaClass.simpleName}) — si es barcode/código, el cero inicial se perdió en el servidor.")
+                }
                 val value = obj.optString(key, "").trim()
                 if (value.isNotBlank() && !value.equals("null", ignoreCase = true)) return value
             }

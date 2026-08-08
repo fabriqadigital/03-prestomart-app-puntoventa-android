@@ -368,7 +368,13 @@ class PosRepositoryImpl(private val context: Context) :
         return Result.success(receipt)
     }
 
-    override fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long, customerInfo: ReceiptCustomerInfo): Result<ComprobanteEmitidoResult> {
+    override fun emitComprobanteForVenta(
+        ventaId: Long,
+        tipo: TipoComprobanteEmision,
+        idCliente: Long,
+        customerInfo: ReceiptCustomerInfo,
+        allowOffline: Boolean,
+    ): Result<ComprobanteEmitidoResult> {
         val remoteReceipt = cashApi.getSaleReceipt(ventaId).getOrNull()
         if (remoteReceipt != null) {
             return runCatching {
@@ -416,7 +422,7 @@ class PosRepositoryImpl(private val context: Context) :
             }
         }
         if (tipo != TipoComprobanteEmision.SOLO_TICKET) {
-            if (ventaId < 0L) {
+            if (ventaId < 0L && !allowOffline) {
                 return Result.failure(
                     Exception(
                         "La venta quedó guardada, pero la boleta o factura requiere Internet. " +

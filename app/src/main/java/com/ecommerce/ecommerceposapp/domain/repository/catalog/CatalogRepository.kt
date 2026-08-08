@@ -27,7 +27,13 @@ interface CatalogRepository {
         customerInfo: ReceiptCustomerInfo = ReceiptCustomerInfo(),
         receiptType: TipoComprobanteEmision = TipoComprobanteEmision.SOLO_TICKET,
     ): Result<CompletedSaleReceipt>
-    fun emitComprobanteForVenta(ventaId: Long, tipo: TipoComprobanteEmision, idCliente: Long = 0L, customerInfo: ReceiptCustomerInfo = ReceiptCustomerInfo()): Result<ComprobanteEmitidoResult>
+    fun emitComprobanteForVenta(
+        ventaId: Long,
+        tipo: TipoComprobanteEmision,
+        idCliente: Long = 0L,
+        customerInfo: ReceiptCustomerInfo = ReceiptCustomerInfo(),
+        allowOffline: Boolean = false,
+    ): Result<ComprobanteEmitidoResult>
     fun getClienteDisplay(idCliente: Long): Pair<String, String>?
     fun getClienteTelefono(idCliente: Long): String?
     fun actualizarClienteEnVenta(ventaId: Long, idCliente: Long): Result<Unit>
