@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -81,6 +82,7 @@ import com.ecommerce.ecommerceposapp.util.ScannerDetector
 import com.ecommerce.ecommerceposapp.util.DataWedgeScanner
 import coil.compose.AsyncImage
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
+import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion
 import com.ecommerce.ecommerceposapp.presentation.pos.CameraScannerDialog
 import com.ecommerce.ecommerceposapp.presentation.pos.PosUiState
 import com.ecommerce.ecommerceposapp.ui.theme.AppBackground
@@ -231,7 +233,7 @@ internal fun CatalogPane(
     onSearch: (String) -> Unit,
     onCategory: (Long?) -> Unit,
     onSubcategory: (Long?) -> Unit,
-    onAddToCart: (ProductItem) -> Unit,
+    onAddToCart: (ProductItem, ProductConversion?) -> Unit,
     onToggleFeatured: (ProductItem) -> Unit,
     onNewProduct: () -> Unit,
     onScanMessage: (String) -> Unit,
@@ -242,10 +244,16 @@ internal fun CatalogPane(
     val scanFocusRequester = remember { FocusRequester() }
     val context = LocalContext.current
     var showCameraScanner by remember { mutableStateOf(false) }
+    var productPendingConversion by remember { mutableStateOf<ProductItem?>(null) }
 
     val physicalScannerConnected by rememberPhysicalScannerConnected(context)
     val keyboardController = LocalSoftwareKeyboardController.current
     val currentState by rememberUpdatedState(state)
+
+    fun requestProductAdd(product: ProductItem) {
+        if (product.conversions.isEmpty()) onAddToCart(product, null)
+        else productPendingConversion = product
+    }
 
     LaunchedEffect(physicalScannerConnected) {
         if (!physicalScannerConnected) scanMode = false
@@ -269,7 +277,7 @@ internal fun CatalogPane(
         when {
             product == null -> onScanMessage("Producto no encontrado: \"$scannedCode\"")
             product.stock <= 0.0 -> onScanMessage("Producto sin stock disponible")
-            else -> onAddToCart(product)
+            else -> requestProductAdd(product)
         }
         scanBuffer = ""
         lastProcessedScan = null
@@ -312,7 +320,7 @@ internal fun CatalogPane(
         if (exactProduct != null) {
             lastProcessedScan = scannedCode
             if (exactProduct.stock > 0.0) {
-                onAddToCart(exactProduct)
+                requestProductAdd(exactProduct)
             } else {
                 onScanMessage("Producto sin stock disponible")
             }
@@ -569,7 +577,7 @@ internal fun CatalogPane(
                 items(products, key = { it.id }) { product ->
                     ProductSaleCard(
                         product          = product,
-                        onAddToCart      = onAddToCart,
+                        onAddToCart      = ::requestProductAdd,
                         onToggleFeatured = onToggleFeatured,
                     )
                 }
@@ -584,6 +592,32 @@ internal fun CatalogPane(
                 tryProcessScan(code)
             },
             onDismiss = { showCameraScanner = false },
+        )
+    }
+    productPendingConversion?.let { product ->
+        AlertDialog(
+            onDismissRequest = { productPendingConversion = null },
+            title = { Text("Conversiones") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    Text(product.name, fontWeight = FontWeight.SemiBold)
+                    product.conversions.forEach { conversion ->
+                        OutlinedButton(
+                            onClick = {
+                                onAddToCart(product, conversion)
+                                productPendingConversion = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("${conversion.name}  ·  S/ ${"%.2f".format(conversion.finalPrice)}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { productPendingConversion = null }) { Text("Cancelar") }
+            },
         )
     }
 }

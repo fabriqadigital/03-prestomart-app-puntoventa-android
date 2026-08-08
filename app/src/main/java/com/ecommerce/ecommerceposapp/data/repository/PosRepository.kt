@@ -40,6 +40,9 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
+import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryPage
+import com.ecommerce.ecommerceposapp.domain.model.sales.paginateSalesHistoryLocal
+import com.ecommerce.ecommerceposapp.domain.model.sales.mergePendingSalesWithRemotePage
 import com.ecommerce.ecommerceposapp.domain.model.sync.SyncModuleStatus
 import com.ecommerce.ecommerceposapp.domain.model.sync.SyncProgress
 import com.ecommerce.ecommerceposapp.domain.sync.SyncPlan
@@ -49,6 +52,7 @@ import com.ecommerce.ecommerceposapp.domain.model.catalog.CategoryItem
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
+import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion
 import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.catalog.SubcategoryItem
 import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
@@ -219,6 +223,18 @@ class PosRepositoryImpl(private val context: Context) :
                     salesChannel = p.canalVenta.ifBlank { "ambos" },
                     featuredInPos = p.id.toString() in featuredIds,
                     active = p.active,
+                    conversions = runCatching {
+                        val array = JSONArray(p.conversionsJson)
+                        (0 until array.length()).mapNotNull { index ->
+                            val item = array.optJSONObject(index) ?: return@mapNotNull null
+                            val id = item.optLong("id_producto_conversion")
+                            val name = item.optString("nombre").trim()
+                            val factor = item.optDouble("factor_stock", 0.0)
+                            val finalPrice = item.optDouble("precio_final", 0.0)
+                            if (id <= 0L || name.isBlank() || factor <= 0.0 || finalPrice <= 0.0) null
+                            else ProductConversion(id, name, item.optString("codigo"), factor, finalPrice)
+                        }
+                    }.getOrDefault(emptyList()),
                 )
             }
             .sortedWith(compareByDescending<ProductItem> { it.featuredInPos }.thenBy { it.name.lowercase(Locale.getDefault()) })
@@ -302,7 +318,7 @@ class PosRepositoryImpl(private val context: Context) :
                     },
                 )
                 val product = realm.where(ProductRealm::class.java).equalTo("id", line.productId).findFirst() ?: return@forEach
-                product.stock = (product.stock - line.quantity).coerceAtLeast(0.0)
+                product.stock = (product.stock - (line.quantity * line.stockFactor)).coerceAtLeast(0.0)
             }
             realm.insert(
                 OutboxRealm().apply {
@@ -683,17 +699,18 @@ class PosRepositoryImpl(private val context: Context) :
         return Result.success(Unit)
     }
 
-    override fun listSalesHistory(): List<SalesHistoryRow> {
+    override fun listSalesHistory(page: Int, perPage: Int, search: String): SalesHistoryPage {
         val sessionId = prefs.getLong("pos_cash_session_id", 0L)
-        if (sessionId == 0L) return emptyList()
+        if (sessionId == 0L) return SalesHistoryPage(emptyList(), 0, page, perPage)
         val local = localSalesHistory(sessionId)
         val offlineSession = getSession()?.offlineSession == true || ApiSessionStore(context).token.isBlank()
-        if (sessionId < 0L || offlineSession) return local
+        fun localPage() = paginateSalesHistoryLocal(local, page, perPage, search)
+        if (sessionId < 0L || offlineSession) return localPage()
 
-        return cashApi.listSales(sessionId).fold(
+        return cashApi.listSales(sessionId, page, perPage, search).fold(
             onSuccess = { remote ->
                 val localBySaleId = local.associateBy { it.ventaId }
-                val enrichedRemote = remote.map { row ->
+                val enrichedRemote = remote.rows.map { row ->
                     if (!row.clienteNombre.isGenericCustomerName()) return@map row
                     val resolvedName = localBySaleId[row.ventaId]?.clienteNombre
                         ?.takeUnless { it.isGenericCustomerName() }
@@ -717,12 +734,10 @@ class PosRepositoryImpl(private val context: Context) :
                         row
                     }
                 }
-                (enrichedLocal + enrichedRemote)
-                    .distinctBy { it.ventaId }
-                    .sortedByDescending { it.fechaMillis }
+                mergePendingSalesWithRemotePage(remote.copy(rows = enrichedRemote), enrichedLocal, search)
             },
             onFailure = { error ->
-                if (error.isNetworkFailure()) local else throw error
+                if (error.isNetworkFailure()) localPage() else throw error
             },
         )
     }
@@ -1325,6 +1340,7 @@ class PosRepositoryImpl(private val context: Context) :
                         offerMaxQuantityPrice = rp.offerMaxQuantityPrice
                         metaTitle = rp.metaTitle
                         metaDescription = rp.metaDescription
+                        conversionsJson = rp.conversionsJson
                         active = rp.active
                         localCreatedAt = rp.createdAt
                         remoteCreatedAt = rp.createdAt

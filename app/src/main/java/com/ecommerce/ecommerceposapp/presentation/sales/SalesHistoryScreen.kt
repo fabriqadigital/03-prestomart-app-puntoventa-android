@@ -95,6 +95,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -483,6 +484,7 @@ fun SalesHistoryScreen(
     clients: List<ClientRow>,
 ) {
     var rows          by remember { mutableStateOf<List<SalesHistoryRow>>(emptyList()) }
+    var totalRows     by remember { mutableStateOf(0) }
     var loading       by remember { mutableStateOf(false) }
     var search        by remember { mutableStateOf("") }
     var error         by remember { mutableStateOf<String?>(null) }
@@ -490,7 +492,7 @@ fun SalesHistoryScreen(
     var previewComp   by remember { mutableStateOf<ComprobanteEmitidoResult?>(null) }
     var saleToCancel  by remember { mutableStateOf<SalesHistoryRow?>(null) }
     var cancelling    by remember { mutableStateOf(false) }
-    var pageSize      by remember { mutableStateOf(10) }
+    var pageSize      by remember { mutableStateOf(20) }
     var pageSizeExpanded by remember { mutableStateOf(false) }
     var currentPage   by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -531,25 +533,25 @@ fun SalesHistoryScreen(
     fun reload() {
         scope.launch {
             loading = true; error = null
-            runCatching { withContext(Dispatchers.IO) { catalog.listSalesHistory() } }
-                .onSuccess { rows = it }
+            runCatching { withContext(Dispatchers.IO) { catalog.listSalesHistory(currentPage + 1, pageSize, search.trim()) } }
+                .onSuccess { result ->
+                    totalRows = result.total
+                    val lastPage = ((result.total - 1).coerceAtLeast(0) / pageSize)
+                    if (result.rows.isEmpty() && currentPage > lastPage) currentPage = lastPage else rows = result.rows
+                }
                 .onFailure { error = it.message ?: "No se pudo cargar el historial." }
             loading = false
         }
     }
 
-    LaunchedEffect(Unit) { reload() }
+    val totalPages = maxOf(1, (totalRows + pageSize - 1) / pageSize)
+    val pageRows = rows
 
-    val filtered = rows.filter {
-        search.isBlank() ||
-            it.numeroComprobante.contains(search, ignoreCase = true) ||
-            it.clienteNombre.contains(search, ignoreCase = true) ||
-            it.cajeroNombre.contains(search, ignoreCase = true)
+    LaunchedEffect(search, pageSize) { currentPage = 0 }
+    LaunchedEffect(currentPage, pageSize, search) {
+        if (search.isNotBlank()) delay(350)
+        reload()
     }
-    val totalPages = maxOf(1, (filtered.size + pageSize - 1) / pageSize)
-    val pageRows = filtered.drop(currentPage * pageSize).take(pageSize)
-
-    LaunchedEffect(search, rows.size, pageSize) { currentPage = 0 }
 
     Column(
         modifier = Modifier
@@ -627,10 +629,10 @@ fun SalesHistoryScreen(
         }
 
         // ── Contador de resultados ───────────────────────────────────────────
-        if (!loading && filtered.isNotEmpty()) {
+        if (!loading && rows.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${filtered.size} ${if (filtered.size == 1) "venta" else "ventas"}",
+                    "$totalRows ${if (totalRows == 1) "venta" else "ventas"}",
                     style      = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color      = TextSecondary,
@@ -656,7 +658,7 @@ fun SalesHistoryScreen(
         }
 
         // ── Lista ────────────────────────────────────────────────────────────
-        if (!loading && filtered.isEmpty() && error == null) {
+        if (!loading && rows.isEmpty() && error == null) {
             Box(
                 modifier         = Modifier.weight(1f).fillMaxWidth(),
                 contentAlignment = Alignment.Center,
@@ -704,9 +706,9 @@ fun SalesHistoryScreen(
                 }
             }
         }
-        if (!loading && filtered.isNotEmpty()) {
+        if (!loading && rows.isNotEmpty()) {
             val from = currentPage * pageSize + 1
-            val to = minOf(filtered.size, (currentPage + 1) * pageSize)
+            val to = minOf(totalRows, (currentPage + 1) * pageSize)
             Row(
                 modifier = Modifier.fillMaxWidth().background(SurfaceWhite).padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -718,7 +720,7 @@ fun SalesHistoryScreen(
                     }
                     MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = SurfaceWhite, surfaceTint = Color.Transparent)) {
                         DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
-                            listOf(10, 20, 50).forEach { size ->
+                            listOf(20, 50, 100).forEach { size ->
                                 DropdownMenuItem(
                                     text = { Text(size.toString()) },
                                     onClick = { pageSize = size; pageSizeExpanded = false },
@@ -727,7 +729,7 @@ fun SalesHistoryScreen(
                         }
                     }
                 }
-                Text("$from-$to de ${filtered.size}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("$from-$to de $totalRows", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.weight(1f))
                 Text("Pagina ${currentPage + 1} de $totalPages", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 IconButton(onClick = { currentPage-- }, enabled = currentPage > 0) {

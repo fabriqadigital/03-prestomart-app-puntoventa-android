@@ -168,7 +168,7 @@ fun ProfileScreen(
                     val open = catalogRepository.findOpenCashSession(resolvedSession.cashierId).getOrThrow()
                         ?: return@runCatching ProfileCashStats()
                     val summary = catalogRepository.cashSummary(open.id).getOrThrow()
-                    val sales = catalogRepository.listSalesHistory()
+                    val sales = catalogRepository.listSalesHistory(page = 1, perPage = 100).rows
                         .filter { !it.estado.equals("Anulada", ignoreCase = true) }
                     val hours = ((System.currentTimeMillis() - open.openedAt).coerceAtLeast(0L) / 3_600_000.0)
                     ProfileCashStats(

@@ -44,6 +44,7 @@ data class RemoteProductSeed(
     val metaDescription: String = "",
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
+    val conversionsJson: String = "[]",
 )
 
 data class RemoteCategorySeed(
@@ -291,6 +292,7 @@ class RemoteCatalogDataSource(context: Context) {
                 metaDescription = optAnyString(obj, listOf("meta_descripcion_producto")),
                 createdAt = obj.optDateMillis("created_at"),
                 updatedAt = obj.optDateMillis("updated_at"),
+                conversionsJson = obj.optJSONArray("conversiones")?.toString() ?: "[]",
             )
         }
 

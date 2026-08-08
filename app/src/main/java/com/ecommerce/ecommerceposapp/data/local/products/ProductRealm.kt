@@ -41,4 +41,5 @@ open class ProductRealm : RealmObject() {
     var remoteUpdatedAt: Long = 0L
     var syncState: String = "SYNCED"
     var syncError: String = ""
+    var conversionsJson: String = "[]"
 }

@@ -183,7 +183,7 @@ private fun CartItemRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                line.productName,
+                if (line.conversionName.isBlank()) line.productName else "${line.productName} · ${line.conversionName}",
                 fontWeight = FontWeight.SemiBold,
                 color      = TextPrimary,
                 style      = MaterialTheme.typography.bodyMedium,
