@@ -777,10 +777,15 @@ private fun PosScreen(
                 if (dimNow != dimmed) {
                     dimmed = dimNow
                     window.attributes = window.attributes.apply {
+                        // Ambos estados son explícitos: activo = brillo normal,
+                        // inactivo = brillo reducido. No se usa BRIGHTNESS_OVERRIDE_NONE
+                        // en el estado activo porque restaura el brillo del SISTEMA,
+                        // que en el Zebra puede ser menor al de atenuación (invertía el
+                        // comportamiento: al tocar bajaba el brillo).
                         screenBrightness = if (dimNow) {
                             PosIdleMonitor.DIMMED_BRIGHTNESS
                         } else {
-                            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                            PosIdleMonitor.NORMAL_BRIGHTNESS
                         }
                     }
                 }
