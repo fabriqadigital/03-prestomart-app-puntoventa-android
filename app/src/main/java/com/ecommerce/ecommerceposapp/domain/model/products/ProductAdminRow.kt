@@ -1,5 +1,7 @@
 package com.ecommerce.ecommerceposapp.domain.model.products
 
+import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion
+
 data class ProductTypeRow(
     val id: Long,
     val name: String,
@@ -39,5 +41,6 @@ data class ProductAdminRow(
     val metaTitle: String = "",
     val metaDescription: String = "",
     val active: Boolean,
+    val conversions: List<ProductConversion> = emptyList(),
     val syncState: String = "SYNCED",
 )

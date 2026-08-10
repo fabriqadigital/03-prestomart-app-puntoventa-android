@@ -19,6 +19,8 @@ data class ProductConversion(
     val code: String = "",
     val stockFactor: Double,
     val finalPrice: Double,
+    val active: Boolean = true,
+    val order: Int = 0,
 )
 
 data class ProductItem(

@@ -258,18 +258,19 @@ private fun InfoChip(label: String, value: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun SaleStatusBadge(isAnulada: Boolean) {
+private fun SaleStatusBadge(isAnulada: Boolean, cancellationStatus: String = "") {
+    val pending = !isAnulada && cancellationStatus.equals("Pendiente", ignoreCase = true)
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(Radius.pill))
-            .background(if (isAnulada) RedDangerLight else GreenSuccessLight)
+            .background(if (isAnulada) RedDangerLight else if (pending) Color(0xFFFFF7ED) else GreenSuccessLight)
             .padding(horizontal = 9.dp, vertical = 4.dp),
     ) {
         Text(
-            text = if (isAnulada) "Anulada" else "Completada",
+            text = if (isAnulada) "Anulada" else if (pending) "Autorización pendiente" else "Completada",
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
-            color = if (isAnulada) RedDanger else GreenSuccess,
+            color = if (isAnulada) RedDanger else if (pending) Color(0xFFC2410C) else GreenSuccess,
         )
     }
 }
@@ -277,6 +278,7 @@ private fun SaleStatusBadge(isAnulada: Boolean) {
 @Composable
 private fun SaleActions(
     isAnulada: Boolean,
+    cancellationStatus: String = "",
     onReprint: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -285,8 +287,9 @@ private fun SaleActions(
             Icon(Icons.Filled.Print, contentDescription = "Reimprimir", tint = BrandRed, modifier = Modifier.size(17.dp))
         }
         if (!isAnulada) {
-            IconButton(onClick = onCancel, modifier = Modifier.size(34.dp)) {
-                Icon(Icons.Filled.Cancel, contentDescription = "Anular venta", tint = RedDanger, modifier = Modifier.size(17.dp))
+            val pending = cancellationStatus.equals("Pendiente", ignoreCase = true)
+            IconButton(onClick = onCancel, enabled = !pending, modifier = Modifier.size(34.dp)) {
+                Icon(Icons.Filled.Cancel, contentDescription = if (pending) "Autorización pendiente" else "Solicitar anulación", tint = if (pending) GrayMedium else RedDanger, modifier = Modifier.size(17.dp))
             }
         }
     }
@@ -347,8 +350,8 @@ private fun SaleHistoryTableRow(
         Text(row.clienteNombre.ifBlank { "General" }, Modifier.weight(1.15f), color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
         Text(row.cajeroNombre.ifBlank { "—" }, Modifier.weight(1f), color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
         Text("S/ ${"%.2f".format(row.total)}", Modifier.weight(.75f), color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, textDecoration = rowDecoration)
-        Box(Modifier.weight(.9f)) { SaleStatusBadge(isAnulada) }
-        Box(Modifier.weight(.72f)) { SaleActions(isAnulada, onReprint, onCancel) }
+        Box(Modifier.weight(.9f)) { SaleStatusBadge(isAnulada, row.cancellationStatus) }
+        Box(Modifier.weight(.72f)) { SaleActions(isAnulada, row.cancellationStatus, onReprint, onCancel) }
     }
 }
 
@@ -376,10 +379,10 @@ private fun SaleHistoryCompactRow(
         Column(Modifier.weight(.8f), horizontalAlignment = Alignment.End) {
             Text("S/ ${"%.2f".format(row.total)}", color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, textDecoration = rowDecoration)
             Spacer(Modifier.height(4.dp))
-            SaleStatusBadge(isAnulada)
+            SaleStatusBadge(isAnulada, row.cancellationStatus)
         }
         Spacer(Modifier.width(4.dp))
-        SaleActions(isAnulada, onReprint, onCancel)
+        SaleActions(isAnulada, row.cancellationStatus, onReprint, onCancel)
     }
 }
 
@@ -410,7 +413,7 @@ private fun CancelSaleDialog(
                     Icon(Icons.Filled.Cancel, contentDescription = null, tint = RedDanger, modifier = Modifier.size(22.dp))
                 }
                 Column {
-                    Text("Anular venta", fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("Solicitar anulación", fontWeight = FontWeight.Bold, color = TextPrimary)
                     Text(row.numeroComprobante, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 }
             }
@@ -418,7 +421,7 @@ private fun CancelSaleDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
                 Text(
-                    "Indica el motivo. Esta acción queda registrada en el sistema.",
+                    "La venta seguirá activa hasta que el administrador autorice la anulación desde el correo recibido.",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
                 )
@@ -464,7 +467,7 @@ private fun CancelSaleDialog(
                 ),
                 shape    = RoundedCornerShape(Radius.md),
             ) {
-                Text(if (cancelling) "Anulando..." else "Anular venta", color = Color.White, fontWeight = FontWeight.SemiBold)
+                Text(if (cancelling) "Enviando..." else "Solicitar autorización", color = Color.White, fontWeight = FontWeight.SemiBold)
             }
         },
         dismissButton = {

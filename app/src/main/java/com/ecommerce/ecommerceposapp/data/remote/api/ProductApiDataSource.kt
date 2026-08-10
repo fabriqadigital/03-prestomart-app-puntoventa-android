@@ -10,6 +10,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import org.json.JSONArray
 
 class ProductApiDataSource(context: Context) {
     private val sessionStore = ApiSessionStore(context)
@@ -106,6 +107,19 @@ class ProductApiDataSource(context: Context) {
             .addFormDataPart("paquete_dimencion", row.packageDimension.trim())
             .addFormDataPart("meta_titulo_producto", row.metaTitle.trim())
             .addFormDataPart("meta_descripcion_producto", row.metaDescription.trim())
+            .addFormDataPart("conversiones", JSONArray().apply {
+                row.conversions.forEachIndexed { index, conversion ->
+                    put(JSONObject().apply {
+                        if (conversion.id > 0L) put("id_producto_conversion", conversion.id)
+                        put("nombre", conversion.name.trim())
+                        put("codigo", conversion.code.trim())
+                        put("factor_stock", conversion.stockFactor)
+                        put("precio_final", conversion.finalPrice)
+                        put("Activo", if (conversion.active) "S" else "N")
+                        put("orden", index)
+                    })
+                }
+            }.toString())
             .apply {
                 if (row.id > 0L) addFormDataPart("id_producto", row.id.toString())
                 row.imageUrl.removePrefix("file://").let(::File)

@@ -11,12 +11,18 @@ data class CartLine(
 ) {
     val lineTotal: Double get() = unitPrice * quantity
     val lineKey: String get() = "$productId:${conversionId ?: 0L}"
+    val displayName: String get() {
+        val conversion = conversionName.trim()
+        if (conversion.isBlank() || productName.trim().endsWith(conversion, ignoreCase = true)) return productName.trim()
+        return "${productName.trim()} $conversion"
+    }
 }
 
 data class SalePaymentInfo(
     val tipoPago: String,
     val montoRecibido: Double,
     val vuelto: Double,
+    val aplicarRedondeo: Boolean = false,
 )
 
 data class CompletedSaleReceipt(
@@ -76,6 +82,7 @@ data class SalesHistoryRow(
     val total: Double,
     val estado: String,
     val idCliente: Long,
+    val cancellationStatus: String = "",
 )
 
 data class SalesHistoryPage(

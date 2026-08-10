@@ -77,6 +77,7 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
+import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.presentation.pos.PosUiState
 import com.ecommerce.ecommerceposapp.presentation.pos.VistaPreviaReciboDialog
@@ -169,9 +170,12 @@ private fun CartEmptyState(modifier: Modifier = Modifier) {
 @Composable
 private fun CartItemRow(
     line: CartLine,
+    conversions: List<ProductConversion>,
+    onSelectConversion: (ProductConversion?) -> Unit,
     onIncrease: () -> Unit,
     onDecrease: () -> Unit,
 ) {
+    var conversionMenuExpanded by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -182,6 +186,7 @@ private fun CartItemRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (line.conversionName.isBlank()) line.productName else "${line.productName} · ${line.conversionName}",
                 fontWeight = FontWeight.SemiBold,
@@ -189,7 +194,32 @@ private fun CartItemRow(
                 style      = MaterialTheme.typography.bodyMedium,
                 maxLines   = 1,
                 overflow   = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            if (conversions.isNotEmpty()) Box {
+                IconButton(onClick = { conversionMenuExpanded = true }, modifier = Modifier.size(30.dp)) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Seleccionar conversión", tint = BrandRed)
+                }
+                DropdownMenu(
+                    expanded = conversionMenuExpanded,
+                    onDismissRequest = { conversionMenuExpanded = false },
+                    modifier = Modifier.widthIn(min = 220.dp, max = 360.dp).heightIn(max = 360.dp),
+                ) {
+                    DropdownMenuItem(text = { Text("Unidad · precio normal") }, onClick = {
+                        onSelectConversion(null); conversionMenuExpanded = false
+                    })
+                    conversions.forEach { conversion ->
+                        DropdownMenuItem(text = {
+                            Text(
+                                "${conversion.name} · S/ ${"%.2f".format(conversion.finalPrice)}",
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }, onClick = { onSelectConversion(conversion); conversionMenuExpanded = false })
+                    }
+                }
+            }
+            }
             Spacer(Modifier.height(2.dp))
             Text(
                 "S/ ${"%.2f".format(line.unitPrice)} · Total S/ ${"%.2f".format(line.unitPrice * line.quantity)}",
@@ -302,6 +332,7 @@ internal fun CartPane(
     catalog: CatalogRepository,
     onIncrease: (CartLine) -> Unit,
     onDecrease: (CartLine) -> Unit,
+    onSelectConversion: (CartLine, ProductConversion?) -> Unit,
     onPay: suspend (SalePaymentInfo, Long, ReceiptCustomerInfo, TipoComprobanteEmision) -> Result<CompletedSaleReceipt>,
     onNewClient: () -> Unit = {},
 ) {
@@ -454,6 +485,8 @@ internal fun CartPane(
                 items(state.cart) { line ->
                     CartItemRow(
                         line       = line,
+                        conversions = state.products.firstOrNull { it.id == line.productId }?.conversions.orEmpty(),
+                        onSelectConversion = { conversion -> onSelectConversion(line, conversion) },
                         onIncrease = { onIncrease(line) },
                         onDecrease = { onDecrease(line) },
                     )

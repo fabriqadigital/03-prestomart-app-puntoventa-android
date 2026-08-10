@@ -4,6 +4,7 @@ import android.content.Context
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
+import com.ecommerce.ecommerceposapp.domain.model.sales.PosPaymentRounding
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
@@ -31,7 +32,9 @@ class PosSaleApiDataSource(context: Context) {
         }
         return runCatching {
             require(cashSessionId > 0L) { "Debes abrir una caja antes de vender." }
-            val total = lines.sumOf { it.lineTotal }
+            val exactTotal = PosPaymentRounding.exactTotal(lines.sumOf { it.lineTotal })
+            val total = PosPaymentRounding.finalTotal(exactTotal, payment.tipoPago, payment.aplicarRedondeo)
+            val effectivePayment = PosPaymentRounding.normalizedPayment(payment, exactTotal)
             val payload = JSONObject().apply {
                 put("id_cliente", clientId.coerceAtLeast(0L))
                 put("cliente_nombre", customerInfo.name.trim())
@@ -39,8 +42,9 @@ class PosSaleApiDataSource(context: Context) {
                 put("tipo_comprobante", receiptType.name)
                 put("id_caja_sesion", cashSessionId)
                 put("tipo_pago", payment.tipoPago)
-                put("monto_recibido", payment.montoRecibido)
-                put("vuelto", payment.vuelto)
+                put("monto_recibido", effectivePayment.montoRecibido)
+                put("vuelto", effectivePayment.vuelto)
+                put("aplicar_redondeo", payment.aplicarRedondeo)
                 put("total", total)
                 put("pagos", JSONArray().put(JSONObject().apply {
                     put("metodo", payment.tipoPago)
