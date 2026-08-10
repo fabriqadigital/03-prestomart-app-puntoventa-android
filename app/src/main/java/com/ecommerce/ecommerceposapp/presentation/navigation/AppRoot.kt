@@ -9,8 +9,10 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.SystemClock
+import androidx.activity.compose.LocalActivity
 import android.util.Base64
 import android.util.Log
+import android.view.WindowManager
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -104,6 +106,7 @@ import androidx.compose.ui.res.painterResource
 import com.ecommerce.ecommerceposapp.R
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
@@ -141,11 +144,13 @@ import com.ecommerce.ecommerceposapp.presentation.users.UsersCrudScreen
 import com.ecommerce.ecommerceposapp.presentation.users.UsersViewModel
 import com.ecommerce.ecommerceposapp.presentation.pos.PosViewModel
 import com.ecommerce.ecommerceposapp.util.DataWedgeScanner
+import com.ecommerce.ecommerceposapp.util.PosIdleMonitor
 import com.ecommerce.ecommerceposapp.presentation.sales.SalesHistoryScreen
 import com.ecommerce.ecommerceposapp.presentation.sync.SyncViewModel
 import com.ecommerce.ecommerceposapp.presentation.cash.CashModuleScreen
 import com.ecommerce.ecommerceposapp.presentation.cash.CashModuleViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.androidx.compose.koinViewModel
@@ -746,6 +751,47 @@ private fun PosScreen(
     val authRepository: AuthRepository = koinInject()
     val syncRepository: SyncRepository = koinInject()
     val context = LocalContext.current
+    val activity = LocalActivity.current
+    val view = LocalView.current
+
+    DisposableEffect(view, activity) {
+        view.keepScreenOn = true
+        PosIdleMonitor.reset()
+        onDispose {
+            view.keepScreenOn = false
+            activity?.window?.let { window ->
+                window.attributes = window.attributes.apply {
+                    screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(activity) {
+        val window = activity?.window ?: return@LaunchedEffect
+        var dimmed = false
+        try {
+            while (true) {
+                delay(PosIdleMonitor.POLL_INTERVAL_MILLIS)
+                val dimNow = PosIdleMonitor.shouldDim()
+                if (dimNow != dimmed) {
+                    dimmed = dimNow
+                    window.attributes = window.attributes.apply {
+                        screenBrightness = if (dimNow) {
+                            PosIdleMonitor.DIMMED_BRIGHTNESS
+                        } else {
+                            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                        }
+                    }
+                }
+            }
+        } finally {
+            window.attributes = window.attributes.apply {
+                screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            }
+        }
+    }
+
     val connectivity = remember {
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     }

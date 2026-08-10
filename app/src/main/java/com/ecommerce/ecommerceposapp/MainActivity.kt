@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import com.ecommerce.ecommerceposapp.presentation.navigation.PosAppRoot
 import com.ecommerce.ecommerceposapp.ui.theme.EcommercePosAppTheme
 import com.ecommerce.ecommerceposapp.util.PhysicalScannerInput
+import com.ecommerce.ecommerceposapp.util.PosIdleMonitor
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -19,7 +20,12 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        PosIdleMonitor.touch()
         if (PhysicalScannerInput.onKeyEvent(event)) return true
         return super.dispatchKeyEvent(event)
+    }
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        PosIdleMonitor.touch()
     }
 }
