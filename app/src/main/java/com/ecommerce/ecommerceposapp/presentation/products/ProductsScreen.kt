@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -67,6 +68,7 @@ import coil.compose.AsyncImage
 import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductTypeRow
+import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion
 import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
@@ -631,6 +633,7 @@ private fun ProductAdvancedEditorView(
     var metaDescription by remember(initial) { mutableStateOf(initial.metaDescription) }
     var salesChannel by remember(initial) { mutableStateOf(initial.salesChannel.ifBlank { "ambos" }) }
     var active by remember(initial) { mutableStateOf(initial.active) }
+    var conversions by remember(initial) { mutableStateOf(initial.conversions) }
     val activeCategories = categories.filter { it.active }
     val availableSubcategories = subcategories.filter { it.active && it.categoryId == categoryId }
     val selectedCategoryName = activeCategories.firstOrNull { it.id == categoryId }?.name ?: "Seleccionar"
@@ -644,8 +647,14 @@ private fun ProductAdvancedEditorView(
     }
     val barcodeError = barcodeValidationMessage
         ?: duplicateBarcodeProduct?.let { "Este producto ya se encuentra en el sistema: ${it.name}." }
+    val conversionNames = conversions.map { it.name.trim().lowercase() }
+    val conversionsValid = conversions.size <= 30 && conversions.all {
+        it.name.trim().isNotBlank() && it.name.trim().length <= 80 && it.code.trim().length <= 50 &&
+            it.stockFactor >= 0.0 && it.stockFactor <= 999999.9999 &&
+            it.finalPrice >= 0.01 && it.finalPrice <= 9999999999.99
+    } && conversionNames.distinct().size == conversionNames.size
     val canSaveProduct = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0 &&
-        parseDouble(stock, -1.0) >= 0.0 && duplicateBarcodeProduct == null
+        parseDouble(stock, -1.0) >= 0.0 && duplicateBarcodeProduct == null && conversionsValid
     val compactEditor = LocalConfiguration.current.screenWidthDp < 900
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) imageUrl = copyPickedProductImage(context, uri)
@@ -696,7 +705,7 @@ private fun ProductAdvancedEditorView(
             offerMaxQuantityPrice = parseDouble(offerMaxQuantityPrice, initial.offerMaxQuantityPrice),
             ratingsEnabled = ratingsEnabled, adminRating = parseDouble(adminRating, initial.adminRating),
             productTypeId = productTypeId, metaTitle = metaTitle, metaDescription = metaDescription,
-            salesChannel = salesChannel, active = active,
+            salesChannel = salesChannel, active = active, conversions = conversions,
         )
     }
 
@@ -794,6 +803,79 @@ private fun ProductAdvancedEditorView(
                         OutlinedTextField(offerMaxQuantity, { offerMaxQuantity = it }, label = { Text("Cantidad mínima (oferta por volumen)") }, modifier = Modifier.weight(1f), singleLine = true)
                         OutlinedTextField(offerMaxQuantityPrice, { offerMaxQuantityPrice = it }, label = { Text("Precio unitario desde esa cantidad") }, prefix = { Text("S/ ") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
+
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Conversiones", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(
+                            onClick = {
+                                if (conversions.size < 30) conversions = conversions + ProductConversion(
+                                    id = 0L, name = "", code = "", stockFactor = 1.0, finalPrice = parseDouble(price, 0.0),
+                                )
+                            },
+                            enabled = conversions.size < 30,
+                        ) { Text("+ Agregar conversión") }
+                    }
+                    Text(
+                        "Opcional. Cada conversión usa su propio precio y descuenta el stock según su factor.",
+                        color = TextSecondary,
+                    )
+                    conversions.forEachIndexed { index, conversion ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.White,
+                        ) {
+                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Conversión ${index + 1}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = { conversions = conversions.filterIndexed { i, _ -> i != index } }) {
+                                        Icon(Icons.Filled.Close, contentDescription = "Eliminar conversión")
+                                    }
+                                }
+                                FlowRow(
+                                    Modifier.fillMaxWidth(),
+                                    maxItemsInEachRow = if (compactEditor) 1 else 4,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    OutlinedTextField(conversion.name, { value ->
+                                        conversions = conversions.toMutableList().also { it[index] = conversion.copy(name = value) }
+                                    }, label = { Text("Nombre *") }, modifier = Modifier.weight(1f), singleLine = true)
+                                    OutlinedTextField(conversion.code, { value ->
+                                        conversions = conversions.toMutableList().also { it[index] = conversion.copy(code = value) }
+                                    }, label = { Text("Código") }, modifier = Modifier.weight(1f), singleLine = true)
+                                    OutlinedTextField(conversion.stockFactor.toString(), { value ->
+                                        conversions = conversions.toMutableList().also {
+                                            it[index] = conversion.copy(stockFactor = parseDouble(value, 0.0))
+                                        }
+                                    }, label = { Text("Stock conversión *") }, modifier = Modifier.weight(1f), singleLine = true)
+                                    OutlinedTextField(conversion.finalPrice.toString(), { value ->
+                                        conversions = conversions.toMutableList().also {
+                                            it[index] = conversion.copy(finalPrice = parseDouble(value, 0.0))
+                                        }
+                                    }, label = { Text("Precio final *") }, prefix = { Text("S/ ") }, modifier = Modifier.weight(1f), singleLine = true)
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Checkbox(
+                                            checked = conversion.active,
+                                            onCheckedChange = { checked ->
+                                                conversions = conversions.toMutableList().also {
+                                                    it[index] = conversion.copy(active = checked)
+                                                }
+                                            },
+                                        )
+                                        Text("Activa")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (!conversionsValid) Text(
+                        "Revisa las conversiones: nombres únicos, stock no negativo y precio final mayor a 0.",
+                        color = MaterialTheme.colorScheme.error,
+                    )
 
                     Text("Inventario y Categorías", fontWeight = FontWeight.Bold)
                     OutlinedTextField(stock, { stock = it }, label = { Text("Stock *") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -899,6 +981,7 @@ private fun ProductAdvancedEditorView(
                                         metaDescription = metaDescription,
                                         salesChannel = salesChannel,
                                         active = active,
+                                        conversions = conversions,
                                     ),
                                 )
                             },

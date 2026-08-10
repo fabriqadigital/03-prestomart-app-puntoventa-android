@@ -96,7 +96,7 @@ class EscPosReceiptPrinter(private val context: Context) {
         line(columns("CANT. / PRECIO", "IMPORTE"))
         separator()
         receipt.lines.forEach { item ->
-            wrappedLine(item.productName)
+            wrappedLine(item.displayName)
             val left = "${item.quantity} x S/ ${money(item.unitPrice)}"
             line(columns(left, "S/ ${money(item.lineTotal)}"))
         }

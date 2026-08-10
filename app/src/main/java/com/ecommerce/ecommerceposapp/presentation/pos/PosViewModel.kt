@@ -95,6 +95,9 @@ class PosViewModel(
 
     suspend fun refreshCatalog() {
         val catalog = withContext(Dispatchers.IO) {
+            // Actualiza Realm desde el backend antes de construir el catálogo visible.
+            // Si no hay conexión, se conserva y muestra el catálogo local existente.
+            catalogRepository.refreshCatalog()
             Triple(catalogRepository.categories(), catalogRepository.subcategories(), catalogRepository.products())
         }
         _uiState.update { it.copy(categories = catalog.first, subcategories = catalog.second, products = catalog.third) }
@@ -117,26 +120,26 @@ class PosViewModel(
     fun addToCart(product: ProductItem, conversion: ProductConversion? = null) {
         val current = _uiState.value.cart.toMutableList()
         val conversionId = conversion?.id
-        val stockFactor = conversion?.stockFactor ?: 1.0
         val index = current.indexOfFirst { it.productId == product.id && it.conversionId == conversionId }
-        val consumedByOtherLines = current.filterIndexed { itemIndex, line ->
-            line.productId == product.id && itemIndex != index
-        }.sumOf { it.quantity * it.stockFactor }
+        val totalProductQuantity = current.filter { it.productId == product.id }.sumOf { it.quantity }
+        if (totalProductQuantity + 1 > product.stock) {
+            _uiState.update { it.copy(message = "Stock insuficiente para ${product.name}.") }
+            return
+        }
         val nextQuantity: Int
         if (index >= 0) {
             val row = current[index]
-            if (consumedByOtherLines + ((row.quantity + 1) * row.stockFactor) > product.stock) {
-                _uiState.update {
-                    it.copy(
-                        message = "Stock insuficiente para ${conversion?.name ?: product.name}."
-                    )
-                }
+            if (conversion != null && row.quantity + 1 > conversion.stockFactor) {
+                _uiState.update { it.copy(message = "Stock insuficiente para ${conversion.name}.") }
                 return
             }
             nextQuantity = row.quantity + 1
             current[index] = row.copy(quantity = nextQuantity)
         } else {
-            if (product.stock <= 0.0 || consumedByOtherLines + stockFactor > product.stock) return
+            if (conversion != null && conversion.stockFactor < 1.0) {
+                _uiState.update { it.copy(message = "Stock insuficiente para ${conversion.name}.") }
+                return
+            }
             nextQuantity = 1
             current.add(CartLine(
                 productId = product.id,
@@ -145,7 +148,7 @@ class PosViewModel(
                 quantity = 1,
                 conversionId = conversionId,
                 conversionName = conversion?.name.orEmpty(),
-                stockFactor = stockFactor,
+                stockFactor = conversion?.stockFactor ?: 0.0,
             ))
         }
         _uiState.update {
@@ -158,12 +161,14 @@ class PosViewModel(
 
     fun increase(line: CartLine) {
         _uiState.update {
-            val productStock = it.products.firstOrNull { p -> p.id == line.productId }?.stock ?: Double.MAX_VALUE
-            val consumedByOtherLines = it.cart
-                .filter { row -> row.productId == line.productId && row.lineKey != line.lineKey }
-                .sumOf { row -> row.quantity * row.stockFactor }
-            if (consumedByOtherLines + ((line.quantity + 1) * line.stockFactor) > productStock) {
-                it.copy(message = "Stock insuficiente para ${line.conversionName.ifBlank { line.productName }}.")
+            val product = it.products.firstOrNull { p -> p.id == line.productId }
+            val productStock = product?.stock ?: Double.MAX_VALUE
+            val totalProductQuantity = it.cart.filter { row -> row.productId == line.productId }.sumOf { row -> row.quantity }
+            val conversionStock = line.conversionId?.let { id -> product?.conversions?.firstOrNull { conversion -> conversion.id == id }?.stockFactor }
+            if (totalProductQuantity + 1 > productStock) {
+                it.copy(message = "Stock insuficiente para ${line.productName}.")
+            } else if (conversionStock != null && line.quantity + 1 > conversionStock) {
+                it.copy(message = "Stock insuficiente para ${line.conversionName}.")
             } else {
                 val nextQuantity = line.quantity + 1
                 it.copy(
@@ -184,6 +189,37 @@ class PosViewModel(
                 if (quantity <= 0) null else row.copy(quantity = quantity)
             }
             it.copy(cart = next)
+        }
+    }
+
+    fun selectConversion(line: CartLine, conversion: ProductConversion?) {
+        _uiState.update { state ->
+            val product = state.products.firstOrNull { it.id == line.productId } ?: return@update state
+            val totalProductQuantity = state.cart.filter { it.productId == line.productId }.sumOf { it.quantity }
+            if (totalProductQuantity > product.stock) {
+                return@update state.copy(message = "Stock insuficiente para ${conversion?.name ?: product.name}.")
+            }
+            val existing = state.cart.firstOrNull {
+                it.productId == line.productId && it.conversionId == conversion?.id && it.lineKey != line.lineKey
+            }
+            val resultingConversionQuantity = line.quantity + (existing?.quantity ?: 0)
+            if (conversion != null && resultingConversionQuantity > conversion.stockFactor) {
+                return@update state.copy(message = "Stock insuficiente para ${conversion.name}.")
+            }
+            val replacement = line.copy(
+                unitPrice = conversion?.finalPrice ?: product.price,
+                conversionId = conversion?.id,
+                conversionName = conversion?.name.orEmpty(),
+                stockFactor = conversion?.stockFactor ?: 0.0,
+            )
+            val cart = if (existing == null) {
+                state.cart.map { if (it.lineKey == line.lineKey) replacement else it }
+            } else {
+                state.cart.filterNot { it.lineKey == line.lineKey }.map {
+                    if (it.lineKey == existing.lineKey) it.copy(quantity = it.quantity + line.quantity) else it
+                }
+            }
+            state.copy(cart = cart, message = "Conversión actualizada")
         }
     }
 

@@ -1065,6 +1065,7 @@ private fun PosScreen(
                                     catalog,
                                     posVm::increase,
                                     posVm::decrease,
+                                    posVm::selectConversion,
                                     onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
                                     onNewClient = { selectedModule = "Clientes" },
                                 )
@@ -1099,6 +1100,7 @@ private fun PosScreen(
                                     catalog,
                                     posVm::increase,
                                     posVm::decrease,
+                                    posVm::selectConversion,
                                     onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
                                     onNewClient = { selectedModule = "Clientes" },
                                 )

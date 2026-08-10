@@ -80,20 +80,33 @@ class RemoteCatalogDataSource(context: Context) {
                 fetchCatalogFromEndpoint("${base.baseUrl}/api${ApiConfig.SYNC_CATALOG}", base)
             }.getOrNull()
             if (catalog != null && (catalog.categories.isNotEmpty() || catalog.products.isNotEmpty())) {
+                // El catálogo financiero puede omitir relaciones administrativas como
+                // `conversiones`. La lista de productos es la fuente completa usada por
+                // la web y debe prevalecer cuando está disponible.
+                val completeProducts = runCatching {
+                    fetchProductsFromEndpoint("${base.baseUrl}/api${ApiConfig.PRODUCT_LIST}", base)
+                }.getOrDefault(emptyList())
                 val categories = catalog.categories.ifEmpty {
                     runCatching { fetchCategoriesFromEndpoint("${base.baseUrl}/api${ApiConfig.CATEGORY_LIST}", base) }.getOrDefault(emptyList())
                 }
                 val subcategories = catalog.subcategories.ifEmpty {
                     fetchSubcategories(base, categories)
                 }
-                return catalog.copy(categories = categories, subcategories = subcategories)
+                return catalog.copy(
+                    categories = categories,
+                    subcategories = subcategories,
+                    products = completeProducts.ifEmpty { catalog.products },
+                )
             }
             val categories = runCatching {
                 fetchCategoriesFromEndpoint("${base.baseUrl}/api${ApiConfig.CATEGORY_LIST}", base)
             }.getOrDefault(emptyList())
             if (categories.isNotEmpty()) {
                 val subcategories = fetchSubcategories(base, categories)
-                return RemoteCatalogSeed(categories = categories, subcategories = subcategories)
+                val products = runCatching {
+                    fetchProductsFromEndpoint("${base.baseUrl}/api${ApiConfig.PRODUCT_LIST}", base)
+                }.getOrDefault(emptyList())
+                return RemoteCatalogSeed(categories = categories, subcategories = subcategories, products = products)
             }
         }
         return RemoteCatalogSeed()
@@ -106,6 +119,15 @@ class RemoteCatalogDataSource(context: Context) {
 
     private fun fetchCategoriesFromEndpoint(url: String, base: ApiBaseCandidate): List<RemoteCategorySeed> {
         return parseRemoteCategories(openJson(url, base))
+    }
+
+    private fun fetchProductsFromEndpoint(url: String, base: ApiBaseCandidate): List<RemoteProductSeed> {
+        val payload = openJson(url, base)
+        val root: Any = if (payload.trim().startsWith("[")) JSONArray(payload) else JSONObject(payload)
+        val products = (root as? JSONObject)?.optArrayAny("result", "products", "productos", "items", "data")
+            ?: (root as? JSONArray)
+            ?: return emptyList()
+        return parseRemoteProducts(products, base.baseUrl)
     }
 
     private fun fetchSubcategoriesFromEndpoint(url: String, base: ApiBaseCandidate): List<RemoteSubcategorySeed> {

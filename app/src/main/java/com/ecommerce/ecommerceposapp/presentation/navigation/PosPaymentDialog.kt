@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -60,6 +61,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.PosPaymentRounding
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
@@ -115,11 +117,14 @@ internal fun CobrarVentaDialog(
     var customerName by remember(initialClient) { mutableStateOf(initialClient?.let { it.businessName.ifBlank { it.name } }.orEmpty()) }
     var customerDoc by remember(initialClient) { mutableStateOf(initialClient?.document.orEmpty()) }
     var receivedText by remember(total) { mutableStateOf("") }
+    var applyCashRounding by remember(total) { mutableStateOf(false) }
     var processing by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val payableTotal = method?.let { PosPaymentRounding.finalTotal(total, it.code, applyCashRounding) }
+        ?: PosPaymentRounding.exactTotal(total)
     val received = receivedText.replace(',', '.').toDoubleOrNull() ?: 0.0
-    val change = (received - total).coerceAtLeast(0.0)
+    val change = PosPaymentRounding.exactTotal((received - payableTotal).coerceAtLeast(0.0))
     val customerInfo = if (receiptType == TipoComprobanteEmision.SOLO_TICKET) {
         ReceiptCustomerInfo()
     } else {
@@ -135,11 +140,13 @@ internal fun CobrarVentaDialog(
         TipoComprobanteEmision.FACTURA -> !hasCustomerData || (customerInfo.name.isNotBlank() && customerInfo.document.length == 11)
         TipoComprobanteEmision.SOLO_TICKET -> true
     }
-    val canContinue = !processing && customerValid && method != null && (method != PaymentMethod.Cash || received >= total)
+    val canContinue = !processing && customerValid && method != null && (method != PaymentMethod.Cash || received >= payableTotal)
 
     fun selectMethod(selected: PaymentMethod) {
         method = selected
-        receivedText = if (selected == PaymentMethod.Cash) "" else String.format(Locale.US, "%.2f", total)
+        applyCashRounding = false
+        val selectedTotal = PosPaymentRounding.finalTotal(total, selected.code, false)
+        receivedText = if (selected == PaymentMethod.Cash) "" else String.format(Locale.US, "%.2f", selectedTotal)
         errorText = ""
         step = PaymentStep.Details
     }
@@ -152,8 +159,9 @@ internal fun CobrarVentaDialog(
             errorText = ""
             val payment = SalePaymentInfo(
                 tipoPago = selected.code,
-                montoRecibido = if (selected == PaymentMethod.Cash) received else total,
+                montoRecibido = if (selected == PaymentMethod.Cash) received else payableTotal,
                 vuelto = if (selected == PaymentMethod.Cash) change else 0.0,
+                aplicarRedondeo = selected == PaymentMethod.Cash && applyCashRounding,
             )
             onPay(payment, customerInfo, receiptType).fold(
                 onSuccess = {
@@ -187,7 +195,7 @@ internal fun CobrarVentaDialog(
                 Spacer(Modifier.height(20.dp))
                 Text("TOTAL", modifier = Modifier.align(Alignment.CenterHorizontally), color = PaymentMuted, fontWeight = FontWeight.SemiBold)
                 Text(
-                    money(total),
+                    money(payableTotal),
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                     fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
@@ -275,12 +283,13 @@ internal fun CobrarVentaDialog(
                                 step = PaymentStep.Methods
                                 method = null
                                 receivedText = ""
+                                applyCashRounding = false
                             },
                         ) { Text("Cambiar método", color = PaymentBrand, fontWeight = FontWeight.SemiBold) }
                     }
                     PaymentDetails(
                         method = method!!,
-                        total = total,
+                        total = payableTotal,
                         cashierName = cashierName,
                         receivedText = receivedText,
                         onReceivedChange = { value ->
@@ -288,6 +297,11 @@ internal fun CobrarVentaDialog(
                             errorText = ""
                         },
                         change = change,
+                        applyCashRounding = applyCashRounding,
+                        onApplyCashRoundingChange = {
+                            applyCashRounding = it
+                            errorText = ""
+                        },
                     )
                     if (!isOnline && method != PaymentMethod.Cash) {
                         Spacer(Modifier.height(10.dp))
@@ -527,16 +541,18 @@ private fun PaymentDetails(
     receivedText: String,
     onReceivedChange: (String) -> Unit,
     change: Double,
+    applyCashRounding: Boolean,
+    onApplyCashRoundingChange: (Boolean) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (maxWidth >= 620.dp) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                PaymentAmountSection(method, total, receivedText, onReceivedChange, change, Modifier.weight(1f))
+                PaymentAmountSection(method, total, receivedText, onReceivedChange, change, applyCashRounding, onApplyCashRoundingChange, Modifier.weight(1f))
                 CashierSection(method, cashierName, Modifier.weight(1f))
             }
         } else {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                PaymentAmountSection(method, total, receivedText, onReceivedChange, change, Modifier.fillMaxWidth())
+                PaymentAmountSection(method, total, receivedText, onReceivedChange, change, applyCashRounding, onApplyCashRoundingChange, Modifier.fillMaxWidth())
                 CashierSection(method, cashierName, Modifier.fillMaxWidth())
             }
         }
@@ -550,10 +566,34 @@ private fun PaymentAmountSection(
     receivedText: String,
     onReceivedChange: (String) -> Unit,
     change: Double,
+    applyCashRounding: Boolean,
+    onApplyCashRoundingChange: (Boolean) -> Unit,
     modifier: Modifier,
 ) {
     Column(modifier) {
         if (method == PaymentMethod.Cash) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().clickable { onApplyCashRoundingChange(!applyCashRounding) },
+                shape = RoundedCornerShape(8.dp),
+                color = Color.White,
+                border = BorderStroke(1.dp, PaymentBorder),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = applyCashRounding, onCheckedChange = onApplyCashRoundingChange)
+                    Column(Modifier.weight(1f)) {
+                        Text("Aplicar redondeo", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Opcional: sube el total al siguiente tramo de S/ 0.50.",
+                            color = PaymentMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = receivedText,
                 onValueChange = onReceivedChange,

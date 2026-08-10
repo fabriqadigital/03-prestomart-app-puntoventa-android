@@ -244,15 +244,13 @@ internal fun CatalogPane(
     val scanFocusRequester = remember { FocusRequester() }
     val context = LocalContext.current
     var showCameraScanner by remember { mutableStateOf(false) }
-    var productPendingConversion by remember { mutableStateOf<ProductItem?>(null) }
 
     val physicalScannerConnected by rememberPhysicalScannerConnected(context)
     val keyboardController = LocalSoftwareKeyboardController.current
     val currentState by rememberUpdatedState(state)
 
     fun requestProductAdd(product: ProductItem) {
-        if (product.conversions.isEmpty()) onAddToCart(product, null)
-        else productPendingConversion = product
+        onAddToCart(product, null)
     }
 
     LaunchedEffect(physicalScannerConnected) {
@@ -592,32 +590,6 @@ internal fun CatalogPane(
                 tryProcessScan(code)
             },
             onDismiss = { showCameraScanner = false },
-        )
-    }
-    productPendingConversion?.let { product ->
-        AlertDialog(
-            onDismissRequest = { productPendingConversion = null },
-            title = { Text("Conversiones") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    Text(product.name, fontWeight = FontWeight.SemiBold)
-                    product.conversions.forEach { conversion ->
-                        OutlinedButton(
-                            onClick = {
-                                onAddToCart(product, conversion)
-                                productPendingConversion = null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("${conversion.name}  ·  S/ ${"%.2f".format(conversion.finalPrice)}")
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { productPendingConversion = null }) { Text("Cancelar") }
-            },
         )
     }
 }

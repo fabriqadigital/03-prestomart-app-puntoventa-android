@@ -413,6 +413,17 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
         offerMaxQuantityPrice = row.offerMaxQuantityPrice
         metaTitle = row.metaTitle
         metaDescription = row.metaDescription
+        conversionsJson = org.json.JSONArray().apply {
+            row.conversions.forEach { conversion -> put(org.json.JSONObject().apply {
+                put("id_producto_conversion", conversion.id)
+                put("nombre", conversion.name)
+                put("codigo", conversion.code)
+                put("factor_stock", conversion.stockFactor)
+                put("precio_final", conversion.finalPrice)
+                put("Activo", if (conversion.active) "S" else "N")
+                put("orden", conversion.order)
+            }) }
+        }.toString()
         active = row.active
         localCreatedAt = createdAt
         remoteCreatedAt = createdAt
@@ -456,8 +467,30 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
         metaTitle = product.metaTitle,
         metaDescription = product.metaDescription,
         active = product.active,
+        conversions = parseConversions(product.conversionsJson),
         syncState = product.syncState,
     )
+
+    private fun parseConversions(json: String) = runCatching {
+        val array = org.json.JSONArray(json)
+        buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val id = item.optLong("id_producto_conversion")
+                val name = item.optString("nombre").trim()
+                val factor = item.optDouble("factor_stock")
+                val price = item.optDouble("precio_final")
+                if (name.isNotBlank() && factor >= 0.0 && price > 0.0) add(
+                    com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion(
+                        id = id, name = name, code = item.optString("codigo"),
+                        stockFactor = factor, finalPrice = price,
+                        active = !item.optString("Activo", "S").equals("N", ignoreCase = true),
+                        order = item.optInt("orden", index),
+                    )
+                )
+            }
+        }
+    }.getOrDefault(emptyList())
 
     private fun RemoteProductSeed.sameIdentity(
         row: ProductAdminRow,
@@ -513,6 +546,7 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
             offerMaxQuantityPrice = offerMaxQuantityPrice,
             metaTitle = metaTitle,
             metaDescription = metaDescription,
+            conversions = parseConversions(conversionsJson),
             active = active,
             syncState = "SYNCED",
         )

@@ -39,6 +39,7 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
+import com.ecommerce.ecommerceposapp.domain.model.sales.PosPaymentRounding
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryPage
 import com.ecommerce.ecommerceposapp.domain.model.sales.paginateSalesHistoryLocal
@@ -232,7 +233,15 @@ class PosRepositoryImpl(private val context: Context) :
                             val factor = item.optDouble("factor_stock", 0.0)
                             val finalPrice = item.optDouble("precio_final", 0.0)
                             if (id <= 0L || name.isBlank() || factor <= 0.0 || finalPrice <= 0.0) null
-                            else ProductConversion(id, name, item.optString("codigo"), factor, finalPrice)
+                            else ProductConversion(
+                                id = id,
+                                name = name,
+                                code = item.optString("codigo"),
+                                stockFactor = factor,
+                                finalPrice = finalPrice,
+                                active = !item.optString("Activo", "S").equals("N", ignoreCase = true),
+                                order = item.optInt("orden", index),
+                            ).takeIf { it.active }
                         }
                     }.getOrDefault(emptyList()),
                 )
@@ -263,18 +272,23 @@ class PosRepositoryImpl(private val context: Context) :
         val cashSessionId = prefs.getLong("pos_cash_session_id", 0L)
         if (cashSessionId == 0L) return Result.failure(Exception("Abre una caja antes de registrar ventas."))
         val linesCopy = lines.map { it.copy() }
+        val exactTotal = PosPaymentRounding.exactTotal(lines.sumOf { it.lineTotal })
+        val total = PosPaymentRounding.finalTotal(exactTotal, payment.tipoPago, payment.aplicarRedondeo)
+        val effectivePayment = PosPaymentRounding.normalizedPayment(payment, exactTotal)
+        if (PosPaymentRounding.isCash(payment.tipoPago) && effectivePayment.montoRecibido < total) {
+            return Result.failure(Exception("El monto recibido es menor al total redondeado de la venta."))
+        }
         val fechaMillis = System.currentTimeMillis()
         val outboxId = UUID.randomUUID().toString()
         lateinit var receipt: CompletedSaleReceipt
         realmWrite { realm ->
             val sesionId = cashSessionId
-            val total = round(lines.sumOf { it.lineTotal } * 100) / 100
             val subtotal = round((total / 1.18) * 100) / 100
             val igv = round((total - subtotal) * 100) / 100
             lines.forEach { line ->
                 val stock = realm.where(ProductRealm::class.java).equalTo("id", line.productId).findFirst()?.stock
                     ?: throw IllegalStateException("El producto ${line.productName} ya no existe localmente.")
-                require(stock >= line.quantity) { "Stock local insuficiente para ${line.productName}." }
+                require(stock >= line.quantity) { "Stock local insuficiente para ${line.displayName}." }
             }
             val ventaId = nextLocalId(realm, FinanzaVentaRealm::class.java)
             // Mantiene un identificador presentable mientras el backend asigna
@@ -293,9 +307,9 @@ class PosRepositoryImpl(private val context: Context) :
                     this.igv = igv
                     descuento = 0.0
                     this.total = total
-                    tipoPago = payment.tipoPago
-                    montoRecibido = payment.montoRecibido
-                    vuelto = payment.vuelto
+                    tipoPago = effectivePayment.tipoPago
+                    montoRecibido = effectivePayment.montoRecibido
+                    vuelto = effectivePayment.vuelto
                     estado = "A"
                     motivoAnulacion = ""
                 },
@@ -309,7 +323,7 @@ class PosRepositoryImpl(private val context: Context) :
                         id = detId
                         idVenta = ventaId
                         idProducto = line.productId
-                        nombreProducto = line.productName
+                        nombreProducto = line.displayName
                         codigoBarras = ""
                         cantidad = line.quantity.toDouble()
                         precioUnitario = line.unitPrice
@@ -318,7 +332,19 @@ class PosRepositoryImpl(private val context: Context) :
                     },
                 )
                 val product = realm.where(ProductRealm::class.java).equalTo("id", line.productId).findFirst() ?: return@forEach
-                product.stock = (product.stock - (line.quantity * line.stockFactor)).coerceAtLeast(0.0)
+                product.stock = (product.stock - line.quantity).coerceAtLeast(0.0)
+                line.conversionId?.let { conversionId ->
+                    val conversions = runCatching { JSONArray(product.conversionsJson) }.getOrNull() ?: JSONArray()
+                    for (index in 0 until conversions.length()) {
+                        val conversion = conversions.optJSONObject(index) ?: continue
+                        if (conversion.optLong("id_producto_conversion") == conversionId) {
+                            val available = conversion.optDouble("factor_stock", 0.0)
+                            conversion.put("factor_stock", (available - line.quantity).coerceAtLeast(0.0))
+                            break
+                        }
+                    }
+                    product.conversionsJson = conversions.toString()
+                }
             }
             realm.insert(
                 OutboxRealm().apply {
@@ -329,7 +355,7 @@ class PosRepositoryImpl(private val context: Context) :
                     aggregateLocalId = ventaId
                     payloadJson = salePayloadJson(
                         lines = lines,
-                        payment = payment,
+                        payment = effectivePayment,
                         clientId = idCliente,
                         cashSessionId = cashSessionId,
                         customerInfo = customerInfo,
@@ -346,9 +372,9 @@ class PosRepositoryImpl(private val context: Context) :
                 subtotal = subtotal,
                 igv = igv,
                 total = total,
-                tipoPago = payment.tipoPago,
-                montoRecibido = payment.montoRecibido,
-                vuelto = payment.vuelto,
+                tipoPago = effectivePayment.tipoPago,
+                montoRecibido = effectivePayment.montoRecibido,
+                vuelto = effectivePayment.vuelto,
                 fechaMillis = fechaMillis,
                 lines = linesCopy,
                 vendedorNombre = session.name,
@@ -368,7 +394,7 @@ class PosRepositoryImpl(private val context: Context) :
                 aggregateLocalId = receipt.ventaId,
                 payloadJson = salePayloadJson(
                     lines = lines,
-                    payment = payment,
+                    payment = effectivePayment,
                     clientId = idCliente,
                     cashSessionId = cashSessionId,
                     customerInfo = customerInfo,
@@ -990,36 +1016,12 @@ class PosRepositoryImpl(private val context: Context) :
 
     override fun closeCashSession(sessionId: Long, countedCash: Double, observations: String): Result<Unit> {
         val offlineSession = getSession()?.offlineSession == true || ApiSessionStore(context).token.isBlank()
-        if (sessionId > 0L && !offlineSession) {
-            val remote = cashApi.closeSession(sessionId, countedCash, observations)
-            if (remote.isSuccess) {
-                cacheCashSession(null)
-                return Result.success(Unit)
-            }
-            if (!remote.exceptionOrNull().isNetworkFailure()) return remote
+        if (offlineSession || sessionId <= 0L) {
+            return Result.failure(Exception("Conéctate a internet para validar las anulaciones pendientes antes de cerrar la caja."))
         }
-        val now = System.currentTimeMillis()
-        realmWrite { realm ->
-            realm.insert(
-                OutboxRealm().apply {
-                    id = UUID.randomUUID().toString()
-                    moduleKey = "caja"
-                    operation = "CLOSE_CASH"
-                    aggregateType = "cash_session"
-                    aggregateLocalId = sessionId
-                    payloadJson = JSONObject()
-                        .put("cash_session_id", sessionId)
-                        .put("counted_cash", countedCash)
-                        .put("observations", observations.trim())
-                        .toString()
-                    createdAt = now
-                    updatedAt = now
-                    state = "PENDING"
-                },
-            )
-        }
-        cacheCashSession(null)
-        return Result.success(Unit)
+        val remote = cashApi.closeSession(sessionId, countedCash, observations)
+        if (remote.isSuccess) cacheCashSession(null)
+        return remote
     }
 
     private fun localCashSummary(sessionId: Long): CashSummary = realmQuery { realm ->
@@ -1044,41 +1046,11 @@ class PosRepositoryImpl(private val context: Context) :
     }
 
     override fun cancelSale(ventaId: Long, comment: String, restoreStock: Boolean): Result<Unit> {
-        val localExists = realmQuery { realm ->
-            realm.where(FinanzaVentaRealm::class.java).equalTo("id", ventaId).findFirst() != null
-        }
-        if (!localExists) return cashApi.cancelSale(ventaId, comment, restoreStock)
-
         val offlineSession = getSession()?.offlineSession == true || ApiSessionStore(context).token.isBlank()
-        if (ventaId > 0L && !offlineSession) {
-            val remote = cashApi.cancelSale(ventaId, comment, restoreStock)
-            if (remote.isSuccess) {
-                cancelSaleLocally(ventaId, comment, restoreStock)
-                return remote
-            }
-            if (!remote.exceptionOrNull().isNetworkFailure()) return remote
+        if (offlineSession || ventaId <= 0L) {
+            return Result.failure(Exception("Conéctate a internet para solicitar autorización de anulación."))
         }
-
-        cancelSaleLocally(ventaId, comment, restoreStock)
-        val now = System.currentTimeMillis()
-        realmWrite { realm ->
-            realm.insert(OutboxRealm().apply {
-                id = UUID.randomUUID().toString()
-                moduleKey = "ventas"
-                operation = "CANCEL_SALE"
-                aggregateType = "sale"
-                aggregateLocalId = ventaId
-                payloadJson = JSONObject()
-                    .put("sale_id", ventaId)
-                    .put("comment", comment.trim())
-                    .put("restore_stock", restoreStock)
-                    .toString()
-                createdAt = now
-                updatedAt = now
-                state = "PENDING"
-            })
-        }
-        return Result.success(Unit)
+        return cashApi.cancelSale(ventaId, comment, restoreStock)
     }
 
     private fun cancelSaleLocally(ventaId: Long, comment: String, restoreStock: Boolean) {
@@ -1593,6 +1565,9 @@ class PosRepositoryImpl(private val context: Context) :
                 productName = item.getString("name"),
                 unitPrice = item.getDouble("unit_price"),
                 quantity = item.getInt("quantity"),
+                conversionId = item.optLong("conversion_id").takeIf { it > 0L },
+                conversionName = item.optString("conversion_name"),
+                stockFactor = item.optDouble("stock_factor", 1.0),
             )
         }
         val paymentJson = payload.getJSONObject("payment")
@@ -1615,6 +1590,7 @@ class PosRepositoryImpl(private val context: Context) :
                 tipoPago = paymentJson.getString("type"),
                 montoRecibido = paymentJson.getDouble("received"),
                 vuelto = paymentJson.getDouble("change"),
+                aplicarRedondeo = paymentJson.optBoolean("apply_rounding", false),
             ),
             clientId = remoteClientId,
             cashSessionId = resolveRemoteId("cash_session", payload.getLong("cash_session_id")),
@@ -2292,6 +2268,7 @@ class PosRepositoryImpl(private val context: Context) :
             put("type", payment.tipoPago)
             put("received", payment.montoRecibido)
             put("change", payment.vuelto)
+            put("apply_rounding", payment.aplicarRedondeo)
         })
         put("customer", JSONObject().apply {
             put("id", customerInfo.id)
@@ -2305,6 +2282,9 @@ class PosRepositoryImpl(private val context: Context) :
                     put("name", line.productName)
                     put("unit_price", line.unitPrice)
                     put("quantity", line.quantity)
+                    line.conversionId?.let { put("conversion_id", it) }
+                    put("conversion_name", line.conversionName)
+                    put("stock_factor", line.stockFactor)
                 })
             }
         })

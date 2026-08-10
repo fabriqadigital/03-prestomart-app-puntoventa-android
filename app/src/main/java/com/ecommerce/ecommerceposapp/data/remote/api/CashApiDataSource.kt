@@ -135,6 +135,7 @@ class CashApiDataSource(context: Context) {
                 total = item.optDoubleFlexible("total"),
                 estado = item.cleanString("estado"),
                 idCliente = item.optLong("id_cliente"),
+                cancellationStatus = item.cleanString("anulacion_estado"),
             )
         }
         SalesHistoryPage(
@@ -158,6 +159,9 @@ class CashApiDataSource(context: Context) {
                 productName = item.cleanString("producto_nombre"),
                 unitPrice = item.optDoubleFlexible("precio_unitario"),
                 quantity = item.optDoubleFlexible("cantidad").toInt(),
+                conversionId = item.optLong("id_producto_conversion").takeIf { it > 0L },
+                conversionName = item.cleanString("conversion_nombre"),
+                stockFactor = item.optDoubleFlexible("factor_stock").takeIf { it > 0.0 } ?: 1.0,
             )
         }
         val total = sale.optDoubleFlexible("total")

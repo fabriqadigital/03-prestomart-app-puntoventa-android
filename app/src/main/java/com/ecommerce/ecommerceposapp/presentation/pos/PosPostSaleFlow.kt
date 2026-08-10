@@ -235,6 +235,164 @@ internal fun createReceiptPdfForSharing(
     folder.listFiles()?.sortedByDescending { it.lastModified() }?.drop(30)?.forEach { it.delete() }
     val safeNumber = emitido.numeroCompleto.replace(Regex("[^A-Za-z0-9_-]"), "_")
     val output = File(folder, "comprobante_$safeNumber.pdf")
+
+    // 80 mm a 72 dpi. La altura crece con el contenido como un ticket real.
+    val pageWidth = 227f
+    val left = 12f
+    val right = pageWidth - 12f
+    val contentWidth = right - left
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val ink = android.graphics.Color.BLACK
+    val brand = android.graphics.Color.rgb(168, 32, 36)
+
+    fun wrapText(value: String, maxWidth: Float, size: Float): List<String> {
+        paint.textSize = size
+        val words = value.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (words.isEmpty()) return listOf("")
+        val result = mutableListOf<String>()
+        var current = ""
+        words.forEach { word ->
+            val candidate = if (current.isBlank()) word else "$current $word"
+            if (paint.measureText(candidate) <= maxWidth) current = candidate
+            else {
+                if (current.isNotBlank()) result += current
+                current = word
+            }
+        }
+        if (current.isNotBlank()) result += current
+        return result
+    }
+
+    val company = emitido.emisorRazonSocial.trim().ifBlank { "EMISOR NO CONFIGURADO" }.uppercase(Locale("es", "PE"))
+    val companyLines = wrapText(company, contentWidth, 10f)
+    val addressLines = wrapText(emitido.emisorDireccion, contentWidth, 7f).filter { it.isNotBlank() }
+    val customerLines = wrapText(customerName.ifBlank { "CLIENTE GENERAL" }, contentWidth, 8f)
+    val wordsLines = wrapText(emitido.totalLetras, contentWidth, 7f)
+    val itemLines = receipt.lines.map { line -> wrapText(line.displayName, contentWidth - 36f, 8f) }
+    val calculatedHeight = 205 + companyLines.size * 12 + addressLines.size * 9 + customerLines.size * 10 +
+        wordsLines.size * 9 + itemLines.sumOf { it.size * 10 + 17 } + if (resolvedQrBitmap != null) 100 else 15
+    val pageHeight = calculatedHeight.coerceAtLeast(360)
+
+    val document = PdfDocument()
+    val page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth.toInt(), pageHeight, 1).create())
+    val canvas = page.canvas
+
+    fun text(
+        value: String,
+        x: Float,
+        baseline: Float,
+        size: Float = 8f,
+        bold: Boolean = false,
+        align: Paint.Align = Paint.Align.LEFT,
+        color: Int = ink,
+    ) {
+        paint.style = Paint.Style.FILL
+        paint.textSize = size
+        paint.color = color
+        paint.isFakeBoldText = bold
+        paint.textAlign = align
+        canvas.drawText(value, x, baseline, paint)
+    }
+
+    fun rule(y: Float) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 0.7f
+        paint.color = ink
+        canvas.drawLine(left, y, right, y, paint)
+    }
+
+    fun centeredLines(lines: List<String>, start: Float, size: Float, step: Float, bold: Boolean = false): Float {
+        var y = start
+        lines.forEach { line -> text(line, pageWidth / 2f, y, size, bold, Paint.Align.CENTER); y += step }
+        return y
+    }
+
+    canvas.drawColor(android.graphics.Color.WHITE)
+    var y = 18f
+    y = centeredLines(companyLines, y, 10f, 12f, true)
+    text("RUC: ${emitido.emisorRuc.ifBlank { "-" }}", pageWidth / 2f, y, 8f, false, Paint.Align.CENTER)
+    y += 11f
+    y = centeredLines(addressLines, y, 7f, 9f)
+    rule(y)
+    y += 14f
+    text(tituloComprobante(emitido.tipoSunat), pageWidth / 2f, y, 9f, true, Paint.Align.CENTER, brand)
+    y += 13f
+    text(emitido.numeroCompleto, pageWidth / 2f, y, 10f, true, Paint.Align.CENTER)
+    y += 13f
+    val (fecha, hora) = formatFechaHoraPeru(receipt.fechaMillis)
+    text("FECHA: $fecha  $hora", left, y, 7f)
+    y += 11f
+    customerLines.forEach { line -> text("CLIENTE: $line", left, y, 8f); y += 10f }
+    if (customerDocument.isNotBlank()) { text("DOC: $customerDocument", left, y, 8f); y += 10f }
+    if (receipt.vendedorNombre.isNotBlank()) { text("CAJERO: ${receipt.vendedorNombre}", left, y, 7f); y += 10f }
+    rule(y)
+    y += 11f
+    text("CANT.", left, y, 7f, true)
+    text("DESCRIPCION", left + 32f, y, 7f, true)
+    text("IMPORTE", right, y, 7f, true, Paint.Align.RIGHT)
+    y += 10f
+    rule(y)
+    y += 11f
+
+    receipt.lines.forEachIndexed { index, line ->
+        text(line.quantity.toString(), left + 10f, y, 8f, true, Paint.Align.CENTER)
+        text("S/ ${"%.2f".format(Locale.US, line.lineTotal)}", right, y, 8f, true, Paint.Align.RIGHT)
+        itemLines[index].forEachIndexed { nameIndex, nameLine ->
+            text(nameLine, left + 32f, y + nameIndex * 10f, 8f, nameIndex == 0)
+        }
+        y += itemLines[index].size * 10f + 2f
+        text("${line.quantity} x S/ ${"%.2f".format(Locale.US, line.unitPrice)}", left + 32f, y, 7f)
+        y += 9f
+        rule(y)
+        y += 9f
+    }
+
+    text("OP. GRAVADAS", left, y, 8f)
+    text("S/ ${"%.2f".format(Locale.US, receipt.subtotal)}", right, y, 8f, false, Paint.Align.RIGHT)
+    y += 12f
+    text("IGV (18%)", left, y, 8f)
+    text("S/ ${"%.2f".format(Locale.US, receipt.igv)}", right, y, 8f, false, Paint.Align.RIGHT)
+    y += 15f
+    text("TOTAL", left, y, 11f, true, color = brand)
+    text("S/ ${"%.2f".format(Locale.US, receipt.total)}", right, y, 11f, true, Paint.Align.RIGHT, brand)
+    y += 13f
+    wordsLines.forEach { line -> text(line, left, y, 7f); y += 9f }
+    rule(y)
+    y += 11f
+    text("PAGO: ${mapTipoPagoEtiqueta(receipt.tipoPago)}", left, y, 8f, true)
+    y += 11f
+    text("RECIBIDO: S/ ${"%.2f".format(Locale.US, receipt.montoRecibido)}", left, y, 8f)
+    text("VUELTO: S/ ${"%.2f".format(Locale.US, receipt.vuelto)}", right, y, 8f, false, Paint.Align.RIGHT)
+    y += 12f
+
+    resolvedQrBitmap?.let { qr ->
+        val qrSize = 82f
+        val qrLeft = (pageWidth - qrSize) / 2f
+        canvas.drawBitmap(qr, null, android.graphics.RectF(qrLeft, y, qrLeft + qrSize, y + qrSize), paint)
+        y += qrSize + 10f
+    }
+    text("Gracias por su compra", pageWidth / 2f, y, 8f, false, Paint.Align.CENTER)
+    document.finishPage(page)
+    output.outputStream().use(document::writeTo)
+    document.close()
+    return output
+}
+
+private fun createLegacyA4ReceiptPdfForSharing(
+    context: android.content.Context,
+    receipt: CompletedSaleReceipt,
+    emitido: ComprobanteEmitidoResult,
+    clienteNombre: String?,
+    clienteDoc: String?,
+    qrBitmap: Bitmap?,
+): File {
+    val (customerName, customerDocument) = resolveReceiptCustomer(emitido, clienteNombre, clienteDoc)
+    val resolvedQrBitmap = qrBitmap ?: emitido.qrPayload.takeIf { it.isNotBlank() }
+        ?.let { runCatching { encodeQrBitmapNow(it) }.getOrNull() }
+    val folder = File(context.cacheDir, "shared_receipts").apply { mkdirs() }
+    folder.listFiles()?.sortedByDescending { it.lastModified() }?.drop(30)?.forEach { it.delete() }
+    val safeNumber = emitido.numeroCompleto.replace(Regex("[^A-Za-z0-9_-]"), "_")
+    val output = File(folder, "comprobante_$safeNumber.pdf")
     val document = PdfDocument()
     val page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
     val canvas = page.canvas
@@ -319,7 +477,7 @@ internal fun createReceiptPdfForSharing(
     y += 40f
     receipt.lines.forEach { item ->
         drawText(item.quantity.toString(), 72f, y, 10f, ink, true, Paint.Align.CENTER)
-        drawText(fitText(item.productName, 330f, 10f), 108f, y, 10f)
+        drawText(fitText(item.displayName, 330f, 10f), 108f, y, 10f)
         drawText("S/ ${"%.2f".format(Locale.US, item.lineTotal)}", 535f, y, 10f, ink, true, Paint.Align.RIGHT)
         y += 18f
         rule(y)
@@ -758,7 +916,7 @@ fun VistaPreviaReciboDialog(
                             fontWeight = FontWeight.Bold,
                         )
                         receipt.lines.forEach { line ->
-                            val desc = line.productName.take(28)
+                            val desc = line.displayName.take(28)
                             val puIgv = r2(line.unitPrice)
                             val totIgv = r2(line.lineTotal)
                             Text(
