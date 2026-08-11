@@ -5,6 +5,7 @@ import com.ecommerce.ecommerceposapp.data.local.users.UserRealm
 import com.ecommerce.ecommerceposapp.data.remote.api.UserApiDataSource
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
 import com.ecommerce.ecommerceposapp.domain.model.users.UserRow
+import com.ecommerce.ecommerceposapp.domain.model.common.ServerPage
 import com.ecommerce.ecommerceposapp.domain.repository.users.UserRepository
 
 class UserRepositoryImpl(context: Context) : UserRepository {
@@ -22,6 +23,24 @@ class UserRepositoryImpl(context: Context) : UserRepository {
             if (prefs.getBoolean(REMOTE_USERS_READY, false)) cachedUsers() else throw error
         },
     )
+
+    override fun listUsersPage(page: Int, perPage: Int, search: String): ServerPage<UserRow> =
+        api.listPage(page, perPage, search).fold(
+            onSuccess = { serverPage ->
+                prefs.edit().putBoolean(REMOTE_USERS_READY, true).apply()
+                serverPage
+            },
+            onFailure = { error ->
+                if (!prefs.getBoolean(REMOTE_USERS_READY, false)) throw error
+                val query = search.trim().lowercase()
+                val filtered = cachedUsers().filter {
+                    query.isBlank() || it.name.lowercase().contains(query) ||
+                        it.email.lowercase().contains(query) || it.username.lowercase().contains(query)
+                }
+                val start = ((page.coerceAtLeast(1) - 1) * perPage).coerceAtMost(filtered.size)
+                ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
+            },
+        )
 
     override fun upsertUser(row: UserRow, plainPassword: String?): Result<Unit> {
         if (row.email.isBlank() || row.name.isBlank()) return Result.failure(Exception("Nombre y correo son obligatorios."))

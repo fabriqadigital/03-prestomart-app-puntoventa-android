@@ -2,6 +2,8 @@ package com.ecommerce.ecommerceposapp.data.remote.api
 
 import android.content.Context
 import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
+import com.ecommerce.ecommerceposapp.domain.model.common.ServerPage
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -38,6 +40,28 @@ class SupplierApiDataSource(context: Context) {
             val json = JSONObject(payload)
             val result = json.optJSONArray("result") ?: JSONArray()
             return (0 until result.length()).map { i -> parseSupplier(result.getJSONObject(i)) }
+        }
+    }
+
+    fun listPage(page: Int, perPage: Int, search: String, status: String?): ServerPage<SupplierRow> {
+        val url = endpoint(ApiConfig.SUPPLIER_LIST).toHttpUrl().newBuilder()
+            .addQueryParameter("page", page.coerceAtLeast(1).toString())
+            .addQueryParameter("per_page", perPage.toString())
+            .apply { if (search.isNotBlank()) addQueryParameter("search", search.trim()) }
+            .apply { if (!status.isNullOrBlank()) addQueryParameter("estado", status) }
+            .build()
+        val request = Request.Builder().url(url).get().header("Accept", "application/json").build()
+        httpClient.newCall(request).execute().use { response ->
+            val payload = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw Exception("No se pudo listar proveedores (${response.code}): ${payload.take(180)}")
+            val result = JSONObject(payload).optJSONObject("result") ?: JSONObject()
+            val data = result.optJSONArray("data") ?: JSONArray()
+            return ServerPage(
+                rows = (0 until data.length()).mapNotNull(data::optJSONObject).map(::parseSupplier),
+                total = result.optInt("total", data.length()),
+                page = result.optInt("current_page", page),
+                perPage = result.optInt("per_page", perPage),
+            )
         }
     }
 

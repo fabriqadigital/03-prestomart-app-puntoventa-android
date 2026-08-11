@@ -126,7 +126,16 @@ private fun resolveReceiptCustomer(
     clienteNombre: String?,
     clienteDoc: String?,
 ): Pair<String, String> {
-    val name = clienteNombre?.trim().takeUnless { it.isNullOrBlank() } ?: emitido.receptorNombre.trim()
+    val rawName = clienteNombre?.trim().takeUnless { it.isNullOrBlank() } ?: emitido.receptorNombre.trim()
+    val name = rawName.takeUnless {
+        it.uppercase(Locale.ROOT) in setOf(
+            "GENERAL",
+            "CLIENTE GENERAL",
+            "CLIENTE GENERICO",
+            "CLIENTE GENÉRICO",
+            "CLIENTE VARIOS",
+        )
+    }.orEmpty().ifBlank { "Cliente genérico" }
     val document = clienteDoc?.trim().takeUnless { it.isNullOrBlank() } ?: emitido.receptorDocumento.trim()
     return name to document
 }
@@ -266,7 +275,7 @@ internal fun createReceiptPdfForSharing(
     val company = emitido.emisorRazonSocial.trim().ifBlank { "EMISOR NO CONFIGURADO" }.uppercase(Locale("es", "PE"))
     val companyLines = wrapText(company, contentWidth, 10f)
     val addressLines = wrapText(emitido.emisorDireccion, contentWidth, 7f).filter { it.isNotBlank() }
-    val customerLines = wrapText(customerName.ifBlank { "CLIENTE GENERAL" }, contentWidth, 8f)
+    val customerLines = wrapText(customerName.ifBlank { "Cliente genérico" }, contentWidth, 8f)
     val wordsLines = wrapText(emitido.totalLetras, contentWidth, 7f)
     val itemLines = receipt.lines.map { line -> wrapText(line.displayName, contentWidth - 36f, 8f) }
     val calculatedHeight = 205 + companyLines.size * 12 + addressLines.size * 9 + customerLines.size * 10 +

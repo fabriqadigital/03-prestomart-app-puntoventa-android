@@ -10,6 +10,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.SystemClock
 import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.BackHandler
 import android.util.Base64
 import android.util.Log
 import android.view.WindowManager
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.ShoppingBasket
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
@@ -151,6 +153,7 @@ import com.ecommerce.ecommerceposapp.presentation.cash.CashModuleScreen
 import com.ecommerce.ecommerceposapp.presentation.cash.CashModuleViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.androidx.compose.koinViewModel
@@ -586,7 +589,6 @@ private val drawerMenuItems = listOf(
 private fun PosNavigationDrawerContent(
     selectedLabel: String,
     session: UserSession,
-    cashRegisterName: String,
     isOnline: Boolean,
     pendingSyncCount: Long,
     onItemClick: (String) -> Unit,
@@ -597,7 +599,7 @@ private fun PosNavigationDrawerContent(
         modifier = modifier
             .fillMaxHeight()
             .fillMaxWidth()
-            .background(Color(0xFFF8FAFC))
+            .background(Color.White)
             .padding(horizontal = 14.dp, vertical = 16.dp),
     ) {
         Text("PRESTOMART", color = Brand, fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(horizontal = 8.dp))
@@ -632,17 +634,13 @@ private fun PosNavigationDrawerContent(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    "Hola, ${session.name.ifBlank { "cajero" }}",
+                    "${session.name} ${session.lastName}".trim().ifBlank { "Cajero" },
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text("Ver mi perfil", color = Brand, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                if (cashRegisterName.isNotBlank()) {
-                    Text(cashRegisterName, color = Color(0xFF64748B), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
             }
         }
         Spacer(Modifier.height(14.dp))
@@ -703,7 +701,7 @@ private fun PosNavigationDrawerContent(
                 onClick = { onItemClick("Sincronizar catálogo") },
                 shape = RoundedCornerShape(14.dp),
                 colors = NavigationDrawerItemDefaults.colors(
-                    unselectedContainerColor = if (syncNeedsAttention) Color(0xFFFFF7ED) else Color(0xFFF1F5F9),
+                    unselectedContainerColor = if (syncNeedsAttention) Color(0xFFFFF7ED) else Color.White,
                     unselectedIconColor = if (syncNeedsAttention) Color(0xFFC2410C) else Color(0xFF475569),
                     unselectedTextColor = if (syncNeedsAttention) Color(0xFF9A3412) else Color(0xFF334155),
                 ),
@@ -718,9 +716,9 @@ private fun PosNavigationDrawerContent(
             onClick = { onItemClick("Cerrar sesión") },
             shape = RoundedCornerShape(14.dp),
             colors = NavigationDrawerItemDefaults.colors(
-                unselectedContainerColor = Color(0xFFFFE4E6),
-                unselectedIconColor = Color(0xFFDC2626),
-                unselectedTextColor = Color(0xFFDC2626),
+                unselectedContainerColor = Brand,
+                unselectedIconColor = Color.White,
+                unselectedTextColor = Color.White,
             ),
         )
         Text(
@@ -816,6 +814,7 @@ private fun PosScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var selectedModule by remember { mutableStateOf("Punto de venta") }
+    var mobileCartOpen by rememberSaveable { mutableStateOf(false) }
     var showQuickProductDialog by remember { mutableStateOf(false) }
     var openAdvancedProductForm by remember { mutableStateOf(false) }
     var newProductCategoryId by remember { mutableStateOf<Long?>(null) }
@@ -827,6 +826,7 @@ private fun PosScreen(
     val widthDp = LocalConfiguration.current.screenWidthDp
     val heightDp = LocalConfiguration.current.screenHeightDp
     val responsiveTwoPanels = widthDp >= 900
+    val compactPosNavigation = widthDp < 700
     val expandedCartFraction =
         ((if (heightDp < 650) 0.615f else 0.545f) - (2f / heightDp.coerceAtLeast(1)))
             .coerceAtLeast(0.1f)
@@ -955,7 +955,11 @@ private fun PosScreen(
         posVm.loadCashSession(session.cashierId)
     }
 
-    val topBarTitle = selectedModule
+    val topBarTitle = if (compactPosNavigation && selectedModule == "Punto de venta" && mobileCartOpen) {
+        "Carrito"
+    } else {
+        selectedModule
+    }
 
     LaunchedEffect(productsState.message, productsState.error) {
         val notice = productsState.error ?: productsState.message
@@ -1005,6 +1009,7 @@ private fun PosScreen(
     }
 
     LaunchedEffect(selectedModule) {
+        if (selectedModule != "Punto de venta") mobileCartOpen = false
         when (selectedModule) {
             "Punto de venta", "Historial de ventas" -> {
                 posVm.refreshCatalog()
@@ -1019,6 +1024,32 @@ private fun PosScreen(
                 categoriesVm.loadAll()
             }
         }
+    }
+
+    // Mantiene visible la información reciente del servidor sin obligar al
+    // cajero a navegar. Cinco segundos evita saturar la red del Zebra.
+    LaunchedEffect(isOnline, selectedModule) {
+        while (isActive && isOnline) {
+            delay(5_000)
+            when (selectedModule) {
+                "Punto de venta" -> posVm.refreshCatalog()
+                "Productos" -> {
+                    productsVm.load()
+                    posVm.refreshCatalog()
+                }
+                "Categorías" -> {
+                    categoriesVm.loadAll()
+                    posVm.refreshCatalog()
+                }
+                "Clientes" -> clientsVm.load()
+                "Proveedores" -> suppliersVm.load()
+                "Usuarios" -> usersVm.load()
+            }
+        }
+    }
+
+    BackHandler(enabled = compactPosNavigation && selectedModule == "Punto de venta" && mobileCartOpen) {
+        mobileCartOpen = false
     }
 
     val posContent: @Composable (PaddingValues) -> Unit = { padding ->
@@ -1037,7 +1068,47 @@ private fun PosScreen(
                         }
                     }
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        if (responsiveTwoPanels) {
+                        if (compactPosNavigation) {
+                            if (mobileCartOpen) {
+                                CartPane(
+                                    Modifier.fillMaxSize(),
+                                    state,
+                                    "${session.name} ${session.lastName}".trim(),
+                                    clientsState.clients,
+                                    catalog,
+                                    posVm::increase,
+                                    posVm::decrease,
+                                    posVm::selectConversion,
+                                    onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
+                                    onNewClient = { selectedModule = "Clientes" },
+                                    onBack = { mobileCartOpen = false },
+                                )
+                            } else {
+                                Column(Modifier.fillMaxSize()) {
+                                    CatalogPane(
+                                        Modifier.weight(1f).fillMaxWidth(),
+                                        externalScan = externalScan,
+                                        state,
+                                        posVm::setSearch,
+                                        posVm::setCategory,
+                                        posVm::setSubcategory,
+                                        onAddToCart = posVm::addToCart,
+                                        onToggleFeatured = posVm::toggleFeatured,
+                                        onNewProduct = {
+                                            newProductCategoryId = state.selectedCategoryId
+                                            newProductSubcategoryId = state.selectedSubcategoryId
+                                            showQuickProductDialog = true
+                                        },
+                                        onScanMessage = { message -> scope.launch { snackbarHostState.showSnackbar(message) } },
+                                    )
+                                    MobileCartSummaryBar(
+                                        itemCount = state.cart.sumOf { it.quantity },
+                                        total = state.total,
+                                        onClick = { mobileCartOpen = true },
+                                    )
+                                }
+                            }
+                        } else if (responsiveTwoPanels) {
                             Row(modifier = Modifier.fillMaxSize()) {
                                 CatalogPane(
                                     Modifier.weight(1f).fillMaxHeight(),
@@ -1188,6 +1259,36 @@ private fun PosScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(end = 12.dp),
                             ) {
+                                if (compactPosNavigation && selectedModule == "Punto de venta" && !mobileCartOpen) {
+                                    Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                                        IconButton(onClick = { mobileCartOpen = true }) {
+                                            Icon(
+                                                Icons.Filled.ShoppingBasket,
+                                                contentDescription = "Abrir carrito",
+                                                tint = TextPrimary,
+                                                modifier = Modifier.size(23.dp),
+                                            )
+                                        }
+                                        val cartQuantity = state.cart.sumOf { it.quantity }
+                                        if (cartQuantity > 0) {
+                                            Surface(
+                                                modifier = Modifier.align(Alignment.TopEnd).size(18.dp),
+                                                shape = androidx.compose.foundation.shape.CircleShape,
+                                                color = Brand,
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Text(
+                                                        cartQuantity.coerceAtMost(99).toString(),
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Bold,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Spacer(Modifier.width(6.dp))
+                                }
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
@@ -1236,7 +1337,6 @@ private fun PosScreen(
                 PosNavigationDrawerContent(
                     selectedLabel = selectedModule,
                     session = session,
-                    cashRegisterName = state.cashSession?.cashRegisterName.orEmpty(),
                     isOnline = isOnline,
                     pendingSyncCount = pendingSyncCount,
                     onItemClick = { label ->

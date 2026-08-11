@@ -33,7 +33,8 @@ import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.ShoppingBasket
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.outlined.ShoppingBasket
 import androidx.compose.material3.AlertDialog
@@ -85,7 +86,6 @@ import com.ecommerce.ecommerceposapp.ui.theme.AppBackground
 import com.ecommerce.ecommerceposapp.ui.theme.BorderDefault
 import com.ecommerce.ecommerceposapp.ui.theme.BrandRed
 import com.ecommerce.ecommerceposapp.ui.theme.BrandRedDark
-import com.ecommerce.ecommerceposapp.ui.theme.BrandRedLight
 import com.ecommerce.ecommerceposapp.ui.theme.BrandYellow
 import com.ecommerce.ecommerceposapp.ui.theme.GrayLight
 import com.ecommerce.ecommerceposapp.ui.theme.GrayMedium
@@ -335,6 +335,7 @@ internal fun CartPane(
     onSelectConversion: (CartLine, ProductConversion?) -> Unit,
     onPay: suspend (SalePaymentInfo, Long, ReceiptCustomerInfo, TipoComprobanteEmision) -> Result<CompletedSaleReceipt>,
     onNewClient: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
 ) {
     var message              by remember { mutableStateOf("") }
     var showCobrarVenta      by remember { mutableStateOf(false) }
@@ -372,14 +373,12 @@ internal fun CartPane(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(Radius.md))
-                    .background(BrandRedLight),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.ShoppingCart, contentDescription = null, tint = BrandRed, modifier = Modifier.size(18.dp))
+            if (onBack != null) {
+                IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver a productos", tint = TextPrimary, modifier = Modifier.size(21.dp))
+                }
+            } else {
+                Icon(Icons.Filled.ShoppingBasket, contentDescription = null, tint = BrandRed, modifier = Modifier.size(22.dp))
             }
             Spacer(Modifier.width(Spacing.sm))
             Column(Modifier.weight(1f)) {
@@ -420,7 +419,7 @@ internal fun CartPane(
                     contentPadding = PaddingValues(horizontal = Spacing.md),
                 ) {
                     Text(
-                        selectedCliente?.name?.takeIf { it.isNotBlank() } ?: "Cliente general",
+                        selectedCliente?.name?.takeIf { it.isNotBlank() } ?: "Cliente genérico",
                         modifier  = Modifier.weight(1f),
                         color     = if (selectedCliente != null) TextPrimary else TextSecondary,
                         maxLines  = 1,
@@ -435,7 +434,7 @@ internal fun CartPane(
                     modifier        = Modifier.widthIn(min = 250.dp, max = 380.dp).heightIn(max = 360.dp),
                 ) {
                     DropdownMenuItem(
-                        text    = { Text("Cliente general", style = MaterialTheme.typography.bodyMedium) },
+                        text    = { Text("Cliente genérico", style = MaterialTheme.typography.bodyMedium) },
                         onClick = { selectedCliente = null; showClientePicker = false },
                     )
                     HorizontalDivider()

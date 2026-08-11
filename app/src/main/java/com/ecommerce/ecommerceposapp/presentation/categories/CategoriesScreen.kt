@@ -55,7 +55,6 @@ import com.ecommerce.ecommerceposapp.presentation.categories.CategoriesViewModel
 @Composable
 fun CategoriesCrudScreen(vm: CategoriesViewModel) {
     val state by vm.uiState.collectAsState()
-    LaunchedEffect(Unit) { vm.loadAll() }
     var editingCategory by remember { mutableStateOf<CategoryAdminRow?>(null) }
     var editingSubcategory by remember { mutableStateOf<SubcategoryAdminRow?>(null) }
     var creatingCategory by remember { mutableStateOf(false) }
@@ -76,9 +75,9 @@ fun CategoriesCrudScreen(vm: CategoriesViewModel) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
-                        creatingSubcategoryCategoryId = state.categories.firstOrNull { it.active }?.id
+                        creatingSubcategoryCategoryId = state.allCategories.firstOrNull { it.active }?.id
                     },
-                    enabled = state.categories.any { it.active },
+                    enabled = state.allCategories.any { it.active },
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("+ Subcategoria") }
@@ -95,7 +94,7 @@ fun CategoriesCrudScreen(vm: CategoriesViewModel) {
                 Text("Organiza las categorias y despliega sus subcategorias.", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF475569))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { creatingSubcategoryCategoryId = state.categories.firstOrNull { it.active }?.id }, enabled = state.categories.any { it.active }, shape = RoundedCornerShape(8.dp)) { Text("+ Subcategoria") }
+                OutlinedButton(onClick = { creatingSubcategoryCategoryId = state.allCategories.firstOrNull { it.active }?.id }, enabled = state.allCategories.any { it.active }, shape = RoundedCornerShape(8.dp)) { Text("+ Subcategoria") }
                 Button(onClick = { creatingCategory = true }, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFD0505), contentColor = Color.White)) { Text("+ Nueva categoria") }
             }
         }
@@ -109,6 +108,10 @@ fun CategoriesCrudScreen(vm: CategoriesViewModel) {
                     .thenBy { it.name.lowercase() },
             ),
             subcategories = state.subcategories,
+            total = state.total,
+            page = state.page,
+            pageSize = state.perPage,
+            onQuery = { page, pageSize, search -> vm.loadAll(page, pageSize, search) },
             onEditCategory = { editingCategory = it },
             onDeleteCategory = { category ->
                 pendingConfirm = PendingConfirm(
@@ -144,13 +147,13 @@ fun CategoriesCrudScreen(vm: CategoriesViewModel) {
         }
     }
     creatingSubcategoryCategoryId?.let { categoryId ->
-        SubcategoryEditDialog(SubcategoryAdminRow(0, categoryId, "", true), state.categories, { creatingSubcategoryCategoryId = null; vm.clearMessages() }) {
+        SubcategoryEditDialog(SubcategoryAdminRow(0, categoryId, "", true), state.allCategories, { creatingSubcategoryCategoryId = null; vm.clearMessages() }) {
             vm.saveSubcategory(it)
             creatingSubcategoryCategoryId = null
         }
     }
     editingSubcategory?.let { subcategory ->
-        SubcategoryEditDialog(subcategory, state.categories, { editingSubcategory = null; vm.clearMessages() }) {
+        SubcategoryEditDialog(subcategory, state.allCategories, { editingSubcategory = null; vm.clearMessages() }) {
             vm.saveSubcategory(it)
             editingSubcategory = null
         }

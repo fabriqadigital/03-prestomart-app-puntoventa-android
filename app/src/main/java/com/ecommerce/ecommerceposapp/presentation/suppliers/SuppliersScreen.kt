@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.BusinessCenter
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -70,6 +72,7 @@ import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 // Paleta consistente con el modulo de productos
 private val Brand = Color(0xFFFD0505)
@@ -87,7 +90,6 @@ private fun isValidEmail(value: String): Boolean {
 @Composable
 fun SuppliersCrudScreen(vm: SuppliersViewModel) {
     val state by vm.uiState.collectAsState()
-    LaunchedEffect(Unit) { vm.load() }
 
     var editing by remember { mutableStateOf<SupplierRow?>(null) }
     var creatingAdvanced by remember { mutableStateOf(false) }
@@ -95,15 +97,10 @@ fun SuppliersCrudScreen(vm: SuppliersViewModel) {
     var search by remember { mutableStateOf("") }
     var selectedEstado by remember { mutableStateOf<String?>(null) }
 
-    val filteredSuppliers = state.suppliers
-        .filter { selectedEstado == null || it.estado.ifBlank { "Activo" } == selectedEstado }
-        .filter {
-            search.isBlank() ||
-                    it.businessName.contains(search, ignoreCase = true) ||
-                    it.ruc.contains(search, ignoreCase = true) ||
-                    it.codigoProveedor.contains(search, ignoreCase = true) ||
-                    it.correo.contains(search, ignoreCase = true)
-        }
+    LaunchedEffect(search, selectedEstado) {
+        delay(350)
+        vm.load(page = 1, perPage = state.perPage, search = search, status = selectedEstado)
+    }
     val compactScreen = LocalConfiguration.current.screenWidthDp < 600
 
     if (creatingAdvanced || editing != null) {
@@ -154,11 +151,16 @@ fun SuppliersCrudScreen(vm: SuppliersViewModel) {
         state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         Spacer(Modifier.height(12.dp))
         SuppliersTable(
-            suppliers = filteredSuppliers,
+            suppliers = state.suppliers,
+            total = state.total,
+            pageSize = state.perPage,
+            currentPage = state.page - 1,
             search = search,
             onSearch = { search = it },
             selectedEstado = selectedEstado,
             onEstado = { selectedEstado = it },
+            onPageSize = { vm.load(page = 1, perPage = it, search = search, status = selectedEstado) },
+            onPageChange = { vm.load(page = it + 1, perPage = state.perPage, search = search, status = selectedEstado) },
             onEdit = { editing = it },
             onDelete = { supplier ->
                 pendingConfirm = PendingConfirm(
@@ -186,28 +188,34 @@ private fun RowScope.HeaderCell(text: String, weight: Float) {
 @Composable
 private fun SuppliersTable(
     suppliers: List<SupplierRow>,
+    total: Int,
+    pageSize: Int,
+    currentPage: Int,
     search: String,
     onSearch: (String) -> Unit,
     selectedEstado: String?,
     onEstado: (String?) -> Unit,
+    onPageSize: (Int) -> Unit,
+    onPageChange: (Int) -> Unit,
     onEdit: (SupplierRow) -> Unit,
     onDelete: (SupplierRow) -> Unit,
 ) {
     val estados = listOf("Activo", "Inactivo", "Bloqueado")
-    val compact = LocalConfiguration.current.screenWidthDp < 760
-    var pageSize by remember { mutableStateOf(10) }
     var pageSizeExpanded by remember { mutableStateOf(false) }
-    val totalPages = maxOf(1, (suppliers.size + pageSize - 1) / pageSize)
-    var currentPage by remember(suppliers.size, pageSize) { mutableStateOf(0) }
-    val pageSuppliers = suppliers.drop(currentPage * pageSize).take(pageSize)
+    val totalPages = maxOf(1, (total + pageSize - 1) / pageSize)
 
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val compact = maxWidth < 620.dp
+    val stackedToolbar = maxWidth < 860.dp
+    val fullTable = maxWidth >= 1120.dp
     Surface(
         modifier = Modifier.fillMaxSize(),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(12.dp),
         color = Color.White,
         contentColor = TextPrimary,
         tonalElevation = 0.dp,
         shadowElevation = 1.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, DividerColor),
     ) {
         Column {
             val searchField: @Composable (Modifier) -> Unit = { fieldModifier ->
@@ -243,7 +251,7 @@ private fun SuppliersTable(
                     }
                 }
             }
-            if (compact) {
+            if (stackedToolbar) {
                 Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     searchField(Modifier.fillMaxWidth())
                     filterList(Modifier.fillMaxWidth())
@@ -255,48 +263,59 @@ private fun SuppliersTable(
                 }
             }
             HorizontalDivider()
-            Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 12.dp)) {
-                if (!compact) HeaderCell("Código", 0.8f)
+            if (!compact) Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 12.dp)) {
+                if (fullTable) HeaderCell("Código", 0.8f)
                 HeaderCell("Razón social", 1.6f)
-                if (!compact) HeaderCell("RUC", 1f)
-                if (!compact) HeaderCell("Correo", 1.2f)
-                if (!compact) HeaderCell("Teléfono", 0.9f)
+                HeaderCell("RUC", 1f)
+                if (fullTable) HeaderCell("Correo", 1.2f)
+                if (fullTable) HeaderCell("Teléfono", 0.9f)
+                if (!fullTable) HeaderCell("Contacto", 1.4f)
                 HeaderCell("Estado", 0.8f)
-                if (!compact) HeaderCell("Calificación", 1.2f)
-                if (!compact) HeaderCell("Banco", 0.9f)
+                if (fullTable) HeaderCell("Calificación", 1.2f)
+                if (fullTable) HeaderCell("Banco", 0.9f)
                 Spacer(Modifier.width(48.dp))
             }
             HorizontalDivider(color = DividerColor)
-            LazyColumn(Modifier.fillMaxWidth().weight(1f).background(Color.White)) {
-                items(pageSuppliers, key = { it.id }) { supplier ->
-                    SupplierTableRow(supplier = supplier, compact = compact, onEdit = onEdit, onDelete = onDelete)
-                    HorizontalDivider(color = DividerColor)
+            if (suppliers.isEmpty()) Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.BusinessCenter, contentDescription = null, tint = BorderDefaultLocal, modifier = Modifier.size(42.dp))
+                    Text("No se encontraron proveedores", fontWeight = FontWeight.SemiBold)
+                    Text("Prueba con otro nombre, RUC o estado.", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                }
+            } else LazyColumn(Modifier.fillMaxWidth().weight(1f).background(if (compact) SurfaceMutedLocal else Color.White)) {
+                items(suppliers, key = { it.id }) { supplier ->
+                    if (compact) {
+                        SupplierMobileCard(supplier, onEdit, onDelete)
+                    } else {
+                        SupplierTableRow(supplier = supplier, fullTable = fullTable, onEdit = onEdit, onDelete = onDelete)
+                        HorizontalDivider(color = DividerColor)
+                    }
                 }
             }
             val paginationInfo: @Composable () -> Unit = {
                 val from = if (suppliers.isEmpty()) 0 else currentPage * pageSize + 1
-                val to = minOf(suppliers.size, (currentPage + 1) * pageSize)
+                val to = minOf(total, (currentPage + 1) * pageSize)
                 Text(if (compact) "Filas:" else "Registros por pagina:", color = TextSecondary)
                 Box {
                     TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = TextPrimary) }
                     MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
                         DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
-                            listOf(10, 20, 50).forEach { size ->
+                            listOf(20, 50, 100).forEach { size ->
                                 DropdownMenuItem(
                                     text = { Text(size.toString()) },
-                                    onClick = { pageSize = size; pageSizeExpanded = false },
+                                    onClick = { onPageSize(size); pageSizeExpanded = false },
                                 )
                             }
                         }
                     }
                 }
-                Text("$from-$to de ${suppliers.size}", color = TextSecondary)
+                Text("$from-$to de $total", color = TextSecondary)
             }
             val paginationButtons: @Composable () -> Unit = {
-                IconButton(onClick = { currentPage-- }, enabled = currentPage > 0) {
+                IconButton(onClick = { onPageChange(currentPage - 1) }, enabled = currentPage > 0) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Pagina anterior")
                 }
-                IconButton(onClick = { currentPage++ }, enabled = currentPage < totalPages - 1) {
+                IconButton(onClick = { onPageChange(currentPage + 1) }, enabled = currentPage < totalPages - 1) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Pagina siguiente")
                 }
             }
@@ -317,6 +336,7 @@ private fun SuppliersTable(
                 }
             }
         }
+    }
     }
 }
 
@@ -341,7 +361,7 @@ private fun supplierFilterChipBorder(selected: Boolean) = FilterChipDefaults.fil
 @Composable
 private fun SupplierTableRow(
     supplier: SupplierRow,
-    compact: Boolean,
+    fullTable: Boolean,
     onEdit: (SupplierRow) -> Unit,
     onDelete: (SupplierRow) -> Unit,
 ) {
@@ -350,29 +370,32 @@ private fun SupplierTableRow(
         Modifier.fillMaxWidth().background(Color.White).clickable { onEdit(supplier) }.padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (!compact) Text(supplier.codigoProveedor.ifBlank { "-" }, modifier = Modifier.weight(0.8f), color = TextPrimary)
+        if (fullTable) Text(supplier.codigoProveedor.ifBlank { "-" }, modifier = Modifier.weight(0.8f), color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Column(modifier = Modifier.weight(1.6f)) {
             Text(supplier.businessName.ifBlank { "—" }, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-            if (compact) Text(supplier.codigoProveedor.ifBlank { "-" }, color = TextSecondary, style = MaterialTheme.typography.labelSmall)
         }
-        if (!compact) Text(
+        Text(
             supplier.ruc.ifBlank { "-" },
             modifier = Modifier.weight(1f),
             color = TextPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (!compact) Text(supplier.correo.ifBlank { "-" }, modifier = Modifier.weight(1.4f), color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (!compact) Text(supplier.phone.ifBlank { "-" }, modifier = Modifier.weight(1f), color = TextPrimary)
+        if (fullTable) Text(supplier.correo.ifBlank { "-" }, modifier = Modifier.weight(1.4f), color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (fullTable) Text(supplier.phone.ifBlank { "-" }, modifier = Modifier.weight(1f), color = TextPrimary)
+        if (!fullTable) Column(Modifier.weight(1.4f)) {
+            Text(supplier.correo.ifBlank { "Sin correo" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+            Text(supplier.phone.ifBlank { "Sin teléfono" }, color = TextSecondary, maxLines = 1, style = MaterialTheme.typography.labelSmall)
+        }
         Box(modifier = Modifier.weight(0.9f)) {
             SupplierStatusPill(supplier.estado.ifBlank { "Activo" })
         }
-        if (!compact) Text(
+        if (fullTable) Text(
             if (supplier.calificacion > 0) supplier.calificacion.toString() else "-",
             modifier = Modifier.weight(0.9f),
             color = TextPrimary,
         )
-        if (!compact) Text(supplier.banco.ifBlank { "-" }, modifier = Modifier.weight(0.9f), color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (fullTable) Text(supplier.banco.ifBlank { "-" }, modifier = Modifier.weight(0.9f), color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Box {
             IconButton(onClick = { menuExpanded = true }) {
                 Icon(Icons.Filled.MoreVert, contentDescription = "Opciones")
@@ -394,6 +417,82 @@ private fun SupplierTableRow(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SupplierMobileCard(
+    supplier: SupplierRow,
+    onEdit: (SupplierRow) -> Unit,
+    onDelete: (SupplierRow) -> Unit,
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).clickable { onEdit(supplier) },
+        shape = RoundedCornerShape(12.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, DividerColor),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        supplier.businessName.ifBlank { "Sin razón social" },
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        supplier.codigoProveedor.ifBlank { "Sin código" },
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                SupplierStatusPill(supplier.estado.ifBlank { "Activo" })
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Opciones")
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(text = { Text("Editar") }, onClick = { menuExpanded = false; onEdit(supplier) })
+                        DropdownMenuItem(text = { Text("Eliminar") }, onClick = { menuExpanded = false; onDelete(supplier) })
+                    }
+                }
+            }
+            HorizontalDivider(color = DividerColor)
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val columns = if (maxWidth < 360.dp) 1 else 2
+                val details = listOf(
+                    "RUC" to supplier.ruc,
+                    "Teléfono" to supplier.phone,
+                    "Correo" to supplier.correo,
+                    "Banco" to supplier.banco,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    details.chunked(columns).forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            row.forEach { (label, value) -> SupplierMobileDetail(label, value, Modifier.weight(1f)) }
+                            if (columns == 2 && row.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+            if (supplier.calificacion > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(18.dp))
+                    Text("${supplier.calificacion} de 5", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SupplierMobileDetail(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label.uppercase(), color = TextSecondary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        Text(value.ifBlank { "-" }, color = TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -581,7 +680,7 @@ private fun SupplierAdvancedEditorView(
                                 if (correoContactoError) Text("Ingresa un correo válido, ej: nombre@dominio.com", color = MaterialTheme.colorScheme.error)
                             },
                             modifier = Modifier.weight(1f).onFocusChanged {
-                                if (!it.isFocused && correo.isNotBlank() && !isValidEmail(correo)) correoError = true
+                                if (!it.isFocused && correoContacto.isNotBlank() && !isValidEmail(correoContacto)) correoContactoError = true
                             },
                             singleLine = true,
                         )
@@ -635,35 +734,30 @@ private fun SupplierAdvancedEditorView(
 
                     Spacer(Modifier.height(12.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-
-                        OutlinedButton(
-                            onClick = onBack,
-                            modifier = Modifier.height(52.dp)
-                        ) {
-                            Text("Cancelar")
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        val mobileActions = maxWidth < 420.dp
+                        val cancelButton: @Composable (Modifier) -> Unit = { modifier ->
+                            OutlinedButton(onClick = onBack, modifier = modifier.height(52.dp)) { Text("Cancelar") }
                         }
-
-                        Spacer(Modifier.width(12.dp))
-
-                        Button(
-                            onClick = trySave,
-                            enabled = canSaveSupplier,
-                            modifier = Modifier.height(52.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Brand,
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Text(
-                                if (initial.id == 0L)
-                                    "Crear proveedor"
-                                else
-                                    "Guardar"
-                            )
+                        val saveButton: @Composable (Modifier) -> Unit = { modifier ->
+                            Button(
+                                onClick = trySave,
+                                enabled = canSaveSupplier,
+                                modifier = modifier.height(52.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Brand, contentColor = Color.White),
+                            ) { Text(if (initial.id == 0L) "Crear proveedor" else "Guardar") }
+                        }
+                        if (mobileActions) {
+                            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                saveButton(Modifier.fillMaxWidth())
+                                cancelButton(Modifier.fillMaxWidth())
+                            }
+                        } else {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                cancelButton(Modifier)
+                                Spacer(Modifier.width(12.dp))
+                                saveButton(Modifier)
+                            }
                         }
                     }
                 }

@@ -46,4 +46,5 @@ interface CatalogRepository {
     fun cashSummary(sessionId: Long): Result<CashSummary>
     fun closeCashSession(sessionId: Long, countedCash: Double, observations: String): Result<Unit>
     fun cancelSale(ventaId: Long, comment: String, restoreStock: Boolean): Result<Unit>
+    fun withdrawSaleCancellation(ventaId: Long): Result<Unit>
 }

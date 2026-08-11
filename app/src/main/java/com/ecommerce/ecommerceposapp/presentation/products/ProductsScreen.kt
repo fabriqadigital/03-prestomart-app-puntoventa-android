@@ -62,6 +62,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -94,6 +96,7 @@ import com.ecommerce.ecommerceposapp.presentation.pos.CameraScannerDialog
 import com.ecommerce.ecommerceposapp.util.DataWedgeScanner
 import com.ecommerce.ecommerceposapp.util.PhysicalScannerInput
 import com.ecommerce.ecommerceposapp.util.rememberPhysicalScannerConnected
+import kotlinx.coroutines.delay
 
 @Composable
 fun ProductsCrudScreen(
@@ -104,13 +107,17 @@ fun ProductsCrudScreen(
     onCreateAdvancedConsumed: () -> Unit = {},
 ) {
     val state by vm.uiState.collectAsState()
-    LaunchedEffect(Unit) { vm.load() }
     var editing by remember { mutableStateOf<ProductAdminRow?>(null) }
     var creatingAdvanced by remember { mutableStateOf(false) }
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
     var search by remember { mutableStateOf("") }
     var selectedCategoryId by remember { mutableStateOf<Long?>(null) }
     var selectedSubcategoryId by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(search, selectedCategoryId, selectedSubcategoryId) {
+        delay(350)
+        vm.load(page = 1, search = search, categoryId = selectedCategoryId, subcategoryId = selectedSubcategoryId)
+    }
 
     LaunchedEffect(openCreateAdvanced) {
         if (openCreateAdvanced) {
@@ -203,15 +210,6 @@ fun ProductsCrudScreen(
     val visibleSubcategories = state.subcategories.filter {
         it.active && it.categoryId == selectedCategoryId
     }
-    val filteredProducts = state.products
-        .filter { selectedCategoryId == null || it.categoryId == selectedCategoryId }
-        .filter { selectedSubcategoryId == null || it.subcategoryId == selectedSubcategoryId }
-        .filter {
-            search.isBlank() ||
-                it.name.contains(search, ignoreCase = true) ||
-                it.code.contains(search, ignoreCase = true) ||
-                it.barcode.contains(search, ignoreCase = true)
-        }
     val compactScreen = LocalConfiguration.current.screenWidthDp < 600
 
     if (creatingAdvanced || editing != null) {
@@ -287,7 +285,12 @@ fun ProductsCrudScreen(
         state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         Spacer(Modifier.height(12.dp))
         ProductsTable(
-            products = filteredProducts,
+            products = state.products,
+            total = state.total,
+            currentPage = state.page,
+            pageSize = state.perPage,
+            onPage = { vm.load(page = it) },
+            onPageSize = { vm.load(page = 1, perPage = it) },
             search = search,
             onSearch = { search = it },
             categories = activeCategories,
@@ -316,6 +319,11 @@ fun ProductsCrudScreen(
 @Composable
 private fun ProductsTable(
     products: List<ProductAdminRow>,
+    total: Int,
+    currentPage: Int,
+    pageSize: Int,
+    onPage: (Int) -> Unit,
+    onPageSize: (Int) -> Unit,
     search: String,
     onSearch: (String) -> Unit,
     categories: List<CategoryAdminRow>,
@@ -328,11 +336,8 @@ private fun ProductsTable(
     onDelete: (ProductAdminRow) -> Unit,
 ) {
     val compact = LocalConfiguration.current.screenWidthDp < 760
-    var pageSize by remember { mutableStateOf(10) }
     var pageSizeExpanded by remember { mutableStateOf(false) }
-    val totalPages = maxOf(1, (products.size + pageSize - 1) / pageSize)
-    var currentPage by remember(products.size, pageSize) { mutableStateOf(0) }
-    val pageProducts = products.drop(currentPage * pageSize).take(pageSize)
+    val totalPages = maxOf(1, (total + pageSize - 1) / pageSize)
     val searchFocusRequester = remember { FocusRequester() }
     var showSearchCameraScanner by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -460,35 +465,35 @@ private fun ProductsTable(
             }
             HorizontalDivider(color = Color(0xFFE2E8F0))
             LazyColumn(Modifier.fillMaxWidth().weight(1f).background(Color.White)) {
-                items(pageProducts, key = { it.id }) { product ->
+                items(products, key = { it.id }) { product ->
                     ProductTableRow(product = product, compact = compact, onEdit = onEdit, onDelete = onDelete)
                     HorizontalDivider(color = Color(0xFFE2E8F0))
                 }
             }
             val paginationInfo: @Composable () -> Unit = {
-                val from = if (products.isEmpty()) 0 else currentPage * pageSize + 1
-                val to = minOf(products.size, (currentPage + 1) * pageSize)
+                val from = if (products.isEmpty()) 0 else (currentPage - 1) * pageSize + 1
+                val to = minOf(total, currentPage * pageSize)
                 Text(if (compact) "Filas:" else "Registros por pagina:", color = Color(0xFF475569))
                 Box {
                     TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = Color(0xFF111827)) }
                     MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
                         DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
-                            listOf(10, 20, 50).forEach { size ->
+                            listOf(20, 50, 100).forEach { size ->
                                 DropdownMenuItem(
                                     text = { Text(size.toString()) },
-                                    onClick = { pageSize = size; pageSizeExpanded = false },
+                                    onClick = { onPageSize(size); pageSizeExpanded = false },
                                 )
                             }
                         }
                     }
                 }
-                Text("$from-$to de ${products.size}", color = Color(0xFF475569))
+                Text("$from-$to de $total", color = Color(0xFF475569))
             }
             val paginationButtons: @Composable () -> Unit = {
-                IconButton(onClick = { currentPage-- }, enabled = currentPage > 0) {
+                IconButton(onClick = { onPage(currentPage - 1) }, enabled = currentPage > 1) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Pagina anterior")
                 }
-                IconButton(onClick = { currentPage++ }, enabled = currentPage < totalPages - 1) {
+                IconButton(onClick = { onPage(currentPage + 1) }, enabled = currentPage < totalPages) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Pagina siguiente")
                 }
             }
@@ -496,7 +501,7 @@ private fun ProductsTable(
                 Column(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 10.dp, vertical = 6.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { paginationInfo() }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-                        Text("Pagina ${currentPage + 1} de $totalPages", color = Color(0xFF475569))
+                        Text("Pagina $currentPage de $totalPages", color = Color(0xFF475569))
                         paginationButtons()
                     }
                 }
@@ -504,7 +509,7 @@ private fun ProductsTable(
                 Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     paginationInfo()
                     Spacer(Modifier.weight(1f))
-                    Text("Pagina ${currentPage + 1} de $totalPages", color = Color(0xFF475569))
+                    Text("Pagina $currentPage de $totalPages", color = Color(0xFF475569))
                     paginationButtons()
                 }
             }
@@ -532,6 +537,11 @@ private fun productFilterChipBorder(selected: Boolean) = FilterChipDefaults.filt
 
 private fun ProductAdminRow.productNumberText(value: Double): String =
     if (id == 0L && value == 0.0) "" else value.toString()
+
+private fun editableConversionNumber(value: Double): String =
+    if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+
+private fun String.editableDoubleOrNull(): Double? = replace(',', '.').toDoubleOrNull()
 
 @Composable
 private fun ProductTableRow(
@@ -634,6 +644,12 @@ private fun ProductAdvancedEditorView(
     var salesChannel by remember(initial) { mutableStateOf(initial.salesChannel.ifBlank { "ambos" }) }
     var active by remember(initial) { mutableStateOf(initial.active) }
     var conversions by remember(initial) { mutableStateOf(initial.conversions) }
+    var conversionStockTexts by remember(initial) {
+        mutableStateOf(initial.conversions.map { editableConversionNumber(it.stockFactor) })
+    }
+    var conversionPriceTexts by remember(initial) {
+        mutableStateOf(initial.conversions.map { editableConversionNumber(it.finalPrice) })
+    }
     val activeCategories = categories.filter { it.active }
     val availableSubcategories = subcategories.filter { it.active && it.categoryId == categoryId }
     val selectedCategoryName = activeCategories.firstOrNull { it.id == categoryId }?.name ?: "Seleccionar"
@@ -648,10 +664,15 @@ private fun ProductAdvancedEditorView(
     val barcodeError = barcodeValidationMessage
         ?: duplicateBarcodeProduct?.let { "Este producto ya se encuentra en el sistema: ${it.name}." }
     val conversionNames = conversions.map { it.name.trim().lowercase() }
-    val conversionsValid = conversions.size <= 30 && conversions.all {
-        it.name.trim().isNotBlank() && it.name.trim().length <= 80 && it.code.trim().length <= 50 &&
-            it.stockFactor >= 0.0 && it.stockFactor <= 999999.9999 &&
-            it.finalPrice >= 0.01 && it.finalPrice <= 9999999999.99
+    val conversionNumbersValid = conversionStockTexts.size == conversions.size &&
+        conversionPriceTexts.size == conversions.size && conversions.indices.all { index ->
+            val stockValue = conversionStockTexts[index].editableDoubleOrNull()
+            val priceValue = conversionPriceTexts[index].editableDoubleOrNull()
+            stockValue != null && stockValue in 0.0..999999.9999 &&
+                priceValue != null && priceValue in 0.01..9999999999.99
+        }
+    val conversionsValid = conversions.size <= 30 && conversionNumbersValid && conversions.all {
+        it.name.trim().isNotBlank() && it.name.trim().length <= 80 && it.code.trim().length <= 50
     } && conversionNames.distinct().size == conversionNames.size
     val canSaveProduct = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0 &&
         parseDouble(stock, -1.0) >= 0.0 && duplicateBarcodeProduct == null && conversionsValid
@@ -705,7 +726,15 @@ private fun ProductAdvancedEditorView(
             offerMaxQuantityPrice = parseDouble(offerMaxQuantityPrice, initial.offerMaxQuantityPrice),
             ratingsEnabled = ratingsEnabled, adminRating = parseDouble(adminRating, initial.adminRating),
             productTypeId = productTypeId, metaTitle = metaTitle, metaDescription = metaDescription,
-            salesChannel = salesChannel, active = active, conversions = conversions,
+            salesChannel = salesChannel, active = active,
+            conversions = conversions.mapIndexed { index, conversion ->
+                conversion.copy(
+                    stockFactor = conversionStockTexts.getOrNull(index)?.editableDoubleOrNull()
+                        ?: conversion.stockFactor,
+                    finalPrice = conversionPriceTexts.getOrNull(index)?.editableDoubleOrNull()
+                        ?: conversion.finalPrice,
+                )
+            },
         )
     }
 
@@ -808,9 +837,14 @@ private fun ProductAdvancedEditorView(
                         Text("Conversiones", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         TextButton(
                             onClick = {
-                                if (conversions.size < 30) conversions = conversions + ProductConversion(
-                                    id = 0L, name = "", code = "", stockFactor = 1.0, finalPrice = parseDouble(price, 0.0),
-                                )
+                                if (conversions.size < 30) {
+                                    val initialPrice = parseDouble(price, 0.0)
+                                    conversions = conversions + ProductConversion(
+                                        id = 0L, name = "", code = "", stockFactor = 1.0, finalPrice = initialPrice,
+                                    )
+                                    conversionStockTexts = conversionStockTexts + "1"
+                                    conversionPriceTexts = conversionPriceTexts + editableConversionNumber(initialPrice)
+                                }
                             },
                             enabled = conversions.size < 30,
                         ) { Text("+ Agregar conversión") }
@@ -828,7 +862,11 @@ private fun ProductAdvancedEditorView(
                             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Text("Conversión ${index + 1}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                    IconButton(onClick = { conversions = conversions.filterIndexed { i, _ -> i != index } }) {
+                                    IconButton(onClick = {
+                                        conversions = conversions.filterIndexed { i, _ -> i != index }
+                                        conversionStockTexts = conversionStockTexts.filterIndexed { i, _ -> i != index }
+                                        conversionPriceTexts = conversionPriceTexts.filterIndexed { i, _ -> i != index }
+                                    }) {
                                         Icon(Icons.Filled.Close, contentDescription = "Eliminar conversión")
                                     }
                                 }
@@ -844,16 +882,14 @@ private fun ProductAdvancedEditorView(
                                     OutlinedTextField(conversion.code, { value ->
                                         conversions = conversions.toMutableList().also { it[index] = conversion.copy(code = value) }
                                     }, label = { Text("Código") }, modifier = Modifier.weight(1f), singleLine = true)
-                                    OutlinedTextField(conversion.stockFactor.toString(), { value ->
-                                        conversions = conversions.toMutableList().also {
-                                            it[index] = conversion.copy(stockFactor = parseDouble(value, 0.0))
-                                        }
-                                    }, label = { Text("Stock conversión *") }, modifier = Modifier.weight(1f), singleLine = true)
-                                    OutlinedTextField(conversion.finalPrice.toString(), { value ->
-                                        conversions = conversions.toMutableList().also {
-                                            it[index] = conversion.copy(finalPrice = parseDouble(value, 0.0))
-                                        }
-                                    }, label = { Text("Precio final *") }, prefix = { Text("S/ ") }, modifier = Modifier.weight(1f), singleLine = true)
+                                    OutlinedTextField(conversionStockTexts.getOrElse(index) { "" }, { value ->
+                                        conversionStockTexts = conversionStockTexts.toMutableList().also { it[index] = value }
+                                    }, label = { Text("Stock conversión *") }, modifier = Modifier.weight(1f), singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                                    OutlinedTextField(conversionPriceTexts.getOrElse(index) { "" }, { value ->
+                                        conversionPriceTexts = conversionPriceTexts.toMutableList().also { it[index] = value }
+                                    }, label = { Text("Precio final *") }, prefix = { Text("S/ ") }, modifier = Modifier.weight(1f), singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
                                     Row(
                                         modifier = Modifier.weight(1f),
                                         verticalAlignment = Alignment.CenterVertically,

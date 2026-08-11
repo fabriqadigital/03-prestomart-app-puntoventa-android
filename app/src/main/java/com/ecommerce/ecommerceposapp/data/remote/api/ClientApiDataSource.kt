@@ -2,6 +2,8 @@ package com.ecommerce.ecommerceposapp.data.remote.api
 
 import android.content.Context
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
+import com.ecommerce.ecommerceposapp.domain.model.common.ServerPage
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -18,6 +20,22 @@ class ClientApiDataSource(context: Context) {
         execute(Request.Builder().url(resolver.endpoint(ApiConfig.CLIENT_LIST)).get().build())
             .resultArray()
             .mapNotNull(::parseClient)
+    }
+
+    fun listPage(page: Int, perPage: Int, search: String): Result<ServerPage<ClientRow>> = authenticated {
+        val url = resolver.endpoint(ApiConfig.CLIENT_LIST).toHttpUrl().newBuilder()
+            .addQueryParameter("page", page.coerceAtLeast(1).toString())
+            .addQueryParameter("per_page", perPage.toString())
+            .apply { if (search.isNotBlank()) addQueryParameter("search", search.trim()) }
+            .build()
+        val result = execute(Request.Builder().url(url).get().build()).optJSONObject("result") ?: JSONObject()
+        val data = result.optJSONArray("data") ?: JSONArray()
+        ServerPage(
+            rows = (0 until data.length()).mapNotNull(data::optJSONObject).mapNotNull(::parseClient),
+            total = result.optInt("total", data.length()),
+            page = result.optInt("current_page", page),
+            perPage = result.optInt("per_page", perPage),
+        )
     }
 
     fun save(row: ClientRow): Result<String> = authenticated {

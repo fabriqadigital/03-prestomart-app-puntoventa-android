@@ -3,16 +3,19 @@ package com.ecommerce.ecommerceposapp.presentation.profile
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.util.Base64
 import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,7 +43,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Store
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -62,6 +64,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -94,15 +97,43 @@ private val Muted = Color(0xFF64748B)
 private val Border = Color(0xFFE6DADA)
 
 private enum class ProfileMode { View, Edit, Security }
+private enum class ProfileSection(val label: String) {
+    Personal("Información personal"),
+    Work("Datos laborales"),
+    Collection("Recaudación"),
+}
 
 private data class ProfileCashStats(
     val salesCount: Int = 0,
-    val openedHours: Double = 0.0,
     val totalCollected: Double = 0.0,
     val currentCashBalance: Double = 0.0,
     val income: Double = 0.0,
     val expenses: Double = 0.0,
+    val cash: Double = 0.0,
+    val yape: Double = 0.0,
+    val plin: Double = 0.0,
+    val card: Double = 0.0,
 )
+
+private fun loadProfileCashStats(
+    repository: CatalogRepository,
+    cashierId: Long,
+): Result<ProfileCashStats> = runCatching {
+    val openSession = repository.findOpenCashSession(cashierId).getOrThrow()
+        ?: return@runCatching ProfileCashStats()
+    val summary = repository.cashSummary(openSession.id).getOrThrow()
+    ProfileCashStats(
+        salesCount = summary.salesCount,
+        totalCollected = summary.totalSales,
+        currentCashBalance = summary.expectedCash,
+        income = summary.income,
+        expenses = summary.expenses,
+        cash = summary.cashAmount,
+        yape = summary.yapeAmount,
+        plin = summary.plinAmount,
+        card = summary.cardAmount,
+    )
+}
 
 @Composable
 fun ProfileScreen(
@@ -112,6 +143,7 @@ fun ProfileScreen(
     onNotice: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val profileApi = remember(context) { CashierProfileApiDataSource(context.applicationContext) }
     fun hasValidatedInternet(): Boolean {
         val connectivity = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = connectivity.activeNetwork ?: return false
@@ -151,7 +183,7 @@ fun ProfileScreen(
     LaunchedEffect(session.cashierId) {
         if (session.offlineSession) return@LaunchedEffect
         if (!hasValidatedInternet()) return@LaunchedEffect
-        withContext(Dispatchers.IO) { CashierProfileApiDataSource(context).fetch(session) }
+        withContext(Dispatchers.IO) { profileApi.fetch(session) }
             .onSuccess { fresh ->
                 resolvedSession = fresh
                 resetForm(fresh)
@@ -164,25 +196,10 @@ fun ProfileScreen(
         if (resolvedSession.cashierId <= 0L) return@LaunchedEffect
         while (isActive) {
             val stats = withContext(Dispatchers.IO) {
-                runCatching {
-                    val open = catalogRepository.findOpenCashSession(resolvedSession.cashierId).getOrThrow()
-                        ?: return@runCatching ProfileCashStats()
-                    val summary = catalogRepository.cashSummary(open.id).getOrThrow()
-                    val sales = catalogRepository.listSalesHistory(page = 1, perPage = 100).rows
-                        .filter { !it.estado.equals("Anulada", ignoreCase = true) }
-                    val hours = ((System.currentTimeMillis() - open.openedAt).coerceAtLeast(0L) / 3_600_000.0)
-                    ProfileCashStats(
-                        salesCount = sales.size,
-                        openedHours = hours,
-                        totalCollected = summary.totalSales,
-                        currentCashBalance = summary.expectedCash,
-                        income = summary.income,
-                        expenses = summary.expenses,
-                    )
-                }
+                loadProfileCashStats(catalogRepository, resolvedSession.cashierId)
             }
             stats.onSuccess { cashStats = it }
-            delay(15_000)
+            delay(60_000)
         }
     }
 
@@ -245,7 +262,7 @@ fun ProfileScreen(
                     scope.launch {
                         saving = true
                         val result = withContext(Dispatchers.IO) {
-                            CashierProfileApiDataSource(context).update(
+                            profileApi.update(
                                 resolvedSession,
                                 name,
                                 lastName,
@@ -298,7 +315,7 @@ fun ProfileScreen(
                     scope.launch {
                         saving = true
                         val result = withContext(Dispatchers.IO) {
-                            CashierProfileApiDataSource(context).update(
+                            profileApi.update(
                                 resolvedSession,
                                 name,
                                 lastName,
@@ -376,15 +393,22 @@ private fun ProfileHeader(
 private fun ProfileAvatar(name: String, avatar: Any?, editable: Boolean, onPickPhoto: () -> Unit, size: androidx.compose.ui.unit.Dp) {
     Box(contentAlignment = Alignment.BottomEnd) {
         Surface(Modifier.size(size), shape = CircleShape, color = Color(0xFFFFE4E6)) {
-            if (avatar != null) {
-                if (avatar is ImageBitmap) {
-                    Image(avatar, "Foto de perfil", Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
-                } else {
-                    AsyncImage(avatar, "Foto de perfil", Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
-                }
-            } else {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(name.firstInitial(), color = Brand, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium)
+            Box(contentAlignment = Alignment.Center) {
+                Text(name.firstInitial(), color = Brand, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium)
+                when (avatar) {
+                    is ImageBitmap -> Image(
+                        bitmap = avatar,
+                        contentDescription = "Foto de perfil",
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                    null -> Unit
+                    else -> AsyncImage(
+                        model = avatar,
+                        contentDescription = "Foto de perfil",
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
                 }
             }
         }
@@ -415,7 +439,7 @@ private fun ProfileIdentity(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             StatusChip(session.role.cleanDisplay().ifBlank { "-" }, Color(0xFFEFF6FF), Color(0xFF475569))
             StatusChip(session.defaultCashRegisterName.cleanDisplay().ifBlank { "-" }, Color(0xFFFFE4E6), BrandDark)
         }
@@ -458,46 +482,72 @@ private fun ProfileHeaderActions(
 
 @Composable
 private fun ProfileReadOnly(name: String, lastName: String, email: String, document: String, phone: String, address: String, session: UserSession, stats: ProfileCashStats) {
+    var selectedSection by rememberSaveable { mutableStateOf(ProfileSection.Personal) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val wide = maxWidth >= 760.dp
-            if (wide) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    InfoCard("Informacion personal", Icons.Filled.Person, Modifier.weight(1f)) {
-                        InfoGrid(
-                            listOf(
-                                "Nombres" to name,
-                                "Apellidos" to lastName,
-                                "Correo electronico" to email,
-                                "Tipo de documento" to session.documentType,
-                                "Numero de documento" to document,
-                                "Numero de celular" to phone,
-                            ),
-                        )
-                    }
-                    InfoCard("Datos laborales", Icons.Filled.BusinessCenter, Modifier.weight(1f)) {
-                        InfoGrid(
-                            listOf(
-                                "Rol en el sistema" to session.role,
-                                "Caja asignada" to session.defaultCashRegisterName,
-                                "Sucursal" to session.branchName,
-                                "Direccion residencial" to address,
-                            ),
-                        )
-                    }
-                }
-            } else {
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    InfoCard("Informacion personal", Icons.Filled.Person, Modifier.fillMaxWidth()) {
-                        InfoGrid(listOf("Nombres" to name, "Apellidos" to lastName, "Correo electronico" to email, "Tipo de documento" to session.documentType, "Numero de documento" to document, "Numero de celular" to phone))
-                    }
-                    InfoCard("Datos laborales", Icons.Filled.BusinessCenter, Modifier.fillMaxWidth()) {
-                        InfoGrid(listOf("Rol en el sistema" to session.role, "Caja asignada" to session.defaultCashRegisterName, "Sucursal" to session.branchName, "Direccion residencial" to address))
-                    }
+        ProfileSectionTabs(selectedSection) { selectedSection = it }
+        when (selectedSection) {
+            ProfileSection.Personal -> InfoCard("Información personal", Icons.Filled.Person, Modifier.fillMaxWidth()) {
+                InfoGrid(
+                    listOf(
+                        "Nombres" to name,
+                        "Apellidos" to lastName,
+                        "Correo electrónico" to email,
+                        "Tipo de documento" to session.documentType,
+                        "Número de documento" to document,
+                        "Número de celular" to phone,
+                        "Dirección residencial" to address,
+                    ),
+                )
+            }
+            ProfileSection.Work -> InfoCard("Datos laborales", Icons.Filled.BusinessCenter, Modifier.fillMaxWidth()) {
+                InfoGrid(
+                    listOf(
+                        "Rol en el sistema" to session.role,
+                        "Caja asignada" to session.defaultCashRegisterName,
+                        "Sucursal" to session.branchName,
+                    ),
+                )
+            }
+            ProfileSection.Collection -> {
+                StatsRow(stats)
+                PaymentBreakdown(stats)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileSectionTabs(
+    selected: ProfileSection,
+    onSelected: (ProfileSection) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFFFFFBFB),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            ProfileSection.entries.forEach { section ->
+                val active = selected == section
+                Surface(
+                    modifier = Modifier.clickable { onSelected(section) },
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (active) Brand else Color.Transparent,
+                ) {
+                    Text(
+                        text = section.label,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
+                        color = if (active) Color.White else Muted,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
                 }
             }
         }
-        StatsRow(stats)
     }
 }
 
@@ -598,7 +648,6 @@ private fun StatsRow(stats: ProfileCashStats) {
         val wide = maxWidth >= 760.dp
         val cards = listOf(
             Triple(Icons.Filled.Badge, stats.salesCount.toString(), "Ventas hasta cierre"),
-            Triple(Icons.Filled.Timer, String.format(Locale.US, "%.1fh", stats.openedHours), "Horas de caja"),
             Triple(Icons.Filled.Store, "S/ ${String.format(Locale.US, "%.2f", stats.totalCollected)}", "Total recaudado"),
             Triple(Icons.Filled.AccountBalanceWallet, "S/ ${String.format(Locale.US, "%.2f", stats.currentCashBalance)}", "Saldo actual de caja"),
             Triple(Icons.AutoMirrored.Filled.TrendingUp, "S/ ${String.format(Locale.US, "%.2f", stats.income)}", "Ingresos de caja"),
@@ -625,6 +674,62 @@ private fun StatsRow(stats: ProfileCashStats) {
                     }
                 }
             }
+        }
+    }
+}
+
+private data class PaymentTab(val label: String, val amount: Double)
+
+@Composable
+private fun PaymentBreakdown(stats: ProfileCashStats) {
+    val tabs = listOf(
+        PaymentTab("Efectivo", stats.cash),
+        PaymentTab("Yape", stats.yape),
+        PaymentTab("Plin", stats.plin),
+        PaymentTab("Tarjeta", stats.card),
+    )
+    var selected by remember { mutableStateOf(0) }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = Color.White,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("Recaudación por método de pago", color = TextPrimary, fontWeight = FontWeight.Bold)
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                tabs.forEachIndexed { index, tab ->
+                    val active = selected == index
+                    Surface(
+                        modifier = Modifier.clickable { selected = index },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (active) Brand else Color.White,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (active) Brand else Border),
+                    ) {
+                        Text(
+                            tab.label,
+                            color = if (active) Color.White else TextPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                        )
+                    }
+                }
+            }
+            Text(
+                "S/ ${String.format(Locale.US, "%.2f", tabs[selected].amount)}",
+                color = Brand,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text(
+                if (tabs[selected].label == "Efectivo") "Importe físico considerado para la entrega de caja."
+                else "Pago digital recibido directamente por la empresa; no se entrega como efectivo.",
+                color = Muted,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }
@@ -737,7 +842,8 @@ private fun UserSession.avatarModel(): Any? {
     }
     if (encoded.isNotBlank()) {
         return runCatching {
-            val bytes = Base64.decode(encoded, Base64.DEFAULT)
+            val cleanBase64 = encoded.substringAfter("base64,").replace("\n", "").replace("\r", "")
+            val bytes = Base64.decode(cleanBase64, Base64.DEFAULT)
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
         }.getOrNull()
     }

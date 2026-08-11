@@ -104,6 +104,7 @@ class PosRepositoryImpl(private val context: Context) :
     private val supplierCatalog = SupplierRepositoryImpl(context)
     private var lastCashRegisters: List<CashRegister> = emptyList()
     private val allSyncModules = SyncPlan.orderedModules
+    private val genericCustomerName = "Cliente genérico"
 
     override fun login(email: String, password: String): Result<UserSession> {
         if (email.isBlank() || password.isBlank()) return Result.failure(Exception("Completa usuario y contraseña."))
@@ -379,7 +380,7 @@ class PosRepositoryImpl(private val context: Context) :
                 lines = linesCopy,
                 vendedorNombre = session.name,
                 idCliente = idCliente,
-                clienteNombre = customerInfo.name.trim(),
+                clienteNombre = customerInfo.name.trim().ifBlank { genericCustomerName },
                 clienteDocumento = customerInfo.document.filter(Char::isDigit),
             )
         }
@@ -737,19 +738,27 @@ class PosRepositoryImpl(private val context: Context) :
             onSuccess = { remote ->
                 val localBySaleId = local.associateBy { it.ventaId }
                 val enrichedRemote = remote.rows.map { row ->
-                    if (!row.clienteNombre.isGenericCustomerName()) return@map row
-                    val resolvedName = localBySaleId[row.ventaId]?.clienteNombre
-                        ?.takeUnless { it.isGenericCustomerName() }
-                        .orEmpty()
-                        .ifBlank { localReceiptCustomerName(row.ventaId) }
-                        .ifBlank {
-                            cashApi.getSaleReceipt(row.ventaId)
-                                .getOrNull()
-                                ?.clienteNombre
-                                ?.takeUnless { it.isGenericCustomerName() }
-                                .orEmpty()
-                        }
-                    if (resolvedName.isBlank()) row else row.copy(clienteNombre = resolvedName)
+                    val localRow = localBySaleId[row.ventaId]
+                    val resolvedName = if (row.clienteNombre.isGenericCustomerName()) {
+                        localRow?.clienteNombre
+                            ?.takeUnless { it.isGenericCustomerName() }
+                            .orEmpty()
+                            .ifBlank { localReceiptCustomerName(row.ventaId) }
+                            .ifBlank {
+                                cashApi.getSaleReceipt(row.ventaId)
+                                    .getOrNull()
+                                    ?.clienteNombre
+                                    ?.takeUnless { it.isGenericCustomerName() }
+                                    .orEmpty()
+                            }
+                            .ifBlank { genericCustomerName }
+                    } else {
+                        row.clienteNombre
+                    }
+                    row.copy(
+                        clienteNombre = resolvedName,
+                        tipoPago = row.tipoPago.ifBlank { localRow?.tipoPago.orEmpty() },
+                    )
                 }
                 val remoteBySaleId = enrichedRemote.associateBy { it.ventaId }
                 val enrichedLocal = local.map { row ->
@@ -796,6 +805,9 @@ class PosRepositoryImpl(private val context: Context) :
                     .takeUnless { it.equals("CLIENTE VARIOS", ignoreCase = true) }
                     .orEmpty()
                 val clientName = receiptCustomerName.ifBlank { registeredClientName }
+                    .takeUnless { it.isGenericCustomerName() }
+                    .orEmpty()
+                    .ifBlank { genericCustomerName }
                 SalesHistoryRow(
                     ventaId = sale.id,
                     numeroComprobante = sale.numeroComprobante,
@@ -825,7 +837,11 @@ class PosRepositoryImpl(private val context: Context) :
                     igv = localSale?.igv?.takeIf { it > 0.0 } ?: remote.igv,
                     montoRecibido = localSale?.montoRecibido?.takeIf { it > 0.0 } ?: remote.montoRecibido,
                     vuelto = localSale?.vuelto?.takeIf { it > 0.0 } ?: remote.vuelto,
-                    clienteNombre = remote.clienteNombre.ifBlank { localReceipt?.receptorRazonSocial.orEmpty() },
+                    clienteNombre = remote.clienteNombre
+                        .ifBlank { localReceipt?.receptorRazonSocial.orEmpty() }
+                        .takeUnless { it.isGenericCustomerName() }
+                        .orEmpty()
+                        .ifBlank { genericCustomerName },
                     clienteDocumento = remote.clienteDocumento.ifBlank { localReceipt?.receptorNumDoc.orEmpty() },
                 )
             }
@@ -866,7 +882,11 @@ class PosRepositoryImpl(private val context: Context) :
             lines = lines,
             vendedorNombre = getSession()?.name.orEmpty(),
             idCliente = sale.idCliente,
-            clienteNombre = localReceipt?.receptorRazonSocial.orEmpty().ifBlank { client?.name.orEmpty() },
+            clienteNombre = localReceipt?.receptorRazonSocial.orEmpty()
+                .ifBlank { client?.name.orEmpty() }
+                .takeUnless { it.isGenericCustomerName() }
+                .orEmpty()
+                .ifBlank { genericCustomerName },
             clienteDocumento = localReceipt?.receptorNumDoc.orEmpty().ifBlank { client?.document.orEmpty() },
         )
     }
@@ -1031,26 +1051,100 @@ class PosRepositoryImpl(private val context: Context) :
             .findAll()
         val opening = prefs.getFloat("pos_cash_opening_amount", 0f).toDouble()
         val totalSales = sales.sumOf { it.total }
-        val cash = sales.filter { it.tipoPago.equals("EFE", true) || it.tipoPago.contains("efectivo", true) }
+        fun totalFor(vararg methods: String): Double = sales
+            .filter { sale -> methods.any { it.equals(sale.tipoPago.trim(), ignoreCase = true) } }
             .sumOf { it.total }
+        val cash = totalFor("EFE", "EF", "EFECTIVO", "CASH")
+        val card = totalFor("TAR", "TARJ", "TARJETA", "VISA", "MASTERCARD", "CARD")
+        val yape = totalFor("YAP", "YAPE", "IZIPAY_YAPE")
+        val plin = totalFor("PLN", "PLIN")
+        val transfer = totalFor("TRANSFERENCIA", "TRANSFER")
+        val known = cash + card + yape + plin + transfer
+        val other = (totalSales - known).coerceAtLeast(0.0)
         CashSummary(
             openingAmount = opening,
             totalSales = totalSales,
+            salesCount = sales.size,
             cashAmount = cash,
-            deposit = totalSales - cash,
+            deposit = card + yape + plin + transfer,
             expectedCash = opening + cash,
             totalFlow = opening + totalSales,
             income = 0.0,
             expenses = 0.0,
+            cardAmount = card,
+            yapeAmount = yape,
+            plinAmount = plin,
+            transferAmount = transfer,
+            otherAmount = other,
         )
     }
 
     override fun cancelSale(ventaId: Long, comment: String, restoreStock: Boolean): Result<Unit> {
-        val offlineSession = getSession()?.offlineSession == true || ApiSessionStore(context).token.isBlank()
-        if (offlineSession || ventaId <= 0L) {
-            return Result.failure(Exception("Conéctate a internet para solicitar autorización de anulación."))
+        if (comment.trim().length < 5) {
+            return Result.failure(Exception("Ingrese un motivo de anulación de al menos 5 caracteres."))
         }
-        return cashApi.cancelSale(ventaId, comment, restoreStock)
+        if (ApiSessionStore(context).token.isBlank()) {
+            return Result.failure(
+                Exception("Tu sesión online venció o no tiene autorización. Vuelve a iniciar sesión con Internet para solicitar la anulación."),
+            )
+        }
+
+        // Si el dispositivo recuperó Internet, reutiliza la autorización guardada
+        // sin exigir una sincronización manual antes de la anulación.
+        getSession()?.takeIf { it.offlineSession }?.copy(offlineSession = false)?.let(::saveSession)
+
+        var remoteSaleId = ventaId
+        if (ventaId <= 0L) {
+            val pendingSale = realmQuery { realm ->
+                realm.where(OutboxRealm::class.java)
+                    .equalTo("operation", "CREATE_SALE")
+                    .equalTo("aggregateLocalId", ventaId)
+                    .findFirst()
+                    ?.let {
+                        PendingOutbox(
+                            id = it.id,
+                            operation = it.operation,
+                            aggregateLocalId = it.aggregateLocalId,
+                            payloadJson = it.payloadJson,
+                            attemptCount = it.attemptCount,
+                        )
+                    }
+            } ?: return Result.failure(Exception("La venta local no está pendiente de sincronización o ya no existe."))
+
+            val syncResult = pushPendingSale(pendingSale)
+            if (syncResult.isFailure) {
+                val error = syncResult.exceptionOrNull()
+                return if (error.isNetworkFailure()) {
+                    Result.failure(Exception("No hay conexión estable con el servidor. Intenta anular la venta cuando vuelva Internet."))
+                } else {
+                    Result.failure(error ?: Exception("No se pudo sincronizar la venta antes de solicitar su anulación."))
+                }
+            }
+            remoteSaleId = resolveRemoteId("sale", ventaId)
+        }
+
+        return cashApi.cancelSale(remoteSaleId, comment, restoreStock).recoverCatching { error ->
+            if (error.isNetworkFailure()) {
+                throw Exception("No hay conexión estable con el servidor. Revisa Internet e inténtalo nuevamente.", error)
+            }
+            throw error
+        }
+    }
+
+    override fun withdrawSaleCancellation(ventaId: Long): Result<Unit> {
+        if (ventaId <= 0L) {
+            return Result.failure(Exception("La venta todavía no está sincronizada con el servidor."))
+        }
+        if (ApiSessionStore(context).token.isBlank()) {
+            return Result.failure(Exception("Vuelve a iniciar sesión con Internet para retirar la solicitud."))
+        }
+        getSession()?.takeIf { it.offlineSession }?.copy(offlineSession = false)?.let(::saveSession)
+        return cashApi.withdrawSaleCancellation(ventaId).recoverCatching { error ->
+            if (error.isNetworkFailure()) {
+                throw Exception("No hay conexión estable con el servidor. Inténtalo nuevamente.", error)
+            }
+            throw error
+        }
     }
 
     private fun cancelSaleLocally(ventaId: Long, comment: String, restoreStock: Boolean) {

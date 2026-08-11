@@ -12,12 +12,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 data class CashModuleUiState(
     val session: CashSession? = null,
     val summary: CashSummary? = null,
     val flowItems: List<CashFlowItem> = emptyList(),
+    val flowTotal: Int = 0,
+    val flowPage: Int = 1,
+    val flowPerPage: Int = 20,
     val loading: Boolean = false,
     val flowLoading: Boolean = false,
     val error: String? = null,
@@ -38,6 +43,7 @@ class CashModuleViewModel(
     private val catalogRepository: CatalogRepository,
     private val cashApi: CashApiDataSource,
 ) : ViewModel() {
+    private var searchJob: Job? = null
 
     private val _uiState = MutableStateFlow(CashModuleUiState())
     val uiState: StateFlow<CashModuleUiState> = _uiState
@@ -64,21 +70,51 @@ class CashModuleViewModel(
 
     fun setFlowSearch(value: String) {
         _uiState.update { it.copy(flowSearch = value) }
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(350)
+            val state = _uiState.value
+            loadFlow(
+                state.session?.id,
+                state.filterFrom.ifBlank { null },
+                state.filterTo.ifBlank { null },
+                page = 1,
+                perPage = state.flowPerPage,
+                search = value,
+            )
+        }
     }
 
     fun applyDateFilter() {
         val state = _uiState.value
         val sessionId = state.session?.id
-        loadFlow(sessionId, state.filterFrom.ifBlank { null }, state.filterTo.ifBlank { null })
+        loadFlow(sessionId, state.filterFrom.ifBlank { null }, state.filterTo.ifBlank { null }, page = 1, perPage = state.flowPerPage, search = state.flowSearch)
     }
 
     fun clearDateFilter() {
         _uiState.update { it.copy(filterFrom = "", filterTo = "") }
         val sessionId = _uiState.value.session?.id
-        loadFlow(sessionId, null, null)
+        loadFlow(sessionId, null, null, page = 1, perPage = _uiState.value.flowPerPage, search = _uiState.value.flowSearch)
     }
 
-    private fun loadFlow(sessionId: Long?, fechaInicio: String?, fechaFin: String?) {
+    fun changeFlowPage(page: Int) {
+        val state = _uiState.value
+        loadFlow(state.session?.id, state.filterFrom.ifBlank { null }, state.filterTo.ifBlank { null }, page.coerceAtLeast(1), state.flowPerPage, state.flowSearch)
+    }
+
+    fun changeFlowPageSize(perPage: Int) {
+        val state = _uiState.value
+        loadFlow(state.session?.id, state.filterFrom.ifBlank { null }, state.filterTo.ifBlank { null }, 1, perPage, state.flowSearch)
+    }
+
+    private fun loadFlow(
+        sessionId: Long?,
+        fechaInicio: String?,
+        fechaFin: String?,
+        page: Int = 1,
+        perPage: Int = 20,
+        search: String = "",
+    ) {
         if (sessionId == null || sessionId < 0L) {
             _uiState.update {
                 it.copy(
@@ -96,9 +132,22 @@ class CashModuleViewModel(
                     sessionId = sessionId,
                     fechaInicio = fechaInicio,
                     fechaFin = fechaFin,
+                    page = page,
+                    perPage = perPage,
+                    search = search,
                 )
             }
-                .onSuccess { items -> _uiState.update { it.copy(flowItems = items, flowLoading = false) } }
+                .onSuccess { result ->
+                    _uiState.update {
+                        it.copy(
+                            flowItems = result.rows,
+                            flowTotal = result.total,
+                            flowPage = result.page,
+                            flowPerPage = result.perPage,
+                            flowLoading = false,
+                        )
+                    }
+                }
                 .onFailure {
                     _uiState.update {
                         it.copy(
