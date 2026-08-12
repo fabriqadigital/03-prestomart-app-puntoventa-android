@@ -2,6 +2,7 @@ package com.ecommerce.ecommerceposapp.data.remote.api
 
 import android.content.Context
 import com.ecommerce.ecommerceposapp.domain.model.users.UserRow
+import com.ecommerce.ecommerceposapp.domain.model.common.ServerPage
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -9,6 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.net.URLEncoder
 
 class UserApiDataSource(context: Context) {
     private val session  = ApiSessionStore(context)
@@ -25,22 +27,37 @@ class UserApiDataSource(context: Context) {
     // ── list() — parsea array JSON plano devuelto por Laravel ->get() ────────
     fun list(): Result<List<UserRow>> = authenticated {
         val json = execute(Request.Builder().url(resolver.endpoint(ApiConfig.USER_LIST)).get().build())
+        parseRows(json.opt("result"))
+    }
 
-        // La API devuelve: { "result": [ {...}, {...} ] }  (array desde ->get())
+    fun listPage(page: Int, perPage: Int, search: String): Result<ServerPage<UserRow>> = authenticated {
+        val url = resolver.endpoint(ApiConfig.USER_LIST) +
+            "?page=${page.coerceAtLeast(1)}&per_page=$perPage&search=${URLEncoder.encode(search.trim(), "UTF-8")}"
+        val json = execute(Request.Builder().url(url).get().build())
         val rawResult = json.opt("result")
+        val result = rawResult as? JSONObject
+        if (result != null) {
+            ServerPage(parseRows(result.opt("data")), result.optInt("total", 0), result.optInt("current_page", page), result.optInt("per_page", perPage))
+        } else {
+            val query = search.trim().lowercase()
+            val filtered = parseRows(rawResult).filter { row ->
+                query.isBlank() || row.name.lowercase().contains(query) || row.username.lowercase().contains(query) || row.email.lowercase().contains(query)
+            }
+            val start = ((page.coerceAtLeast(1) - 1) * perPage).coerceAtMost(filtered.size)
+            ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
+        }
+    }
+
+    private fun parseRows(rawResult: Any?): List<UserRow> {
         val rows: List<JSONObject> = when (rawResult) {
             is JSONArray -> (0 until rawResult.length()).mapNotNull { rawResult.optJSONObject(it) }
-            is JSONObject -> {
-                // Fallback: algunas versiones devuelven { "0": {...}, "1": {...} }
-                rawResult.keys().asSequence()
-                    .filter { it.all(Char::isDigit) }
-                    .mapNotNull { rawResult.optJSONObject(it) }
-                    .toList()
-            }
+            is JSONObject -> rawResult.keys().asSequence()
+                .filter { it.all(Char::isDigit) }
+                .mapNotNull { rawResult.optJSONObject(it) }
+                .toList()
             else -> emptyList()
         }
-
-        rows.mapNotNull { row ->
+        return rows.mapNotNull { row ->
             val id = row.optLong("id")
             if (id <= 0L) return@mapNotNull null
             // "name" en la BD es el username/nombre del usuario

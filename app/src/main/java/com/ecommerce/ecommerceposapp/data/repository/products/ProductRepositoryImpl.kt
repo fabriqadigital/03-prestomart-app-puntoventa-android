@@ -14,6 +14,7 @@ import com.ecommerce.ecommerceposapp.data.remote.api.RemoteProductSeed
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.products.ProductTypeRow
+import com.ecommerce.ecommerceposapp.domain.model.common.ServerPage
 import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
 import com.ecommerce.ecommerceposapp.domain.sync.TimestampConflictResolver
 import java.io.IOException
@@ -74,6 +75,21 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
                     compareByDescending<ProductAdminRow> { it.syncState == "PENDING" }
                         .thenByDescending { it.id },
                 )
+        }
+
+    override fun listProductsAdminPage(page: Int, perPage: Int, search: String, categoryId: Long?, subcategoryId: Long?): ServerPage<ProductAdminRow> =
+        runCatching {
+            remoteCatalog.fetchProductsPage(page, perPage, search, categoryId, subcategoryId).let { result ->
+                ServerPage(result.rows.map { it.toAdminRow() }, result.total, result.page, result.perPage)
+            }
+        }.getOrElse {
+            val query = search.trim().lowercase()
+            val filtered = listProductsAdmin()
+                .filter { categoryId == null || it.categoryId == categoryId }
+                .filter { subcategoryId == null || it.subcategoryId == subcategoryId }
+                .filter { row -> query.isBlank() || row.name.lowercase().contains(query) || row.code.lowercase().contains(query) || row.barcode.lowercase().contains(query) }
+            val start = ((page.coerceAtLeast(1) - 1) * perPage).coerceAtMost(filtered.size)
+            ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
         }
 
     override fun listProductTypes(): Result<List<ProductTypeRow>> =
@@ -191,14 +207,10 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
 
             // The oldest creation wins. Missing timestamps and exact ties use
             // the existing server row, preventing duplicate records.
-            val serverWins =
-                server != null &&
-                    TimestampConflictResolver.serverWins(server.createdAt, item.createdAt)
-
-            if (serverWins) {
+            if (server != null && TimestampConflictResolver.serverWins(server.createdAt, item.createdAt)) {
                 replaceLocal(
                     oldId = item.row.id,
-                    row = server!!.toAdminRow(),
+                    row = server.toAdminRow(),
                     newId = server.id,
                     createdAt = server.createdAt,
                     updatedAt = server.updatedAt,

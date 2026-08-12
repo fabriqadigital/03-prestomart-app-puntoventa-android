@@ -2,6 +2,8 @@ package com.ecommerce.ecommerceposapp.util
 
 import android.os.SystemClock
 import android.util.Log
+import android.view.InputDevice
+import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -13,6 +15,24 @@ object PhysicalScannerInput {
     private const val BURST_GAP_MS = 250L
     private const val DEDUP_MS = 500L
 
+    private val SCANNER_VENDOR_IDS = setOf(
+        0x05E0, // Symbol / Zebra
+        0x064D,
+        0x0624,
+        0x0681,
+        0x05F9,
+        0x0525,
+    )
+    private val SCANNER_NAME_MARKERS = listOf(
+        "scanner",
+        "barcode",
+        "bar code",
+        "symbol",
+        "zebra",
+        "honeywell",
+        "newland",
+    )
+
     private val buffer = StringBuilder()
     private var lastKeyTime = 0L
     private var lastEmittedCode = ""
@@ -20,7 +40,12 @@ object PhysicalScannerInput {
 
     private val _scans = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val scans: SharedFlow<String> = _scans
+
     fun onKeyEvent(event: KeyEvent): Boolean {
+        if (!comesFromScanner(event)) {
+            clearExpiredBuffer()
+            return false
+        }
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount > 0) return false
         val now = SystemClock.uptimeMillis()
         when (event.keyCode) {
@@ -57,6 +82,22 @@ object PhysicalScannerInput {
                 }
                 return false
             }
+        }
+    }
+
+    private fun comesFromScanner(event: KeyEvent): Boolean {
+        if (event.deviceId == KeyCharacterMap.VIRTUAL_KEYBOARD) return false
+        val device = InputDevice.getDevice(event.deviceId) ?: return false
+        if (device.isVirtual) return false
+        val deviceName = device.name.orEmpty().lowercase()
+        return device.vendorId in SCANNER_VENDOR_IDS ||
+            SCANNER_NAME_MARKERS.any(deviceName::contains)
+    }
+
+    private fun clearExpiredBuffer() {
+        if (buffer.isNotEmpty() && SystemClock.uptimeMillis() - lastKeyTime > BURST_GAP_MS) {
+            buffer.clear()
+            lastKeyTime = 0L
         }
     }
 

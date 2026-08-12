@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ecommerce.ecommerceposapp.domain.model.users.UserRow
 import com.ecommerce.ecommerceposapp.domain.usecase.users.DeleteUserUseCase
-import com.ecommerce.ecommerceposapp.domain.usecase.users.GetUsersUseCase
+import com.ecommerce.ecommerceposapp.domain.usecase.users.GetUsersPageUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.users.SaveUserUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,15 +14,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class UsersUiState(val users: List<UserRow> = emptyList(), val isLoading: Boolean = false, val isSaving: Boolean = false, val message: String? = null, val error: String? = null)
+data class UsersUiState(val users: List<UserRow> = emptyList(), val total: Int = 0, val page: Int = 1, val perPage: Int = 20, val search: String = "", val isLoading: Boolean = false, val isSaving: Boolean = false, val message: String? = null, val error: String? = null)
 
-class UsersViewModel(private val getUsers: GetUsersUseCase, private val saveUser: SaveUserUseCase, private val deleteUser: DeleteUserUseCase) : ViewModel() {
+class UsersViewModel(private val getUsers: GetUsersPageUseCase, private val saveUser: SaveUserUseCase, private val deleteUser: DeleteUserUseCase) : ViewModel() {
     private val _uiState = MutableStateFlow(UsersUiState())
     val uiState: StateFlow<UsersUiState> = _uiState.asStateFlow()
     init { load() }
-    fun load() = viewModelScope.launch {
-        _uiState.update { it.copy(isLoading = true) }
-        runCatching { withContext(Dispatchers.IO) { getUsers() } }.onSuccess { rows -> _uiState.update { it.copy(users = rows, isLoading = false) } }.onFailure(::showError)
+    fun load(page: Int = _uiState.value.page, perPage: Int = _uiState.value.perPage, search: String = _uiState.value.search) = viewModelScope.launch {
+        _uiState.update { it.copy(isLoading = true, page = page, perPage = perPage, search = search) }
+        runCatching { withContext(Dispatchers.IO) { getUsers(page, perPage, search) } }.onSuccess { result ->
+            _uiState.update { it.copy(users = result.rows, total = result.total, page = result.page, perPage = result.perPage, isLoading = false) }
+        }.onFailure(::showError)
     }
     fun save(row: UserRow, password: String?) = action("Usuario guardado.") { saveUser(row, password) }
     fun remove(id: Long, currentUserId: Long) = action("Usuario eliminado.") { deleteUser(id, currentUserId) }

@@ -85,10 +85,9 @@ import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlin.math.ceil
 import kotlin.math.max
-
-private const val UsersPageSize = 8
 
 @Composable
 fun UsersCrudScreen(vm: UsersViewModel, session: UserSession) {
@@ -96,16 +95,15 @@ fun UsersCrudScreen(vm: UsersViewModel, session: UserSession) {
     var editing by remember { mutableStateOf<UserRow?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
-    var page by remember { mutableIntStateOf(0) }
+    var search by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) { vm.load() }
+    LaunchedEffect(search) {
+        delay(350)
+        vm.load(page = 1, search = search)
+    }
 
-    val users = state.users.sortedWith(
-        compareByDescending<UserRow> { it.createdAt }.thenByDescending { it.id },
-    )
-    val pageCount = max(1, ceil(users.size / UsersPageSize.toDouble()).toInt())
-    if (page > pageCount - 1) page = pageCount - 1
-    val visibleUsers = users.drop(page * UsersPageSize).take(UsersPageSize)
+    val users = state.users
+    val pageCount = max(1, ceil(state.total / state.perPage.toDouble()).toInt())
 
     Column(
         modifier = Modifier
@@ -114,13 +112,22 @@ fun UsersCrudScreen(vm: UsersViewModel, session: UserSession) {
             .padding(Spacing.xl),
     ) {
         UsersHeader(
-            total = users.size,
+            total = state.total,
             isLoading = state.isLoading,
             onRefresh = vm::load,
             onCreate = { showCreate = true },
         )
 
         Spacer(Modifier.height(Spacing.lg))
+
+        PosTextField(
+            value = search,
+            onValueChange = { search = it },
+            label = "Buscar por nombre, usuario o correo",
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(Modifier.height(Spacing.md))
 
         state.error?.let {
             UsersMessage(text = it, color = RedDanger)
@@ -132,7 +139,7 @@ fun UsersCrudScreen(vm: UsersViewModel, session: UserSession) {
         }
 
         UsersTable(
-            users = visibleUsers,
+            users = users,
             isLoading = state.isLoading,
             modifier = Modifier.weight(1f),
             onEdit = { editing = it },
@@ -149,11 +156,11 @@ fun UsersCrudScreen(vm: UsersViewModel, session: UserSession) {
         Spacer(Modifier.height(Spacing.md))
 
         UsersPagination(
-            currentPage = page,
+            currentPage = state.page - 1,
             pageCount = pageCount,
-            total = users.size,
-            onPrevious = { page = (page - 1).coerceAtLeast(0) },
-            onNext = { page = (page + 1).coerceAtMost(pageCount - 1) },
+            total = state.total,
+            onPrevious = { vm.load(page = (state.page - 1).coerceAtLeast(1)) },
+            onNext = { vm.load(page = (state.page + 1).coerceAtMost(pageCount)) },
         )
     }
 

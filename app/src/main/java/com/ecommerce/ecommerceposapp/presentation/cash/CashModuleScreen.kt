@@ -93,16 +93,6 @@ fun CashModuleScreen(
                 item { Spacer(Modifier.height(8.dp)) }
             }
 
-            val filtered = state.flowItems.filter { item ->
-                state.flowSearch.isBlank() ||
-                        item.comentario.contains(state.flowSearch, ignoreCase = true) ||
-                        item.razonSocial.contains(state.flowSearch, ignoreCase = true) ||
-                        item.cajeroNombre.contains(state.flowSearch, ignoreCase = true) ||
-                        item.sucursal.contains(state.flowSearch, ignoreCase = true) ||
-                        item.tipoPago.contains(state.flowSearch, ignoreCase = true) ||
-                        item.origen.contains(state.flowSearch, ignoreCase = true)
-            }
-
             if (!state.flowLoading && state.flowItems.isEmpty() && state.flowError == null) {
                 item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
@@ -125,8 +115,17 @@ fun CashModuleScreen(
                 }
             }
 
-            if (!state.flowLoading && filtered.isNotEmpty()) {
-                item { CashFlowTable(items = filtered) }
+            if (!state.flowLoading && state.flowItems.isNotEmpty()) {
+                item {
+                    CashFlowTable(
+                        items = state.flowItems,
+                        total = state.flowTotal,
+                        pageSize = state.flowPerPage,
+                        currentPage = state.flowPage - 1,
+                        onPageSize = viewModel::changeFlowPageSize,
+                        onPageChange = { viewModel.changeFlowPage(it + 1) },
+                    )
+                }
             }
 
             item { Spacer(Modifier.height(80.dp)) }
@@ -288,7 +287,7 @@ private fun CashFlowSection(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
-                val total = state.flowItems.size
+                val total = state.flowTotal
                 if (total > 0) {
                     Text(
                         "$total ${if (total == 1) "registro" else "registros"}",
@@ -405,13 +404,17 @@ private fun FilterClearButton(onClick: () -> Unit) {
 // ── Flow Table ────────────────────────────────────────────────────────────────
 
 @Composable
-private fun CashFlowTable(items: List<CashFlowItem>) {
+private fun CashFlowTable(
+    items: List<CashFlowItem>,
+    total: Int,
+    pageSize: Int,
+    currentPage: Int,
+    onPageSize: (Int) -> Unit,
+    onPageChange: (Int) -> Unit,
+) {
     val compact = LocalConfiguration.current.screenWidthDp < 760
-    var pageSize by remember { mutableStateOf(10) }
     var pageSizeExpanded by remember { mutableStateOf(false) }
-    val totalPages = maxOf(1, (items.size + pageSize - 1) / pageSize)
-    var currentPage by remember(items.size, pageSize) { mutableStateOf(0) }
-    val pageItems = items.drop(currentPage * pageSize).take(pageSize)
+    val totalPages = maxOf(1, (total + pageSize - 1) / pageSize)
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -447,37 +450,37 @@ private fun CashFlowTable(items: List<CashFlowItem>) {
             HorizontalDivider(color = Divider, thickness = 1.dp)
 
             // ── Filas ─────────────────────────────────────────────────────────
-            pageItems.forEachIndexed { index, item ->
+            items.forEachIndexed { index, item ->
                 CashFlowTableRow(item = item, compact = compact)
-                if (index < pageItems.lastIndex) {
+                if (index < items.lastIndex) {
                     HorizontalDivider(color = Divider, thickness = 0.5.dp)
                 }
             }
 
             val paginationInfo: @Composable () -> Unit = {
                 val from = if (items.isEmpty()) 0 else currentPage * pageSize + 1
-                val to = minOf(items.size, (currentPage + 1) * pageSize)
+                val to = minOf(total, (currentPage + 1) * pageSize)
                 Text(if (compact) "Filas:" else "Registros por pagina:", color = TextSecondary)
                 Box {
                     TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = TextPrimary) }
                     MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
                         DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
-                            listOf(10, 20, 50).forEach { size ->
+                            listOf(20, 50, 100).forEach { size ->
                                 DropdownMenuItem(
                                     text = { Text(size.toString()) },
-                                    onClick = { pageSize = size; pageSizeExpanded = false },
+                                    onClick = { onPageSize(size); pageSizeExpanded = false },
                                 )
                             }
                         }
                     }
                 }
-                Text("$from-$to de ${items.size}", color = TextSecondary)
+                Text("$from-$to de $total", color = TextSecondary)
             }
             val paginationButtons: @Composable () -> Unit = {
-                IconButton(onClick = { currentPage-- }, enabled = currentPage > 0) {
+                IconButton(onClick = { onPageChange(currentPage - 1) }, enabled = currentPage > 0) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Pagina anterior")
                 }
-                IconButton(onClick = { currentPage++ }, enabled = currentPage < totalPages - 1) {
+                IconButton(onClick = { onPageChange(currentPage + 1) }, enabled = currentPage < totalPages - 1) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Pagina siguiente")
                 }
             }

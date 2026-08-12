@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class PosUiState(
     val categories: List<CategoryItem> = emptyList(),
@@ -39,18 +41,13 @@ data class PosUiState(
     val cashError: String? = null,
     val message: String? = null,
     val descuentoPorcentaje: Double = 0.0,
-    /** Líneas del carrito a las que se aplica el descuento (por lineKey). */
     val descuentoLineKeys: Set<String> = emptySet(),
 ) {
-    /** Total bruto del carrito (antes de cualquier descuento). */
     val totalAntesDescuento: Double = round(cart.sumOf { it.lineTotal } * 100) / 100
-    /** Base del descuento: solo los productos seleccionados (todo el carrito si no hay selección). */
     val descuentoBase: Double =
         if (descuentoLineKeys.isEmpty()) totalAntesDescuento
         else round(cart.filter { it.lineKey in descuentoLineKeys }.sumOf { it.lineTotal } * 100) / 100
-    /** Monto descontado: round(descuentoBase * porcentaje / 100, 2). */
     val descuentoMonto: Double = round((descuentoBase * descuentoPorcentaje.coerceIn(0.0, 100.0) / 100.0) * 100) / 100
-    /** Total final de la venta (nunca negativo). */
     val total: Double = (round((totalAntesDescuento - descuentoMonto) * 100) / 100).coerceAtLeast(0.0)
     val subtotal: Double = round((total / 1.18) * 100) / 100
     val igv: Double = round((total - subtotal) * 100) / 100
@@ -61,6 +58,7 @@ class PosViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(PosUiState())
     val uiState: StateFlow<PosUiState> = _uiState
+    private val catalogRefreshMutex = Mutex()
 
     fun load() {
         viewModelScope.launch {
@@ -105,7 +103,7 @@ class PosViewModel(
             .onSuccess { _uiState.update { it.copy(cashSession = null, cashSummary = null) } }
     }
 
-    suspend fun refreshCatalog() {
+    suspend fun refreshCatalog() = catalogRefreshMutex.withLock {
         val catalog = withContext(Dispatchers.IO) {
             // Actualiza Realm desde el backend antes de construir el catálogo visible.
             // Si no hay conexión, se conserva y muestra el catálogo local existente.
@@ -274,6 +272,24 @@ class PosViewModel(
     ): Result<CompletedSaleReceipt> {
         if (_uiState.value.cashSession == null) return Result.failure(Exception("Abre una caja antes de registrar ventas."))
         val lines = _uiState.value.cart
+        val previousProducts = _uiState.value.products
+        // Refleja el stock en pantalla desde el clic de cobro. Si el registro
+        // falla, se restaura el catálogo anterior sin obligar a navegar.
+        _uiState.update { state ->
+            state.copy(products = state.products.map { product ->
+                val soldLines = lines.filter { it.productId == product.id }
+                if (soldLines.isEmpty()) return@map product
+                product.copy(
+                    stock = (product.stock - soldLines.sumOf { it.quantity }).coerceAtLeast(0.0),
+                    conversions = product.conversions.map { conversion ->
+                        val sold = soldLines.filter { it.conversionId == conversion.id }.sumOf { it.quantity }
+                        if (sold == 0) conversion else conversion.copy(
+                            stockFactor = (conversion.stockFactor - sold).coerceAtLeast(0.0),
+                        )
+                    },
+                )
+            })
+        }
         val descuentoPorcentaje = _uiState.value.descuentoPorcentaje
         val descuentoLineKeys = _uiState.value.descuentoLineKeys
         val result = withContext(Dispatchers.IO) {
@@ -285,6 +301,9 @@ class PosViewModel(
             _uiState.update {
                 it.copy(cart = emptyList(), products = products, descuentoPorcentaje = 0.0, descuentoLineKeys = emptySet())
             }
+            _uiState.update { it.copy(cart = emptyList(), products = products) }
+        } else {
+            _uiState.update { it.copy(products = previousProducts) }
         }
         return result
     }

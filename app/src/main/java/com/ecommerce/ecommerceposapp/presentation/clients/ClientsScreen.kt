@@ -64,6 +64,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
+import kotlinx.coroutines.delay
 
 private val ClientsAccent = Color(0xFFFD0505)
 private val ClientsText = Color(0xFF111827)
@@ -79,10 +80,9 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
     var search by remember { mutableStateOf("") }
     val compact = LocalConfiguration.current.screenWidthDp < 760
 
-    LaunchedEffect(Unit) { vm.load() }
-    val clients = state.clients.filter { client ->
-        search.isBlank() || listOf(client.displayName(), client.email, client.document, client.phone)
-            .any { it.contains(search, ignoreCase = true) }
+    LaunchedEffect(search) {
+        delay(350)
+        vm.load(page = 1, perPage = state.perPage, search = search)
     }
 
     Column(Modifier.fillMaxSize().background(Color.White).padding(if (compact) 12.dp else 16.dp)) {
@@ -102,10 +102,15 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
         Spacer(Modifier.height(10.dp))
         when {
             state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ClientsAccent) }
-            clients.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No se encontraron clientes", color = ClientsMuted) }
+            state.clients.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No se encontraron clientes", color = ClientsMuted) }
             else -> ClientTable(
-                clients = clients,
+                clients = state.clients,
+                total = state.total,
+                pageSize = state.perPage,
+                currentPage = state.page - 1,
                 compact = compact,
+                onPageSize = { vm.load(page = 1, perPage = it, search = search) },
+                onPageChange = { vm.load(page = it + 1, perPage = state.perPage, search = search) },
                 onEdit = { editing = it },
                 onDelete = { client -> pendingConfirm = deleteConfirmation(client, vm) },
             )
@@ -156,14 +161,16 @@ private fun ClientsHeader(compact: Boolean, onAdd: () -> Unit) {
 @Composable
 private fun ClientTable(
     clients: List<ClientRow>,
+    total: Int,
+    pageSize: Int,
+    currentPage: Int,
     compact: Boolean,
+    onPageSize: (Int) -> Unit,
+    onPageChange: (Int) -> Unit,
     onEdit: (ClientRow) -> Unit,
     onDelete: (ClientRow) -> Unit,
 ) {
-    var pageSize by remember { mutableStateOf(10) }
-    val totalPages = maxOf(1, (clients.size + pageSize - 1) / pageSize)
-    var currentPage by remember(clients.size, pageSize) { mutableStateOf(0) }
-    val pageClients = clients.drop(currentPage * pageSize).take(pageSize)
+    val totalPages = maxOf(1, (total + pageSize - 1) / pageSize)
     Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(8.dp), color = Color.White, shadowElevation = 1.dp) {
         Column {
             Row(Modifier.fillMaxWidth().background(Color(0xFFF8FAFC)).padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -175,7 +182,7 @@ private fun ClientTable(
             }
             HorizontalDivider(color = ClientsDivider)
             LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-                items(pageClients, key = { it.id }) { client ->
+                items(clients, key = { it.id }) { client ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(client.displayName(), Modifier.weight(if (compact) 1.5f else 1.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${client.documentType} ${client.document}", Modifier.weight(1.1f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -187,12 +194,12 @@ private fun ClientTable(
                 }
             }
             ClientsPaginationBar(
-                total = clients.size,
+                total = total,
                 pageSize = pageSize,
                 currentPage = currentPage,
                 totalPages = totalPages,
-                onPageSize = { pageSize = it },
-                onPageChange = { currentPage = it },
+                onPageSize = onPageSize,
+                onPageChange = onPageChange,
                 compact = compact,
             )
         }
@@ -237,7 +244,7 @@ private fun ClientsPaginationBar(
         Box {
             TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = ClientsText) }
             DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
-                listOf(10, 20, 50).forEach { size ->
+                listOf(20, 50, 100).forEach { size ->
                     DropdownMenuItem(text = { Text(size.toString()) }, onClick = { onPageSize(size); pageSizeExpanded = false })
                 }
             }

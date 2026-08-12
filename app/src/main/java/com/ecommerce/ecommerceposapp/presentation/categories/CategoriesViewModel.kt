@@ -7,6 +7,7 @@ import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.DeleteCategoryUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.DeleteSubcategoryUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetCategoriesUseCase
+import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetCategoriesPageUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetSubcategoriesUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.SaveCategoryUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.SaveSubcategoryUseCase
@@ -20,7 +21,12 @@ import kotlinx.coroutines.withContext
 
 data class CategoriesUiState(
     val categories: List<CategoryAdminRow> = emptyList(),
+    val allCategories: List<CategoryAdminRow> = emptyList(),
     val subcategories: List<SubcategoryAdminRow> = emptyList(),
+    val total: Int = 0,
+    val page: Int = 1,
+    val perPage: Int = 20,
+    val search: String = "",
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val message: String? = null,
@@ -29,6 +35,7 @@ data class CategoriesUiState(
 
 class CategoriesViewModel(
     private val getCategories: GetCategoriesUseCase,
+    private val getCategoriesPage: GetCategoriesPageUseCase,
     private val saveCategoryUseCase: SaveCategoryUseCase,
     private val deleteCategoryUseCase: DeleteCategoryUseCase,
     private val getSubcategories: GetSubcategoriesUseCase,
@@ -40,12 +47,21 @@ class CategoriesViewModel(
 
     init { loadAll() }
 
-    fun loadAll() = viewModelScope.launch {
+    fun loadAll(page: Int = _uiState.value.page, perPage: Int = _uiState.value.perPage, search: String = _uiState.value.search) = viewModelScope.launch {
         _uiState.update { it.copy(isLoading = true, error = null) }
         runCatching {
-            withContext(Dispatchers.IO) { getCategories() to getSubcategories() }
-        }.onSuccess { (categories, subcategories) ->
-            _uiState.update { it.copy(categories = categories, subcategories = subcategories, isLoading = false) }
+            withContext(Dispatchers.IO) { Triple(getCategoriesPage(page, perPage, search), getCategories(), getSubcategories()) }
+        }.onSuccess { (categoryPage, allCategories, subcategories) ->
+            _uiState.update { it.copy(
+                categories = categoryPage.rows,
+                allCategories = allCategories.ifEmpty { categoryPage.rows },
+                subcategories = subcategories,
+                total = categoryPage.total,
+                page = categoryPage.page,
+                perPage = categoryPage.perPage,
+                search = search,
+                isLoading = false,
+            ) }
         }.onFailure { showError(it) }
     }
 

@@ -4,6 +4,7 @@ import android.content.Context
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashRegister
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashSession
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashSummary
+import com.ecommerce.ecommerceposapp.domain.model.common.ServerPage
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
@@ -80,6 +81,7 @@ class CashApiDataSource(context: Context) {
         CashSummary(
             openingAmount = item.optDoubleFlexible("monto_inicial"),
             totalSales = totalVentas,
+            salesCount = item.optInt("cantidad_ventas", 0),
             cashAmount = totalesPago.optDoubleFlexible("efectivo"),
             deposit = totalesPago.optDoubleFlexible("tarjeta") +
                     totalesPago.optDoubleFlexible("transferencia") +
@@ -90,6 +92,11 @@ class CashApiDataSource(context: Context) {
             totalFlow = totalVentas + ingresos - egresos,
             income = ingresos,
             expenses = egresos,
+            cardAmount = totalesPago.optDoubleFlexible("tarjeta"),
+            yapeAmount = totalesPago.optDoubleFlexible("yape"),
+            plinAmount = totalesPago.optDoubleFlexible("plin"),
+            transferAmount = totalesPago.optDoubleFlexible("transferencia"),
+            otherAmount = totalesPago.optDoubleFlexible("otros"),
         )
     }
 
@@ -114,6 +121,15 @@ class CashApiDataSource(context: Context) {
         Unit
     }
 
+    fun withdrawSaleCancellation(saleId: Long): Result<Unit> = runCatching {
+        require(saleId > 0L) { "Venta inválida." }
+        executePost(
+            ApiConfig.CASH_SALE_CANCEL_WITHDRAW,
+            JSONObject().put("id_venta", saleId),
+        )
+        Unit
+    }
+
     fun listSales(sessionId: Long, page: Int, perPage: Int, search: String): Result<SalesHistoryPage> = runCatching {
         val root = executeGet(ApiConfig.CASH_SALES, mapOf(
             "id_caja_sesion" to sessionId.toString(),
@@ -131,7 +147,7 @@ class CashApiDataSource(context: Context) {
                 fechaMillis = parseDate(item.cleanString("fecha")),
                 clienteNombre = item.cleanString("cliente_nombre"),
                 cajeroNombre = item.cleanString("usuario_nombre"),
-                tipoPago = "",
+                tipoPago = item.cleanString("tipo_pago").ifBlank { item.cleanString("metodo_pago") },
                 total = item.optDoubleFlexible("total"),
                 estado = item.cleanString("estado"),
                 idCliente = item.optLong("id_cliente"),
@@ -200,13 +216,21 @@ class CashApiDataSource(context: Context) {
         sessionId: Long? = null,
         fechaInicio: String? = null,
         fechaFin: String? = null,
-    ): Result<List<com.ecommerce.ecommerceposapp.domain.model.cash.CashFlowItem>> = runCatching {
+        page: Int = 1,
+        perPage: Int = 20,
+        search: String = "",
+    ): Result<ServerPage<com.ecommerce.ecommerceposapp.domain.model.cash.CashFlowItem>> = runCatching {
         val params = buildMap {
             sessionId?.let { put("id_caja_sesion", it.toString()) }
             fechaInicio?.let { put("fecha_inicio", it) }
             fechaFin?.let { put("fecha_fin", it) }
+            put("page", page.coerceAtLeast(1).toString())
+            put("per_page", perPage.toString())
+            if (search.isNotBlank()) put("search", search.trim())
         }
-        executeGet(ApiConfig.CASH_FLOW, params).resultArray().map { item ->
+        val result = executeGet(ApiConfig.CASH_FLOW, params).optJSONObject("result") ?: JSONObject()
+        val data = result.optJSONArray("data") ?: JSONArray()
+        val rows = (0 until data.length()).mapNotNull(data::optJSONObject).map { item ->
             com.ecommerce.ecommerceposapp.domain.model.cash.CashFlowItem(
                 flujoId = item.cleanString("flujo_id"),
                 fecha = parseDate(item.cleanString("fecha")),
@@ -222,6 +246,12 @@ class CashApiDataSource(context: Context) {
                 cajeroNombre = item.cleanString("cajero_nombre"),
             )
         }
+        ServerPage(
+            rows = rows,
+            total = result.optInt("total", rows.size),
+            page = result.optInt("current_page", page),
+            perPage = result.optInt("per_page", perPage),
+        )
     }
 
     fun registerMovement(

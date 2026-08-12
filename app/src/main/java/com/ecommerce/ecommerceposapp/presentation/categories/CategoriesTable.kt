@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
+import kotlinx.coroutines.delay
 
 private val TableText = Color(0xFF111827)
 private val TableMuted = Color(0xFF64748B)
@@ -58,6 +59,10 @@ private val TableBrand = Color(0xFFFD0505)
 internal fun CategoriesTable(
     categories: List<CategoryAdminRow>,
     subcategories: List<SubcategoryAdminRow>,
+    total: Int,
+    page: Int,
+    pageSize: Int,
+    onQuery: (Int, Int, String) -> Unit,
     onEditCategory: (CategoryAdminRow) -> Unit,
     onDeleteCategory: (CategoryAdminRow) -> Unit,
     onCreateSubcategory: (CategoryAdminRow) -> Unit,
@@ -66,20 +71,14 @@ internal fun CategoriesTable(
 ) {
     val compact = LocalConfiguration.current.screenWidthDp < 720
     var search by remember { mutableStateOf("") }
-    var currentPage by remember { mutableStateOf(0) }
     var expandedIds by remember { mutableStateOf(setOf<Long>()) }
     val normalizedSearch = search.trim()
     val subcategoriesByCategory = remember(subcategories) { subcategories.groupBy { it.categoryId } }
-    val filteredCategories = categories.filter { category ->
-        category.name.contains(normalizedSearch, ignoreCase = true) ||
-            subcategoriesByCategory[category.id].orEmpty().any { it.name.contains(normalizedSearch, ignoreCase = true) }
+    val totalPages = maxOf(1, (total + pageSize - 1) / pageSize)
+    LaunchedEffect(search) {
+        delay(350)
+        onQuery(1, pageSize, search)
     }
-    var pageSize by remember { mutableStateOf(10) }
-    val totalPages = maxOf(1, (filteredCategories.size + pageSize - 1) / pageSize)
-    LaunchedEffect(totalPages) {
-        if (currentPage >= totalPages) currentPage = totalPages - 1
-    }
-    val pageCategories = filteredCategories.drop(currentPage * pageSize).take(pageSize)
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -98,7 +97,6 @@ internal fun CategoriesTable(
                     value = search,
                     onValueChange = {
                         search = it
-                        currentPage = 0
                     },
                     placeholder = { Text("Buscar categoria o subcategoria") },
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
@@ -110,13 +108,13 @@ internal fun CategoriesTable(
             HorizontalDivider(color = TableBorder)
             CategoryHeader(compact)
             HorizontalDivider(color = TableBorder)
-            if (pageCategories.isEmpty()) {
+            if (categories.isEmpty()) {
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     Text("No se encontraron categorias.", color = TableMuted)
                 }
             } else {
                 LazyColumn(Modifier.fillMaxWidth().weight(1f).background(Color.White)) {
-                    pageCategories.forEach { category ->
+                    categories.forEach { category ->
                         val children = subcategoriesByCategory[category.id].orEmpty().sortedBy { it.name.lowercase() }
                         val searchShowsChildren = normalizedSearch.isNotEmpty() && children.any {
                             it.name.contains(normalizedSearch, ignoreCase = true)
@@ -164,16 +162,15 @@ internal fun CategoriesTable(
             }
             CategoryPagination(
                 compact = compact,
-                page = currentPage,
+                page = page - 1,
                 totalPages = totalPages,
-                itemCount = filteredCategories.size,
+                itemCount = total,
                 pageSize = pageSize,
                 onPageSize = {
-                    pageSize = it
-                    currentPage = 0
+                    onQuery(1, it, search)
                 },
-                onPrevious = { currentPage-- },
-                onNext = { currentPage++ },
+                onPrevious = { onQuery((page - 1).coerceAtLeast(1), pageSize, search) },
+                onNext = { onQuery((page + 1).coerceAtMost(totalPages), pageSize, search) },
             )
         }
     }
@@ -284,7 +281,7 @@ private fun CategoryPagination(
             TextButton(onClick = { sizeMenuExpanded = true }) { Text("$pageSize", color = TableText) }
             MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
                 DropdownMenu(expanded = sizeMenuExpanded, onDismissRequest = { sizeMenuExpanded = false }) {
-                    listOf(10, 20).forEach { size ->
+                    listOf(20, 50, 100).forEach { size ->
                         DropdownMenuItem(
                             text = { Text(size.toString()) },
                             onClick = { sizeMenuExpanded = false; onPageSize(size) },

@@ -9,6 +9,7 @@ import com.ecommerce.ecommerceposapp.data.remote.api.CategoryApiDataSource
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
 import com.ecommerce.ecommerceposapp.domain.model.categories.CategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
+import com.ecommerce.ecommerceposapp.domain.model.common.ServerPage
 import com.ecommerce.ecommerceposapp.domain.repository.categories.CategoryRepository
 import io.realm.Case
 import java.io.IOException
@@ -24,6 +25,14 @@ class CategoryRepositoryImpl(context: Context) : CategoryRepository {
             .map { CategoryAdminRow(it.id, it.name, it.active) }
             .sortedWith(compareByDescending<CategoryAdminRow> { it.id < 0L }.thenBy { it.id })
     }
+
+    override fun listCategoriesAdminPage(page: Int, perPage: Int, search: String): ServerPage<CategoryAdminRow> =
+        api.listCategoriesPage(page, perPage, search).getOrElse {
+            val query = search.trim().lowercase()
+            val filtered = listCategoriesAdmin().filter { query.isBlank() || it.name.lowercase().contains(query) }
+            val start = ((page.coerceAtLeast(1) - 1) * perPage).coerceAtMost(filtered.size)
+            ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
+        }
 
     override fun upsertCategory(row: CategoryAdminRow): Result<Unit> {
         if (row.name.isBlank()) return Result.failure(Exception("Nombre obligatorio."))

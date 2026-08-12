@@ -9,7 +9,7 @@ import com.ecommerce.ecommerceposapp.domain.model.categories.SubcategoryAdminRow
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetCategoriesUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.categories.GetSubcategoriesUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.products.DeactivateProductUseCase
-import com.ecommerce.ecommerceposapp.domain.usecase.products.GetProductsUseCase
+import com.ecommerce.ecommerceposapp.domain.usecase.products.GetProductsPageUseCase
 import com.ecommerce.ecommerceposapp.domain.usecase.products.SaveProductUseCase
 import com.ecommerce.ecommerceposapp.domain.repository.products.ProductRepository
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +25,12 @@ data class ProductsUiState(
     val categories: List<CategoryAdminRow> = emptyList(),
     val subcategories: List<SubcategoryAdminRow> = emptyList(),
     val productTypes: List<ProductTypeRow> = emptyList(),
+    val total: Int = 0,
+    val page: Int = 1,
+    val perPage: Int = 20,
+    val search: String = "",
+    val categoryId: Long? = null,
+    val subcategoryId: Long? = null,
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val message: String? = null,
@@ -32,7 +38,7 @@ data class ProductsUiState(
 )
 
 class ProductsViewModel(
-    private val getProducts: GetProductsUseCase,
+    private val getProducts: GetProductsPageUseCase,
     private val getCategories: GetCategoriesUseCase,
     private val getSubcategories: GetSubcategoriesUseCase,
     private val saveProduct: SaveProductUseCase,
@@ -42,12 +48,12 @@ class ProductsViewModel(
     private val _uiState = MutableStateFlow(ProductsUiState())
     val uiState: StateFlow<ProductsUiState> = _uiState.asStateFlow()
     init { load() }
-    fun load() = viewModelScope.launch {
-        _uiState.update { it.copy(isLoading = true) }
+    fun load(page: Int = _uiState.value.page, perPage: Int = _uiState.value.perPage, search: String = _uiState.value.search, categoryId: Long? = _uiState.value.categoryId, subcategoryId: Long? = _uiState.value.subcategoryId) = viewModelScope.launch {
+        _uiState.update { it.copy(isLoading = true, page = page, perPage = perPage, search = search, categoryId = categoryId, subcategoryId = subcategoryId) }
         runCatching {
             withContext(Dispatchers.IO) {
                 ProductLoadResult(
-                    products = getProducts(),
+                    products = getProducts(page, perPage, search, categoryId, subcategoryId),
                     categories = getCategories(),
                     subcategories = getSubcategories(),
                     productTypes = productRepository.listProductTypes().getOrDefault(emptyList()),
@@ -56,7 +62,10 @@ class ProductsViewModel(
         }.onSuccess { result ->
             _uiState.update {
                 it.copy(
-                    products = result.products,
+                    products = result.products.rows,
+                    total = result.products.total,
+                    page = result.products.page,
+                    perPage = result.products.perPage,
                     categories = result.categories,
                     subcategories = result.subcategories,
                     productTypes = result.productTypes,
@@ -80,7 +89,7 @@ class ProductsViewModel(
 }
 
 private data class ProductLoadResult(
-    val products: List<ProductAdminRow>,
+    val products: com.ecommerce.ecommerceposapp.domain.model.common.ServerPage<ProductAdminRow>,
     val categories: List<CategoryAdminRow>,
     val subcategories: List<SubcategoryAdminRow>,
     val productTypes: List<ProductTypeRow>,

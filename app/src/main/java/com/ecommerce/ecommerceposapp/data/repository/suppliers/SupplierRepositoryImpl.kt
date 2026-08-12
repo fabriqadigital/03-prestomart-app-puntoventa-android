@@ -6,6 +6,7 @@ import com.ecommerce.ecommerceposapp.data.local.sync.OutboxRealm
 import com.ecommerce.ecommerceposapp.data.remote.api.SupplierApiDataSource
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
 import com.ecommerce.ecommerceposapp.domain.model.suppliers.SupplierRow
+import com.ecommerce.ecommerceposapp.domain.model.common.ServerPage
 import com.ecommerce.ecommerceposapp.domain.repository.suppliers.SupplierRepository
 import java.io.IOException
 import java.util.UUID
@@ -19,6 +20,21 @@ class SupplierRepositoryImpl(context: Context) : SupplierRepository {
         return runCatching { api.list() }
             .onSuccess { rows -> cacheLocally(rows) }
             .getOrElse { readLocalCache() }
+    }
+
+    override fun listSuppliersPage(page: Int, perPage: Int, search: String, status: String?): ServerPage<SupplierRow> {
+        return runCatching { api.listPage(page, perPage, search, status) }
+            .onSuccess { remote -> remote.rows.forEach(::cacheRow) }
+            .getOrElse {
+                val filtered = readLocalCache().filter { row ->
+                    (status.isNullOrBlank() || row.estado == status) &&
+                    (search.isBlank() || listOf(row.businessName, row.ruc, row.codigoProveedor, row.correo, row.phone)
+                        .any { value -> value.contains(search, ignoreCase = true) }
+                    )
+                }
+                val start = (page - 1).coerceAtLeast(0) * perPage
+                ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
+            }
     }
 
     override fun upsertSupplier(row: SupplierRow): Result<Unit> {

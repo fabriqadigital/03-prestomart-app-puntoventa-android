@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -182,14 +181,14 @@ internal fun CobrarVentaDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth().padding(18.dp).widthIn(max = 780.dp),
+            modifier = Modifier.fillMaxWidth().padding(8.dp).widthIn(max = 780.dp),
             shape = RoundedCornerShape(8.dp),
             color = Color.White,
             contentColor = PaymentText,
             shadowElevation = 14.dp,
         ) {
             Column(
-                Modifier.fillMaxWidth().heightIn(max = 680.dp).verticalScroll(rememberScrollState()).padding(24.dp),
+                Modifier.fillMaxWidth().heightIn(max = 680.dp).verticalScroll(rememberScrollState()).padding(14.dp),
             ) {
                 Text("Pagar venta", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(20.dp))
@@ -492,42 +491,37 @@ private fun ReceiptCustomerSection(
 @Composable
 private fun PaymentMethodSelection(onSelect: (PaymentMethod) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val columns = when {
-            maxWidth >= 620.dp -> 4
-            maxWidth >= 250.dp -> 2
-            else -> 1
-        }
-        val itemWidth = when (columns) {
-            4 -> 150.dp
-            2 -> (maxWidth - 12.dp) / 2
-            else -> maxWidth
-        }
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            maxItemsInEachRow = columns,
-            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            PaymentMethod.entries.forEach { method ->
-                Surface(
-                    modifier = Modifier
-                        .width(itemWidth)
-                        .height(122.dp)
-                        .clickable { onSelect(method) },
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color.White,
-                    border = BorderStroke(1.dp, PaymentBorder),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(method.icon, contentDescription = null, modifier = Modifier.size(34.dp), tint = PaymentMuted)
-                        Spacer(Modifier.height(10.dp))
-                        Text(method.label, fontWeight = FontWeight.SemiBold, color = PaymentMuted, textAlign = TextAlign.Center)
+        val columns = if (maxWidth >= 620.dp) 4 else 2
+        val spacing = if (maxWidth < 300.dp) 8.dp else 12.dp
+        val compactMethodCards = maxWidth < 400.dp
+        val methodRows = PaymentMethod.entries.chunked(columns)
+        Column(Modifier.fillMaxWidth()) {
+            methodRows.forEachIndexed { rowIndex, methods ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                    methods.forEach { method ->
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(if (compactMethodCards) 88.dp else 108.dp)
+                                .clickable { onSelect(method) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.White,
+                            border = BorderStroke(1.dp, PaymentBorder),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(method.icon, contentDescription = null, modifier = Modifier.size(26.dp), tint = PaymentMuted)
+                                Spacer(Modifier.height(6.dp))
+                                Text(method.label, fontWeight = FontWeight.SemiBold, color = PaymentMuted, textAlign = TextAlign.Center, maxLines = 1)
+                            }
+                        }
                     }
+                    repeat(columns - methods.size) { Spacer(Modifier.weight(1f)) }
                 }
+                if (rowIndex < methodRows.lastIndex) Spacer(Modifier.height(spacing))
             }
         }
     }

@@ -49,6 +49,7 @@ val appModules = module {
     viewModel { PosViewModel(get()) }
     viewModel { CashModuleViewModel(get(), CashApiDataSource(androidContext())) }
     factory { GetCategoriesUseCase(get()) }
+    factory { GetCategoriesPageUseCase(get()) }
     factory { SaveCategoryUseCase(get()) }
     factory { DeleteCategoryUseCase(get()) }
     factory { GetSubcategoriesUseCase(get()) }
@@ -58,16 +59,18 @@ val appModules = module {
     factory { SaveClientUseCase(get()) }
     factory { DeleteClientUseCase(get()) }
     factory { GetProductsUseCase(get()) }
+    factory { GetProductsPageUseCase(get()) }
     factory { SaveProductUseCase(get()) }
     factory { DeactivateProductUseCase(get()) }
     factory { GetSuppliersUseCase(get()) }
     factory { SaveSupplierUseCase(get()) }
     factory { DeleteSupplierUseCase(get()) }
     factory { GetUsersUseCase(get()) }
+    factory { GetUsersPageUseCase(get()) }
     factory { SaveUserUseCase(get()) }
     factory { DeleteUserUseCase(get()) }
 
-    viewModel { CategoriesViewModel(get(), get(), get(), get(), get(), get()) }
+    viewModel { CategoriesViewModel(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { ClientsViewModel(get(), get(), get()) }
     viewModel { ProductsViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { SuppliersViewModel(get(), get(), get()) }

@@ -6,6 +6,7 @@ import com.ecommerce.ecommerceposapp.data.local.sync.OutboxRealm
 import com.ecommerce.ecommerceposapp.data.remote.api.ClientApiDataSource
 import com.ecommerce.ecommerceposapp.data.repository.common.RealmDataSource
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
+import com.ecommerce.ecommerceposapp.domain.model.common.ServerPage
 import com.ecommerce.ecommerceposapp.domain.repository.clients.ClientRepository
 import java.io.IOException
 import java.util.UUID
@@ -29,6 +30,25 @@ class ClientRepositoryImpl(context: Context) : ClientRepository {
                     clearLegacyCache()
                     throw it
                 }
+            },
+        )
+    }
+
+    override fun listClientsPage(page: Int, perPage: Int, search: String): ServerPage<ClientRow> {
+        return api.listPage(page, perPage, search).fold(
+            onSuccess = { remote ->
+                cacheRows(remote.rows)
+                prefs.edit().putBoolean(REAL_CLIENT_CACHE_READY, true).apply()
+                remote
+            },
+            onFailure = { error ->
+                if (!prefs.getBoolean(REAL_CLIENT_CACHE_READY, false)) throw error
+                val filtered = cachedClients().filter { row ->
+                    search.isBlank() || listOf(row.name, row.lastName, row.businessName, row.email, row.document, row.phone)
+                        .any { it.contains(search, ignoreCase = true) }
+                }
+                val start = (page - 1).coerceAtLeast(0) * perPage
+                ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
             },
         )
     }
@@ -151,6 +171,10 @@ class ClientRepositoryImpl(context: Context) : ClientRepository {
                 if (row.id !in pendingIds) realm.insertOrUpdate(row.toRealm())
             }
         }
+    }
+
+    private fun cacheRows(rows: List<ClientRow>) {
+        db.write { realm -> rows.forEach { realm.insertOrUpdate(it.toRealm()) } }
     }
 
     private fun ClientRow.toRealm() = ClientRealm().also {

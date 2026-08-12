@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -96,6 +97,7 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -218,7 +220,7 @@ private fun SaleHistoryCard(
                 modifier              = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.lg),
             ) {
-                InfoChip(label = "Cliente", value = row.clienteNombre.ifBlank { "General" }, modifier = Modifier.weight(1f))
+                InfoChip(label = "Cliente", value = row.clienteNombre.ifBlank { "Cliente genérico" }, modifier = Modifier.weight(1f))
                 InfoChip(label = "Cajero",  value = row.cajeroNombre.ifBlank { "—" },        modifier = Modifier.weight(1f))
             }
 
@@ -281,6 +283,7 @@ private fun SaleActions(
     cancellationStatus: String = "",
     onReprint: () -> Unit,
     onCancel: () -> Unit,
+    onWithdraw: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onReprint, modifier = Modifier.size(34.dp)) {
@@ -288,8 +291,13 @@ private fun SaleActions(
         }
         if (!isAnulada) {
             val pending = cancellationStatus.equals("Pendiente", ignoreCase = true)
-            IconButton(onClick = onCancel, enabled = !pending, modifier = Modifier.size(34.dp)) {
-                Icon(Icons.Filled.Cancel, contentDescription = if (pending) "Autorización pendiente" else "Solicitar anulación", tint = if (pending) GrayMedium else RedDanger, modifier = Modifier.size(17.dp))
+            IconButton(onClick = if (pending) onWithdraw else onCancel, modifier = Modifier.size(34.dp)) {
+                Icon(
+                    if (pending) Icons.AutoMirrored.Filled.Undo else Icons.Filled.Cancel,
+                    contentDescription = if (pending) "Retirar solicitud de anulación" else "Solicitar anulación",
+                    tint = if (pending) Color(0xFFC2410C) else RedDanger,
+                    modifier = Modifier.size(17.dp),
+                )
             }
         }
     }
@@ -331,6 +339,7 @@ private fun SaleHistoryTableRow(
     row: SalesHistoryRow,
     onReprint: () -> Unit,
     onCancel: () -> Unit,
+    onWithdraw: () -> Unit,
 ) {
     val isAnulada = row.estado.equals("Anulada", ignoreCase = true)
     val rowDecoration = if (isAnulada) TextDecoration.LineThrough else TextDecoration.None
@@ -347,11 +356,11 @@ private fun SaleHistoryTableRow(
             Text(mapPago(row.tipoPago), color = if (isAnulada) GrayMedium else TextTertiary, style = MaterialTheme.typography.labelSmall, textDecoration = rowDecoration)
         }
         Text(formatVentaFecha(row.fechaMillis), Modifier.weight(1.05f), color = if (isAnulada) GrayMedium else TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, textDecoration = rowDecoration)
-        Text(row.clienteNombre.ifBlank { "General" }, Modifier.weight(1.15f), color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
+        Text(row.clienteNombre.ifBlank { "Cliente genérico" }, Modifier.weight(1.15f), color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
         Text(row.cajeroNombre.ifBlank { "—" }, Modifier.weight(1f), color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
         Text("S/ ${"%.2f".format(row.total)}", Modifier.weight(.75f), color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, textDecoration = rowDecoration)
         Box(Modifier.weight(.9f)) { SaleStatusBadge(isAnulada, row.cancellationStatus) }
-        Box(Modifier.weight(.72f)) { SaleActions(isAnulada, row.cancellationStatus, onReprint, onCancel) }
+        Box(Modifier.weight(.72f)) { SaleActions(isAnulada, row.cancellationStatus, onReprint, onCancel, onWithdraw) }
     }
 }
 
@@ -360,6 +369,7 @@ private fun SaleHistoryCompactRow(
     row: SalesHistoryRow,
     onReprint: () -> Unit,
     onCancel: () -> Unit,
+    onWithdraw: () -> Unit,
 ) {
     val isAnulada = row.estado.equals("Anulada", ignoreCase = true)
     val rowDecoration = if (isAnulada) TextDecoration.LineThrough else TextDecoration.None
@@ -374,7 +384,7 @@ private fun SaleHistoryCompactRow(
         Column(Modifier.weight(1.45f)) {
             Text(row.numeroComprobante.ifBlank { "Sin comprobante" }, fontWeight = FontWeight.SemiBold, color = if (isAnulada) GrayMedium else TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
             Text(formatVentaFechaShort(row.fechaMillis), color = if (isAnulada) GrayMedium else TextTertiary, style = MaterialTheme.typography.labelSmall, textDecoration = rowDecoration)
-            Text(row.clienteNombre.ifBlank { "General" }, color = if (isAnulada) GrayMedium else TextSecondary, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
+            Text(row.clienteNombre.ifBlank { "Cliente genérico" }, color = if (isAnulada) GrayMedium else TextSecondary, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
         }
         Column(Modifier.weight(.8f), horizontalAlignment = Alignment.End) {
             Text("S/ ${"%.2f".format(row.total)}", color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, textDecoration = rowDecoration)
@@ -382,7 +392,7 @@ private fun SaleHistoryCompactRow(
             SaleStatusBadge(isAnulada, row.cancellationStatus)
         }
         Spacer(Modifier.width(4.dp))
-        SaleActions(isAnulada, row.cancellationStatus, onReprint, onCancel)
+        SaleActions(isAnulada, row.cancellationStatus, onReprint, onCancel, onWithdraw)
     }
 }
 
@@ -494,6 +504,7 @@ fun SalesHistoryScreen(
     var previewReceipt by remember { mutableStateOf<CompletedSaleReceipt?>(null) }
     var previewComp   by remember { mutableStateOf<ComprobanteEmitidoResult?>(null) }
     var saleToCancel  by remember { mutableStateOf<SalesHistoryRow?>(null) }
+    var saleToWithdraw by remember { mutableStateOf<SalesHistoryRow?>(null) }
     var cancelling    by remember { mutableStateOf(false) }
     var pageSize      by remember { mutableStateOf(20) }
     var pageSizeExpanded by remember { mutableStateOf(false) }
@@ -533,9 +544,10 @@ fun SalesHistoryScreen(
         }
     }
 
-    fun reload() {
+    fun reload(showLoading: Boolean = true) {
         scope.launch {
-            loading = true; error = null
+            if (showLoading) loading = true
+            error = null
             runCatching { withContext(Dispatchers.IO) { catalog.listSalesHistory(currentPage + 1, pageSize, search.trim()) } }
                 .onSuccess { result ->
                     totalRows = result.total
@@ -543,7 +555,7 @@ fun SalesHistoryScreen(
                     if (result.rows.isEmpty() && currentPage > lastPage) currentPage = lastPage else rows = result.rows
                 }
                 .onFailure { error = it.message ?: "No se pudo cargar el historial." }
-            loading = false
+            if (showLoading) loading = false
         }
     }
 
@@ -554,6 +566,12 @@ fun SalesHistoryScreen(
     LaunchedEffect(currentPage, pageSize, search) {
         if (search.isNotBlank()) delay(350)
         reload()
+    }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(5_000)
+            reload(showLoading = false)
+        }
     }
 
     Column(
@@ -696,12 +714,14 @@ fun SalesHistoryScreen(
                                 row = row,
                                 onReprint = { reprint(row) },
                                 onCancel = { saleToCancel = row },
+                                onWithdraw = { saleToWithdraw = row },
                             )
                         } else {
                             SaleHistoryTableRow(
                                 row = row,
                                 onReprint = { reprint(row) },
                                 onCancel = { saleToCancel = row },
+                                onWithdraw = { saleToWithdraw = row },
                             )
                             Box(Modifier.fillMaxWidth().height(1.dp).background(BorderDefault))
                         }
@@ -746,9 +766,8 @@ fun SalesHistoryScreen(
     }
 
     // ── Preview dialog ───────────────────────────────────────────────────────
-    if (previewReceipt != null && previewComp != null) {
-        val receipt = previewReceipt!!
-        val comp    = previewComp!!
+    previewReceipt?.let { receipt ->
+        previewComp?.let { comp ->
         val cdisp   = if (receipt.clienteNombre.isNotBlank() || receipt.clienteDocumento.isNotBlank()) {
             receipt.clienteNombre to receipt.clienteDocumento
         } else if (receipt.idCliente > 0L) {
@@ -763,9 +782,54 @@ fun SalesHistoryScreen(
             clients        = clients,
             onDismiss     = { previewReceipt = null; previewComp = null },
         )
+        }
     }
 
     // ── Cancel dialog ────────────────────────────────────────────────────────
+    saleToWithdraw?.let { row ->
+        AlertDialog(
+            onDismissRequest = { if (!cancelling) saleToWithdraw = null },
+            containerColor = SurfaceWhite,
+            title = { Text("Retirar solicitud", fontWeight = FontWeight.Bold, color = TextPrimary) },
+            text = {
+                Text(
+                    "Se retirará la solicitud pendiente de ${row.numeroComprobante}. La venta continuará activa y podrás volver a solicitar su anulación después.",
+                    color = TextSecondary,
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { saleToWithdraw = null }, enabled = !cancelling) {
+                    Text("Conservar solicitud", color = TextSecondary)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            cancelling = true
+                            error = null
+                            withContext(Dispatchers.IO) { catalog.withdrawSaleCancellation(row.ventaId) }
+                                .onSuccess {
+                                    saleToWithdraw = null
+                                    reload()
+                                }
+                                .onFailure { error = it.message ?: "No se pudo retirar la solicitud." }
+                            cancelling = false
+                        }
+                    },
+                    enabled = !cancelling,
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                ) {
+                    if (cancelling) {
+                        CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                    } else {
+                        Text("Retirar", color = Color.White)
+                    }
+                }
+            },
+        )
+    }
+
     saleToCancel?.let { row ->
         CancelSaleDialog(
             row        = row,

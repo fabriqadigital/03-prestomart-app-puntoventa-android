@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import com.ecommerce.ecommerceposapp.domain.model.common.ServerPage
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -69,6 +71,44 @@ data class RemoteCatalogSeed(
 class RemoteCatalogDataSource(context: Context) {
     private val prefs = context.getSharedPreferences(ApiConfig.PREFS_NAME, Context.MODE_PRIVATE)
     private val candidates = listOf(ApiBaseCandidate(ApiConfig.DEFAULT_BASE_URL))
+
+    fun fetchProductsPage(page: Int, perPage: Int, search: String, categoryId: Long?, subcategoryId: Long?): ServerPage<RemoteProductSeed> {
+        val preferredBase = ApiConfig.configuredBaseUrl(prefs.getString("api_base_url", null))
+        val preferredHost = ApiConfig.configuredHostHeader(prefs.getString("api_host_header", null)).ifBlank { null }
+        val bases = listOf(ApiBaseCandidate(preferredBase, preferredHost)) + candidates.filter { it.baseUrl != preferredBase }
+        var lastError: Throwable? = null
+        for (base in bases) {
+            try {
+                val filters = buildString {
+                    categoryId?.let { append("&category_id=$it") }
+                    subcategoryId?.let { append("&subcategory_id=$it") }
+                }
+                val url = "${base.baseUrl}/api${ApiConfig.PRODUCT_LIST}?page=${page.coerceAtLeast(1)}&per_page=$perPage&search=${URLEncoder.encode(search.trim(), "UTF-8")}$filters"
+                val root = JSONObject(openJson(url, base))
+                val rawResult = root.opt("result")
+                val result = rawResult as? JSONObject
+                if (result != null) {
+                    return ServerPage(
+                        rows = parseRemoteProducts(result.optJSONArray("data") ?: JSONArray(), base.baseUrl),
+                        total = result.optInt("total", 0),
+                        page = result.optInt("current_page", page),
+                        perPage = result.optInt("per_page", perPage),
+                    )
+                }
+                val allRows = parseRemoteProducts(rawResult as? JSONArray ?: continue, base.baseUrl)
+                val query = search.trim().lowercase()
+                val filtered = allRows
+                    .filter { categoryId == null || it.categoryId == categoryId }
+                    .filter { subcategoryId == null || it.subcategoryId == subcategoryId }
+                    .filter { query.isBlank() || it.name.lowercase().contains(query) || it.code.lowercase().contains(query) || it.barcode.lowercase().contains(query) }
+                val start = ((page.coerceAtLeast(1) - 1) * perPage).coerceAtMost(filtered.size)
+                return ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
+            } catch (error: Throwable) {
+                lastError = error
+            }
+        }
+        throw lastError ?: java.io.IOException("No se pudo consultar la página de productos.")
+    }
 
     fun fetchBestEffort(): RemoteCatalogSeed {
         val preferredBase = ApiConfig.configuredBaseUrl(prefs.getString("api_base_url", null))
