@@ -23,7 +23,7 @@ class ApiUrlResolver(
         return runCatching {
             val parsed = URL(fullUrl)
             if (parsed.host == "localhost" || parsed.host == "127.0.0.1" || parsed.host.endsWith(".localhost")) {
-                "${ApiConfig.PRODUCTION_BASE_URL}${parsed.file}"
+                "${ApiConfig.DEFAULT_BASE_URL}${parsed.file}"
             } else {
                 fullUrl
             }

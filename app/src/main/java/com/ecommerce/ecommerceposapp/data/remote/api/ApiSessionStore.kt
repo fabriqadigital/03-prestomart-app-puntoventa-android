@@ -1,20 +1,21 @@
 package com.ecommerce.ecommerceposapp.data.remote.api
 
 import android.content.Context
+import com.ecommerce.ecommerceposapp.BuildConfig
 
 class ApiSessionStore(context: Context) {
     private val prefs = context.getSharedPreferences(ApiConfig.PREFS_NAME, Context.MODE_PRIVATE)
 
     init {
         val savedBaseUrl = prefs.getString("api_base_url", null)?.trim()?.trimEnd('/')
-        val productionBaseUrl = ApiConfig.PRODUCTION_BASE_URL.trimEnd('/')
+        val activeBaseUrl = ApiConfig.DEFAULT_BASE_URL
         val editor = prefs.edit()
-        if (!savedBaseUrl.isNullOrBlank() && !savedBaseUrl.equals(productionBaseUrl, ignoreCase = true)) {
+        if (!savedBaseUrl.isNullOrBlank() && !savedBaseUrl.equals(activeBaseUrl, ignoreCase = true)) {
             editor.clear()
         }
         editor
-            .putString("api_base_url", ApiConfig.PRODUCTION_BASE_URL)
-            .putString("api_host_header", "")
+            .putString("api_base_url", activeBaseUrl)
+            .putString("api_host_header", BuildConfig.API_HOST_HEADER)
             .apply()
     }
 

@@ -34,7 +34,10 @@ data class ProductItem(
     val barcode: String = "",
     val imageUrl: String = "",
     val salesChannel: String = "ambos",
+    val saleType: String = "UNIDAD",
     val featuredInPos: Boolean = false,
     val active: Boolean = true,
     val conversions: List<ProductConversion> = emptyList(),
-)
+) {
+    val isBulk: Boolean get() = saleType.equals("A_GRANEL", ignoreCase = true)
+}

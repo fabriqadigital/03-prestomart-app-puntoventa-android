@@ -77,8 +77,15 @@ fun ProductEditDialog(
     var price by remember(initial) { mutableStateOf(initial.productNumberText(initial.price)) }
     var yapePrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.yapePrice)) }
     var productTypeId by remember(initial) { mutableStateOf(initial.productTypeId) }
-    var stock by remember(initial) { mutableStateOf(initial.productNumberText(initial.stock)) }
+    var stock by remember(initial) {
+        mutableStateOf(
+            if (initial.saleType.equals("A_GRANEL", ignoreCase = true))
+                java.math.BigDecimal.valueOf(initial.stock).stripTrailingZeros().toPlainString()
+            else initial.productNumberText(initial.stock),
+        )
+    }
     var salesChannel by remember(initial) { mutableStateOf(initial.salesChannel.ifBlank { "ambos" }) }
+    var saleType by remember(initial) { mutableStateOf(initial.saleType.ifBlank { "UNIDAD" }) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var subcategoryExpanded by remember { mutableStateOf(false) }
     var productTypeExpanded by remember { mutableStateOf(false) }
@@ -88,7 +95,10 @@ fun ProductEditDialog(
     val categoryName = activeCategories.firstOrNull { it.id == categoryId }?.name ?: "Seleccionar categoria"
     val subcategoryName = availableSubcategories.firstOrNull { it.id == subcategoryId }?.name ?: "Sin subcategoria"
     val productTypeName = productTypes.firstOrNull { it.id == productTypeId }?.name ?: "Sin etiqueta"
-    val canSave = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0
+    val parsedStock = parseDouble(stock, -1.0)
+    val validStock = parsedStock >= 0.0 &&
+        (saleType == "A_GRANEL" || kotlin.math.abs(parsedStock - parsedStock.toInt()) < 0.000001)
+    val canSave = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0 && validStock
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -124,6 +134,14 @@ fun ProductEditDialog(
                         color = Color(0xFF64748B),
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Text("Tipo de venta", fontWeight = FontWeight.SemiBold)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ChannelChip("UNIDAD", "Por unidad", saleType) {
+                            saleType = it
+                            stock = parseDouble(stock, 0.0).toInt().toString()
+                        }
+                        ChannelChip("A_GRANEL", "A granel (kg)", saleType) { saleType = it }
+                    }
                     ResponsiveFieldRow {
                         OutlinedTextField(name, { name = it }, label = { Text("Nombre *") }, modifier = Modifier.weight(1f), singleLine = true)
                         OutlinedTextField(code, { code = it }, label = { Text("Codigo de producto") }, modifier = Modifier.weight(1f), singleLine = true)
@@ -151,7 +169,17 @@ fun ProductEditDialog(
                         )
                     }
                     ResponsiveFieldRow {
-                        OutlinedTextField(stock, { stock = it }, label = { Text("Cantidad *") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(
+                            stock,
+                            { value ->
+                                val normalized = value.replace(',', '.')
+                                val pattern = if (saleType == "A_GRANEL") Regex("^\\d*(\\.\\d{0,3})?$") else Regex("^\\d*$")
+                                if (normalized.matches(pattern)) stock = normalized
+                            },
+                            label = { Text(if (saleType == "A_GRANEL") "Stock (kg) *" else "Stock (unidades) *") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
                         OutlinedTextField(price, { price = it }, label = { Text("Precio público *") }, prefix = { Text("S/ ") }, modifier = Modifier.weight(1f), singleLine = true)
                         OutlinedTextField(yapePrice, { yapePrice = it }, label = { Text("Precio Yape") }, prefix = { Text("S/ ") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
@@ -183,6 +211,7 @@ fun ProductEditDialog(
                                     productTypeId = productTypeId,
                                     stock = parseDouble(stock, initial.stock),
                                     salesChannel = salesChannel,
+                                    saleType = saleType,
                                 ),
                             )
                         },

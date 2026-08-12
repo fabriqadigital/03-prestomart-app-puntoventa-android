@@ -506,7 +506,7 @@ private fun createLegacyA4ReceiptPdfForSharing(
     drawText("IMPORTE", 535f, y + 17f, 9f, brand, true, Paint.Align.RIGHT)
     y += 40f
     receipt.lines.forEach { item ->
-        drawText(item.quantity.toString(), 72f, y, 10f, ink, true, Paint.Align.CENTER)
+        drawText("${item.quantityText} ${item.quantityUnit}", 72f, y, 10f, ink, true, Paint.Align.CENTER)
         drawText(fitText(item.displayName, 330f, 10f), 108f, y, 10f)
         drawText("S/ ${"%.2f".format(Locale.US, item.lineTotal)}", 535f, y, 10f, ink, true, Paint.Align.RIGHT)
         y += 18f
@@ -960,7 +960,7 @@ fun VistaPreviaReciboDialog(
                             val totIgv = r2(line.lineTotal)
                             val withDiscount = receipt.descuentoPorcentaje > 0.0 && line.lineKey in receipt.descuentoLineKeys
                             Text(
-                                "${line.quantity} und  $desc",
+                                "${line.quantityText} ${line.quantityUnit}  $desc",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 9.sp,
                             )

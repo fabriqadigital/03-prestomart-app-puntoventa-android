@@ -17,6 +17,7 @@ import com.ecommerce.ecommerceposapp.domain.model.cash.CashRegister
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashSession
 import com.ecommerce.ecommerceposapp.domain.model.cash.CashSummary
 import kotlin.math.round
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -131,31 +132,36 @@ class PosViewModel(
         val current = _uiState.value.cart.toMutableList()
         val conversionId = conversion?.id
         val index = current.indexOfFirst { it.productId == product.id && it.conversionId == conversionId }
+        val step = if (product.isBulk) 0.1 else 1.0
         val totalProductQuantity = current.filter { it.productId == product.id }.sumOf { it.quantity }
-        if (totalProductQuantity + 1 > product.stock) {
-            _uiState.update { it.copy(message = "Stock insuficiente para ${product.name}.") }
+        if (totalProductQuantity + step > product.stock + 0.000001) {
+            _uiState.update { it.copy(message = "Stock insuficiente. Máximo ${formatStock(product.stock, product.isBulk)} de ${product.name}.") }
             return
         }
-        val nextQuantity: Int
+        val nextQuantity: Double
         if (index >= 0) {
             val row = current[index]
-            if (conversion != null && row.quantity + 1 > conversion.stockFactor) {
+            val candidate = normalizeQuantity(row.quantity + step, row.isBulk)
+            if (conversion != null && candidate > conversion.stockFactor + 0.000001) {
                 _uiState.update { it.copy(message = "Stock insuficiente para ${conversion.name}.") }
                 return
             }
-            nextQuantity = row.quantity + 1
+            nextQuantity = candidate
             current[index] = row.copy(quantity = nextQuantity)
         } else {
-            if (conversion != null && conversion.stockFactor < 1.0) {
+            if (product.stock <= 0.0) return
+            nextQuantity = normalizeQuantity(minOf(1.0, product.stock), product.isBulk)
+            if (!product.isBulk && nextQuantity < 1.0) return
+            if (conversion != null && conversion.stockFactor + 0.000001 < nextQuantity) {
                 _uiState.update { it.copy(message = "Stock insuficiente para ${conversion.name}.") }
                 return
             }
-            nextQuantity = 1
             current.add(CartLine(
                 productId = product.id,
                 productName = product.name,
                 unitPrice = conversion?.finalPrice ?: product.price,
-                quantity = 1,
+                quantity = nextQuantity,
+                saleType = product.saleType,
                 conversionId = conversionId,
                 conversionName = conversion?.name.orEmpty(),
                 stockFactor = conversion?.stockFactor ?: 0.0,
@@ -164,7 +170,7 @@ class PosViewModel(
         _uiState.update {
             it.copy(
                 cart = current,
-                message = "Producto agregado",
+                message = "${product.name} agregado al carrito. Cantidad: ${formatStock(nextQuantity, product.isBulk)}",
             )
         }
     }
@@ -175,17 +181,18 @@ class PosViewModel(
             val productStock = product?.stock ?: Double.MAX_VALUE
             val totalProductQuantity = it.cart.filter { row -> row.productId == line.productId }.sumOf { row -> row.quantity }
             val conversionStock = line.conversionId?.let { id -> product?.conversions?.firstOrNull { conversion -> conversion.id == id }?.stockFactor }
-            if (totalProductQuantity + 1 > productStock) {
-                it.copy(message = "Stock insuficiente para ${line.productName}.")
-            } else if (conversionStock != null && line.quantity + 1 > conversionStock) {
+            val step = if (line.isBulk) 0.1 else 1.0
+            val nextQuantity = normalizeQuantity(line.quantity + step, line.isBulk)
+            if (totalProductQuantity + step > productStock + 0.000001) {
+                it.copy(message = "Stock insuficiente. Máximo ${formatStock(productStock, line.isBulk)} de ${line.productName}.")
+            } else if (conversionStock != null && nextQuantity > conversionStock + 0.000001) {
                 it.copy(message = "Stock insuficiente para ${line.conversionName}.")
             } else {
-                val nextQuantity = line.quantity + 1
                 it.copy(
                     cart = it.cart.map { row ->
                         if (row.lineKey == line.lineKey) row.copy(quantity = nextQuantity) else row
                     },
-                    message = "Producto agregado",
+                    message = "${line.productName}: ${formatStock(nextQuantity, line.isBulk)}",
                 )
             }
         }
@@ -195,7 +202,8 @@ class PosViewModel(
         _uiState.update {
             val next = it.cart.mapNotNull { row ->
                 if (row.lineKey != line.lineKey) return@mapNotNull row
-                val quantity = row.quantity - 1
+                val step = if (row.isBulk) 0.1 else 1.0
+                val quantity = normalizeQuantity(row.quantity - step, row.isBulk)
                 if (quantity <= 0) null else row.copy(quantity = quantity)
             }
             // Si el carrito queda vacío, el descuento ya no aplica.
@@ -243,7 +251,7 @@ class PosViewModel(
             val existing = state.cart.firstOrNull {
                 it.productId == line.productId && it.conversionId == conversion?.id && it.lineKey != line.lineKey
             }
-            val resultingConversionQuantity = line.quantity + (existing?.quantity ?: 0)
+            val resultingConversionQuantity = line.quantity + (existing?.quantity ?: 0.0)
             if (conversion != null && resultingConversionQuantity > conversion.stockFactor) {
                 return@update state.copy(message = "Stock insuficiente para ${conversion.name}.")
             }
@@ -264,6 +272,48 @@ class PosViewModel(
         }
     }
 
+    fun updateQuantity(line: CartLine, requestedQuantity: Double) {
+        _uiState.update { state ->
+            val product = state.products.firstOrNull { it.id == line.productId }
+                ?: return@update state.copy(message = "El producto ${line.productName} ya no está disponible.")
+            val productStock = product.stock
+            val normalized = normalizeQuantity(requestedQuantity, line.isBulk)
+            val validMinimum = if (line.isBulk) normalized >= 0.001 else normalized >= 1.0
+            val isWholeUnit = line.isBulk || kotlin.math.abs(requestedQuantity - requestedQuantity.roundToInt()) < 0.000001
+            val otherProductQuantity = state.cart
+                .filter { it.productId == line.productId && it.lineKey != line.lineKey }
+                .sumOf { it.quantity }
+            val conversionStock = line.conversionId?.let { id ->
+                product.conversions.firstOrNull { it.id == id }?.stockFactor
+            }
+            when {
+                !validMinimum || !isWholeUnit -> state.copy(
+                    message = if (line.isBulk) "Ingrese un peso mayor o igual a 0.001 kg."
+                    else "Los productos por unidad solo aceptan cantidades enteras.",
+                )
+                otherProductQuantity + normalized > productStock + 0.000001 -> state.copy(
+                    message = "Stock insuficiente. Máximo ${formatStock(productStock, line.isBulk)} de ${line.productName}.",
+                )
+                conversionStock != null && normalized > conversionStock + 0.000001 -> state.copy(
+                    message = "Stock insuficiente para ${line.conversionName}.",
+                )
+                else -> state.copy(
+                    cart = state.cart.map { row ->
+                        if (row.lineKey == line.lineKey) row.copy(quantity = normalized) else row
+                    },
+                    message = null,
+                )
+            }
+        }
+    }
+
+    private fun normalizeQuantity(quantity: Double, isBulk: Boolean): Double =
+        if (isBulk) round(quantity * 1000.0) / 1000.0 else quantity.roundToInt().toDouble()
+
+    private fun formatStock(quantity: Double, isBulk: Boolean): String =
+        if (isBulk) "${java.math.BigDecimal.valueOf(quantity).stripTrailingZeros().toPlainString()} kg"
+        else "${quantity.roundToInt()} unidad(es)"
+
     suspend fun pay(
         payment: SalePaymentInfo,
         idCliente: Long = 0L,
@@ -283,7 +333,7 @@ class PosViewModel(
                     stock = (product.stock - soldLines.sumOf { it.quantity }).coerceAtLeast(0.0),
                     conversions = product.conversions.map { conversion ->
                         val sold = soldLines.filter { it.conversionId == conversion.id }.sumOf { it.quantity }
-                        if (sold == 0) conversion else conversion.copy(
+                        if (sold == 0.0) conversion else conversion.copy(
                             stockFactor = (conversion.stockFactor - sold).coerceAtLeast(0.0),
                         )
                     },

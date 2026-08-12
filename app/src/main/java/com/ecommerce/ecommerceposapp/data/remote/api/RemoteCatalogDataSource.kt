@@ -21,6 +21,7 @@ data class RemoteProductSeed(
     val price: Double,
     val stock: Double,
     val salesChannel: String,
+    val saleType: String,
     val active: Boolean,
     val barcode: String = "",
     val slug: String = "",
@@ -289,6 +290,7 @@ class RemoteCatalogDataSource(context: Context) {
         val categoryNameFields = listOf("category_name", "categoria", "category", "nombre_categoria")
         val subcategoryNameFields = listOf("subcategory_name", "subcategoria", "subcategory", "nombre_subcategoria", "nombre_sub_categoria")
         val salesChannelFields = listOf("canal_venta", "sales_channel", "canal")
+        val saleTypeFields = listOf("tipo_venta", "sale_type")
 
         fun optAnyString(obj: JSONObject, keys: List<String>): String {
             keys.forEach { key ->
@@ -349,6 +351,8 @@ class RemoteCatalogDataSource(context: Context) {
                 price = price,
                 stock = optAnyDouble(obj, stockFields),
                 salesChannel = optAnyString(obj, salesChannelFields).ifBlank { "ambos" },
+                saleType = optAnyString(obj, saleTypeFields).uppercase()
+                    .takeIf { it == "A_GRANEL" } ?: "UNIDAD",
                 active = obj.optActive(),
                 barcode = optAnyString(obj, listOf("codigo_barra", "codigo_producto_new", "barcode", "codigo_barras")),
                 slug = optAnyString(obj, listOf("slug")),

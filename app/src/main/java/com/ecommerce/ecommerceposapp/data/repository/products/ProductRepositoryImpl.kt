@@ -414,6 +414,7 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
         minimumStock = row.minimumStock
         productTypeId = row.productTypeId
         canalVenta = row.salesChannel
+        saleType = row.saleType
         ratingsEnabled = row.ratingsEnabled
         adminRating = row.adminRating
         packageMeasures = row.packageMeasures
@@ -467,6 +468,7 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
         minimumStock = product.minimumStock,
         productTypeId = product.productTypeId,
         salesChannel = product.canalVenta.ifBlank { "ambos" },
+        saleType = product.saleType.ifBlank { "UNIDAD" },
         ratingsEnabled = product.ratingsEnabled,
         adminRating = product.adminRating,
         packageMeasures = product.packageMeasures,
@@ -547,6 +549,7 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
             minimumStock = minimumStock,
             productTypeId = productTypeId,
             salesChannel = salesChannel,
+            saleType = saleType,
             ratingsEnabled = ratingsEnabled,
             adminRating = adminRating,
             packageMeasures = packageMeasures,

@@ -1079,9 +1079,12 @@ private fun PosScreen(
                                     posVm::increase,
                                     posVm::decrease,
                                     posVm::selectConversion,
+                                    posVm::updateQuantity,
                                     onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
                                     onNewClient = { selectedModule = "Clientes" },
                                     onBack = { mobileCartOpen = false },
+                                    onApplyGlobalDiscount = posVm::applyGlobalDiscount,
+                                    onClearGlobalDiscount = posVm::clearGlobalDiscount,
                                 )
                             } else {
                                 Column(Modifier.fillMaxSize()) {
@@ -1102,7 +1105,7 @@ private fun PosScreen(
                                         onScanMessage = { message -> scope.launch { snackbarHostState.showSnackbar(message) } },
                                     )
                                     MobileCartSummaryBar(
-                                        itemCount = state.cart.sumOf { it.quantity },
+                                        itemCount = state.cart.size,
                                         total = state.total,
                                         onClick = { mobileCartOpen = true },
                                     )
@@ -1137,6 +1140,7 @@ private fun PosScreen(
                                     posVm::increase,
                                     posVm::decrease,
                                     posVm::selectConversion,
+                                    posVm::updateQuantity,
                                     onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
                                     onNewClient = { selectedModule = "Clientes" },
                                     onApplyGlobalDiscount = posVm::applyGlobalDiscount,
@@ -1174,6 +1178,7 @@ private fun PosScreen(
                                     posVm::increase,
                                     posVm::decrease,
                                     posVm::selectConversion,
+                                    posVm::updateQuantity,
                                     onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
                                     onNewClient = { selectedModule = "Clientes" },
                                     onApplyGlobalDiscount = posVm::applyGlobalDiscount,
@@ -1273,7 +1278,7 @@ private fun PosScreen(
                                                 modifier = Modifier.size(23.dp),
                                             )
                                         }
-                                        val cartQuantity = state.cart.sumOf { it.quantity }
+                                        val cartQuantity = state.cart.size
                                         if (cartQuantity > 0) {
                                             Surface(
                                                 modifier = Modifier.align(Alignment.TopEnd).size(18.dp),
