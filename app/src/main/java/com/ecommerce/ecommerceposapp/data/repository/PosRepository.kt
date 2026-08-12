@@ -266,6 +266,8 @@ class PosRepositoryImpl(private val context: Context) :
         idCliente: Long,
         customerInfo: ReceiptCustomerInfo,
         receiptType: TipoComprobanteEmision,
+        descuentoPorcentaje: Double,
+        descuentoLineKeys: Set<String>,
     ): Result<CompletedSaleReceipt> {
         if (lines.isEmpty()) return Result.failure(Exception("El carrito está vacío."))
         val session = getSession() ?: return Result.failure(Exception("Sin sesión de usuario."))
@@ -273,8 +275,15 @@ class PosRepositoryImpl(private val context: Context) :
         if (cashSessionId == 0L) return Result.failure(Exception("Abre una caja antes de registrar ventas."))
         val linesCopy = lines.map { it.copy() }
         val exactTotal = PosPaymentRounding.exactTotal(lines.sumOf { it.lineTotal })
-        val total = PosPaymentRounding.finalTotal(exactTotal, payment.tipoPago, payment.aplicarRedondeo)
-        val effectivePayment = PosPaymentRounding.normalizedPayment(payment, exactTotal)
+        val pct = descuentoPorcentaje.coerceIn(0.0, 100.0)
+        val descuentoBase = if (descuentoLineKeys.isEmpty())
+            exactTotal
+        else
+            round(lines.filter { it.lineKey in descuentoLineKeys }.sumOf { it.lineTotal } * 100) / 100
+        val descuentoMonto = round((descuentoBase * pct / 100.0) * 100) / 100
+        val baseFinal = round((exactTotal - descuentoMonto) * 100) / 100
+        val total = PosPaymentRounding.finalTotal(baseFinal, payment.tipoPago, payment.aplicarRedondeo)
+        val effectivePayment = PosPaymentRounding.normalizedPayment(payment, baseFinal)
         if (PosPaymentRounding.isCash(payment.tipoPago) && effectivePayment.montoRecibido < total) {
             return Result.failure(Exception("El monto recibido es menor al total redondeado de la venta."))
         }
@@ -291,8 +300,6 @@ class PosRepositoryImpl(private val context: Context) :
                 require(stock >= line.quantity) { "Stock local insuficiente para ${line.displayName}." }
             }
             val ventaId = nextLocalId(realm, FinanzaVentaRealm::class.java)
-            // Mantiene un identificador presentable mientras el backend asigna
-            // el número definitivo durante la sincronización.
             val numero = "POS-${fechaMillis}-${ventaId.toString().removePrefix("-")}"
             realm.insertOrUpdate(
                 FinanzaVentaRealm().apply {
@@ -305,7 +312,8 @@ class PosRepositoryImpl(private val context: Context) :
                     fechaVenta = fechaMillis
                     this.subtotal = subtotal
                     this.igv = igv
-                    descuento = 0.0
+                    this.descuento = descuentoMonto
+                    this.descuentoPorcentaje = pct
                     this.total = total
                     tipoPago = effectivePayment.tipoPago
                     montoRecibido = effectivePayment.montoRecibido
@@ -360,6 +368,8 @@ class PosRepositoryImpl(private val context: Context) :
                         cashSessionId = cashSessionId,
                         customerInfo = customerInfo,
                         receiptType = receiptType,
+                        descuentoPorcentaje = pct,
+                        descuentoMonto = descuentoMonto,
                     )
                     createdAt = fechaMillis
                     updatedAt = fechaMillis
@@ -381,6 +391,9 @@ class PosRepositoryImpl(private val context: Context) :
                 idCliente = idCliente,
                 clienteNombre = customerInfo.name.trim(),
                 clienteDocumento = customerInfo.document.filter(Char::isDigit),
+                descuento = descuentoMonto,
+                descuentoPorcentaje = pct,
+                descuentoLineKeys = descuentoLineKeys,
             )
         }
         val dependenciesResolved =
@@ -399,6 +412,8 @@ class PosRepositoryImpl(private val context: Context) :
                     cashSessionId = cashSessionId,
                     customerInfo = customerInfo,
                     receiptType = receiptType,
+                    descuentoPorcentaje = pct,
+                    descuentoMonto = descuentoMonto,
                 ),
                 attemptCount = 0,
             )
@@ -823,6 +838,8 @@ class PosRepositoryImpl(private val context: Context) :
                 remote.copy(
                     subtotal = localSale?.subtotal?.takeIf { it > 0.0 } ?: remote.subtotal,
                     igv = localSale?.igv?.takeIf { it > 0.0 } ?: remote.igv,
+                    descuento = localSale?.descuento?.takeIf { it > 0.0 } ?: remote.descuento,
+                    descuentoPorcentaje = localSale?.descuentoPorcentaje?.takeIf { it > 0.0 } ?: remote.descuentoPorcentaje,
                     montoRecibido = localSale?.montoRecibido?.takeIf { it > 0.0 } ?: remote.montoRecibido,
                     vuelto = localSale?.vuelto?.takeIf { it > 0.0 } ?: remote.vuelto,
                     clienteNombre = remote.clienteNombre.ifBlank { localReceipt?.receptorRazonSocial.orEmpty() },
@@ -868,6 +885,8 @@ class PosRepositoryImpl(private val context: Context) :
             idCliente = sale.idCliente,
             clienteNombre = localReceipt?.receptorRazonSocial.orEmpty().ifBlank { client?.name.orEmpty() },
             clienteDocumento = localReceipt?.receptorNumDoc.orEmpty().ifBlank { client?.document.orEmpty() },
+            descuento = sale.descuento,
+            descuentoPorcentaje = sale.descuentoPorcentaje,
         )
     }
 
@@ -1572,6 +1591,8 @@ class PosRepositoryImpl(private val context: Context) :
         }
         val paymentJson = payload.getJSONObject("payment")
         val customerJson = payload.getJSONObject("customer")
+        val descuentoPorcentaje = payload.optDouble("descuento_porcentaje", 0.0)
+        val descuentoMonto = payload.optDouble("descuento_monto", 0.0)
         val localClientId = payload.getLong("client_id")
         val remoteClientId = resolveRemoteId("client", localClientId)
         val clientSnapshot = realmQuery { realm ->
@@ -1601,6 +1622,8 @@ class PosRepositoryImpl(private val context: Context) :
             ),
             receiptType = TipoComprobanteEmision.valueOf(payload.getString("receipt_type")),
             idempotencyKey = entry.id,
+            descuentoPorcentaje = descuentoPorcentaje,
+            descuentoMonto = descuentoMonto,
         ).getOrThrow()
 
         realmWrite { realm ->
@@ -2260,10 +2283,14 @@ class PosRepositoryImpl(private val context: Context) :
         cashSessionId: Long,
         customerInfo: ReceiptCustomerInfo,
         receiptType: TipoComprobanteEmision,
+        descuentoPorcentaje: Double = 0.0,
+        descuentoMonto: Double = 0.0,
     ): String = JSONObject().apply {
         put("client_id", clientId)
         put("cash_session_id", cashSessionId)
         put("receipt_type", receiptType.name)
+        put("descuento_porcentaje", descuentoPorcentaje)
+        put("descuento_monto", descuentoMonto)
         put("payment", JSONObject().apply {
             put("type", payment.tipoPago)
             put("received", payment.montoRecibido)

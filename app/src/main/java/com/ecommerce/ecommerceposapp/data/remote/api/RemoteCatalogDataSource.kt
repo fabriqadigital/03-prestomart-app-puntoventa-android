@@ -80,9 +80,6 @@ class RemoteCatalogDataSource(context: Context) {
                 fetchCatalogFromEndpoint("${base.baseUrl}/api${ApiConfig.SYNC_CATALOG}", base)
             }.getOrNull()
             if (catalog != null && (catalog.categories.isNotEmpty() || catalog.products.isNotEmpty())) {
-                // El catálogo financiero puede omitir relaciones administrativas como
-                // `conversiones`. La lista de productos es la fuente completa usada por
-                // la web y debe prevalecer cuando está disponible.
                 val completeProducts = runCatching {
                     fetchProductsFromEndpoint("${base.baseUrl}/api${ApiConfig.PRODUCT_LIST}", base)
                 }.getOrDefault(emptyList())
@@ -92,10 +89,15 @@ class RemoteCatalogDataSource(context: Context) {
                 val subcategories = catalog.subcategories.ifEmpty {
                     fetchSubcategories(base, categories)
                 }
+                val products = if (completeProducts.isEmpty()) {
+                    catalog.products
+                } else {
+                    mergeBarcodesFromCatalog(completeProducts, catalog.products)
+                }
                 return catalog.copy(
                     categories = categories,
                     subcategories = subcategories,
-                    products = completeProducts.ifEmpty { catalog.products },
+                    products = products,
                 )
             }
             val categories = runCatching {
@@ -128,6 +130,24 @@ class RemoteCatalogDataSource(context: Context) {
             ?: (root as? JSONArray)
             ?: return emptyList()
         return parseRemoteProducts(products, base.baseUrl)
+    }
+
+    private fun mergeBarcodesFromCatalog(
+        completeProducts: List<RemoteProductSeed>,
+        catalogProducts: List<RemoteProductSeed>,
+    ): List<RemoteProductSeed> {
+        if (catalogProducts.isEmpty()) return completeProducts
+        val catalogById = catalogProducts.filter { it.id > 0L }.associateBy { it.id }
+        return completeProducts.map { product ->
+            val catalogProduct = catalogById[product.id] ?: return@map product
+            val catalogBarcode = catalogProduct.barcode.trim()
+            if (catalogBarcode.isBlank()) {
+                // El catálogo tampoco tiene código de barras: conservar lo que traiga la lista completa.
+                product
+            } else {
+                product.copy(barcode = catalogBarcode)
+            }
+        }
     }
 
     private fun fetchSubcategoriesFromEndpoint(url: String, base: ApiBaseCandidate): List<RemoteSubcategorySeed> {

@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.outlined.ShoppingBasket
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -51,7 +53,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,7 +69,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -99,12 +105,17 @@ import com.ecommerce.ecommerceposapp.ui.theme.TextPrimary
 import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 import com.ecommerce.ecommerceposapp.ui.theme.TextTertiary
 import java.util.Locale
+import kotlin.math.round
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private enum class PosPaymentMethod { Efectivo, Tarjeta, Yape, Plin }
+
+/** Formatea un porcentaje sin decimales innecesarios (20 → "20", 12.5 → "12.50"). */
+private fun formatPct(pct: Double): String =
+    if (pct == pct.toInt().toDouble()) pct.toInt().toString() else "%.2f".format(Locale.US, pct)
 
 private fun appendMontoRecibido(current: String, key: String): String {
     if (key == "⌫") return if (current.isEmpty()) "" else current.dropLast(1)
@@ -271,7 +282,13 @@ private fun CartItemRow(
 //  RESUMEN TOTALES
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
-private fun CartTotalSection(subtotal: Double, igv: Double, total: Double) {
+private fun CartTotalSection(
+    subtotal: Double,
+    igv: Double,
+    descuentoPorcentaje: Double,
+    descuentoMonto: Double,
+    total: Double,
+) {
     Surface(
         modifier        = Modifier.fillMaxWidth(),
         shape           = RoundedCornerShape(Radius.lg),
@@ -294,6 +311,16 @@ private fun CartTotalSection(subtotal: Double, igv: Double, total: Double) {
             ) {
                 Text("IGV (18%)", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Text("S/ ${"%.2f".format(igv)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+            }
+            if (descuentoMonto > 0.0) {
+                Spacer(Modifier.height(Spacing.xs))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Descuento (${formatPct(descuentoPorcentaje)}%)", color = GreenSuccess, style = MaterialTheme.typography.bodySmall)
+                    Text("-S/ ${"%.2f".format(descuentoMonto)}", color = GreenSuccess, style = MaterialTheme.typography.bodySmall)
+                }
             }
             Spacer(Modifier.height(Spacing.sm))
             Box(Modifier.fillMaxWidth().height(1.dp).background(BorderDefault))
@@ -335,9 +362,12 @@ internal fun CartPane(
     onSelectConversion: (CartLine, ProductConversion?) -> Unit,
     onPay: suspend (SalePaymentInfo, Long, ReceiptCustomerInfo, TipoComprobanteEmision) -> Result<CompletedSaleReceipt>,
     onNewClient: () -> Unit = {},
+    onApplyGlobalDiscount: (Double, Set<String>) -> Unit = { _, _ -> },
+    onClearGlobalDiscount: () -> Unit = {},
 ) {
     var message              by remember { mutableStateOf("") }
     var showCobrarVenta      by remember { mutableStateOf(false) }
+    var showGlobalDiscount   by remember { mutableStateOf(false) }
     var selectedCliente      by remember { mutableStateOf<ClientRow?>(null) }
     var showClientePicker    by remember { mutableStateOf(false) }
     var pendingReceipt       by remember { mutableStateOf<CompletedSaleReceipt?>(null) }
@@ -396,9 +426,46 @@ internal fun CartPane(
                     color = if (qty == 0) TextTertiary else TextSecondary,
                 )
             }
+            // ── Botón DESCUENTO, alineado con el encabezado del carrito ──────
+            OutlinedButton(
+                onClick = {
+                    if (state.cart.isEmpty()) {
+                        message = "No hay productos en el carrito para aplicar el descuento."
+                        return@OutlinedButton
+                    }
+                    message = ""
+                    showGlobalDiscount = true
+                },
+                modifier = Modifier.height(if (compact) 36.dp else 40.dp),
+                shape    = RoundedCornerShape(Radius.md),
+                colors   = ButtonDefaults.outlinedButtonColors(
+                    containerColor = SurfaceWhite,
+                    contentColor   = if (state.descuentoPorcentaje > 0.0) GreenSuccess else TextPrimary,
+                ),
+                border   = androidx.compose.foundation.BorderStroke(1.dp, BorderDefault),
+                contentPadding = PaddingValues(horizontal = Spacing.sm),
+            ) {
+                Icon(
+                    Icons.Filled.AttachMoney,
+                    contentDescription = null,
+                    tint = if (state.descuentoPorcentaje > 0.0) GreenSuccess else BrandRed,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    if (state.descuentoPorcentaje > 0.0)
+                        if (compact) "DESC ${formatPct(state.descuentoPorcentaje)}%" else "DESCUENTO (${formatPct(state.descuentoPorcentaje)}%)"
+                    else
+                        if (compact) "DESC." else "DESCUENTO",
+                    fontWeight = FontWeight.Bold,
+                    style      = MaterialTheme.typography.labelSmall,
+                    maxLines   = 1,
+                    overflow   = TextOverflow.Ellipsis,
+                )
+            }
         }
 
-        Spacer(Modifier.height(if (compact) Spacing.xs else Spacing.md))
+        Spacer(Modifier.height(Spacing.md))
 
         // ── Selector de cliente ──────────────────────────────────────────────
         if (!compact) {
@@ -498,9 +565,11 @@ internal fun CartPane(
 
         // ── Totales ──────────────────────────────────────────────────────────
         CartTotalSection(
-            subtotal = state.subtotal,
-            igv      = state.igv,
-            total    = state.total,
+            subtotal            = state.subtotal,
+            igv                 = state.igv,
+            descuentoPorcentaje = state.descuentoPorcentaje,
+            descuentoMonto      = state.descuentoMonto,
+            total               = state.total,
         )
 
         Spacer(Modifier.height(if (compact) Spacing.xs else Spacing.md))
@@ -545,6 +614,23 @@ internal fun CartPane(
     }
 
     // ── Dialogs ──────────────────────────────────────────────────────────────
+    if (showGlobalDiscount) {
+        GlobalDiscountDialog(
+            cart            = state.cart,
+            currentPercent  = state.descuentoPorcentaje,
+            currentLineKeys = state.descuentoLineKeys,
+            onApply = { pct, lineKeys ->
+                onApplyGlobalDiscount(pct, lineKeys)
+                showGlobalDiscount = false
+            },
+            onClear = {
+                onClearGlobalDiscount()
+                showGlobalDiscount = false
+            },
+            onDismiss = { showGlobalDiscount = false },
+        )
+    }
+
     if (showCobrarVenta) {
         CobrarVentaDialog(
             total        = state.total,
@@ -800,6 +886,204 @@ private fun LegacyCobrarVentaDialog(
                             Text("Cancelar", color = TextSecondary)
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DESCUENTO DIALOG  — porcentaje + selección de productos del carrito
+// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun GlobalDiscountDialog(
+    cart: List<CartLine>,
+    currentPercent: Double,
+    currentLineKeys: Set<String>,
+    onApply: (Double, Set<String>) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var text  by remember { mutableStateOf(if (currentPercent > 0.0) formatPct(currentPercent) else "") }
+    var error by remember { mutableStateOf<String?>(null) }
+    // Si ya hay un descuento activo se restauran exactamente los productos
+    // seleccionados; si no, el modal inicia sin selección y el cajero marca
+    // manualmente qué productos desea descontar.
+    val cartKeys = remember(cart) { cart.map { it.lineKey }.toSet() }
+    var selectedKeys by remember(cart, currentLineKeys) {
+        mutableStateOf(
+            if (currentLineKeys.isEmpty()) emptySet()
+            else currentLineKeys.filter { it in cartKeys }.toSet()
+        )
+    }
+    val parsed = text.replace(',', '.').toDoubleOrNull()
+    val pctValid = parsed != null && parsed >= 0.0 && parsed <= 100.0
+    val pct = parsed?.coerceIn(0.0, 100.0) ?: 0.0
+    val canApply = pctValid && selectedKeys.isNotEmpty()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier        = Modifier.fillMaxWidth().widthIn(max = 420.dp),
+            shape           = RoundedCornerShape(Radius.lg),
+            color           = SurfaceWhite,
+            shadowElevation = 12.dp,
+        ) {
+            Column(Modifier.padding(Spacing.lg)) {
+                Text(
+                    "Descuento",
+                    fontWeight = FontWeight.Bold,
+                    color      = TextPrimary,
+                    style      = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(Spacing.xs))
+                Text(
+                    "Ingresa el porcentaje y selecciona los productos a los que se aplicará.",
+                    color   = TextSecondary,
+                    style   = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(Spacing.md))
+                OutlinedTextField(
+                    value         = text,
+                    onValueChange = { value ->
+                        text = value.filter { it.isDigit() || it == '.' || it == ',' }
+                        error = null
+                    },
+                    label         = { Text("Descuento (%)") },
+                    suffix        = { Text("%") },
+                    isError       = error != null,
+                    singleLine    = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier      = Modifier.fillMaxWidth(),
+                )
+                if (error != null) {
+                    Spacer(Modifier.height(Spacing.xs))
+                    Text(error!!, color = BrandRed, style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(Modifier.height(Spacing.md))
+
+                // ── Seleccionar todo ─────────────────────────────────────────
+                // El tri-state se recalcula en cada recomposición a partir de la
+                // selección individual: On si están todos, Off si ninguno,
+                // Indeterminate si solo algunos (aunque se marquen uno a uno).
+                val allSelected = cartKeys.isNotEmpty() &&
+                    selectedKeys.size == cartKeys.size &&
+                    cartKeys.all { it in selectedKeys }
+                val triState = when {
+                    allSelected -> ToggleableState.On
+                    selectedKeys.isEmpty() -> ToggleableState.Off
+                    else -> ToggleableState.Indeterminate
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radius.md))
+                        .clickable {
+                            selectedKeys = if (allSelected) emptySet() else cartKeys
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TriStateCheckbox(state = triState, onClick = null)
+                    Text(
+                        "Seleccionar todo",
+                        fontWeight = FontWeight.SemiBold,
+                        color      = TextPrimary,
+                        style      = MaterialTheme.typography.bodyMedium,
+                        modifier   = Modifier.weight(1f),
+                    )
+                    Text(
+                        "${cart.size} ${if (cart.size == 1) "producto" else "productos"}",
+                        color   = TextSecondary,
+                        style   = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Spacer(Modifier.height(Spacing.xs))
+
+                // ── Lista de productos del carrito ───────────────────────────
+                if (cart.isEmpty()) {
+                    Text(
+                        "No hay productos en el carrito.",
+                        color = TextTertiary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    LazyColumn(
+                        modifier            = Modifier.fillMaxWidth().heightIn(max = 300.dp),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    ) {
+                        items(cart, key = { it.lineKey }) { line ->
+                            val checked = line.lineKey in selectedKeys
+                            val discountedUnit = (line.unitPrice * (100.0 - pct) / 100.0)
+                                .let { round(it * 100.0) / 100.0 }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(Radius.md))
+                                    .clickable {
+                                        selectedKeys = if (checked) selectedKeys - line.lineKey else selectedKeys + line.lineKey
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(checked = checked, onCheckedChange = null)
+                                Text(
+                                    line.displayName,
+                                    modifier  = Modifier.weight(1f),
+                                    color     = TextPrimary,
+                                    style     = MaterialTheme.typography.bodySmall,
+                                    maxLines  = 2,
+                                    overflow  = TextOverflow.Ellipsis,
+                                )
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        "S/ ${"%.2f".format(line.unitPrice)}",
+                                        color          = if (checked) TextTertiary else TextSecondary,
+                                        style          = MaterialTheme.typography.bodySmall,
+                                        textDecoration = if (checked) TextDecoration.LineThrough else TextDecoration.None,
+                                    )
+                                    if (checked && pct > 0.0) {
+                                        Text(
+                                            "S/ ${"%.2f".format(discountedUnit)}",
+                                            color      = GreenSuccess,
+                                            fontWeight = FontWeight.SemiBold,
+                                            style      = MaterialTheme.typography.bodySmall,
+                                        )
+                                    } else {
+                                        Text("--", color = TextTertiary, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(Spacing.md))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs, Alignment.End),
+                    verticalAlignment     = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar") }
+                    if (currentPercent > 0.0 || currentLineKeys.isNotEmpty()) {
+                        TextButton(onClick = onClear) { Text("Quitar descuento", color = BrandRed) }
+                    }
+                    Button(
+                        onClick = {
+                            val pctValue = parsed
+                            when {
+                                pctValue == null || pctValue < 0.0 || pctValue > 100.0 ->
+                                    error = "Ingresa un porcentaje entre 0 y 100."
+                                selectedKeys.isEmpty() ->
+                                    error = "Selecciona al menos un producto."
+                                else -> onApply(pctValue, selectedKeys)
+                            }
+                        },
+                        enabled = canApply,
+                        colors   = ButtonDefaults.buttonColors(
+                            containerColor         = BrandRed,
+                            contentColor           = Color.White,
+                            disabledContainerColor = GrayLight,
+                            disabledContentColor   = GrayMedium,
+                        ),
+                        shape  = RoundedCornerShape(Radius.md),
+                    ) { Text("Aplicar descuento") }
                 }
             }
         }

@@ -95,6 +95,26 @@ import com.ecommerce.ecommerceposapp.util.DataWedgeScanner
 import com.ecommerce.ecommerceposapp.util.PhysicalScannerInput
 import com.ecommerce.ecommerceposapp.util.rememberPhysicalScannerConnected
 
+/**
+ * Resuelve la longitud correcta de un código de barra recibido por DataWedge.
+ *
+ * `DataWedgeScanner.extractBarcode()` restaura el 0 inicial de TODO símbolo UPC-A
+ * (12 dígitos) como si fuera un EAN-13 truncado, pero un UPC-A legítimo (p. ej.
+ * "027084120134") debe conservar sus 12 dígitos. Se usa el catálogo local como
+ * referencia: si solo el EAN-13 de 13 dígitos existe → es EAN-13; en cualquier otro
+ * caso (el UPC-A existe, o ninguno existe — producto nuevo) → se conservan los
+ * 12 dígitos que DataWedge decodificó del símbolo.
+ */
+private fun resolveDataWedgeBarcode(code: String, known: List<ProductAdminRow>): String {
+    val trimmed = code.trim()
+    if (trimmed.length != 13 || !trimmed.startsWith("0")) return trimmed
+    val upcaCandidate = trimmed.substring(1)
+    val ean13Known = known.any { it.barcode == trimmed || it.code == trimmed }
+    val upcaKnown = known.any { it.barcode == upcaCandidate || it.code == upcaCandidate }
+    if (ean13Known && !upcaKnown) return trimmed
+    return upcaCandidate
+}
+
 @Composable
 fun ProductsCrudScreen(
     vm: ProductsViewModel,
@@ -172,14 +192,20 @@ fun ProductsCrudScreen(
 
     LaunchedEffect(externalScan) {
         val scan = externalScan ?: return@LaunchedEffect
+        // DataWedge restaura el 0 inicial de todo UPC-A (12 dígitos); se resuelve con el
+        // catálogo para que el campo Código Barra guarde el código tal cual (12 o 13).
+        val finalCode = resolveDataWedgeBarcode(scan.code, state.products)
+        if (finalCode != scan.code) {
+            Log.d("BarcodeDebug", "Productos: DataWedge UPC-A resuelto con catálogo: [${scan.code}] → [$finalCode]")
+        }
         if (creatingAdvanced || editing != null) {
-            Log.d("DataWedge", "Productos: escaneo enrutado al formulario: ${scan.code} (seq=${scan.sequence})")
-            Log.d("BarcodeDebug", "Productos: escaneo al formulario: [${scan.code}] (length=${scan.code.length})")
-            editorDataWedgeScan = scan
+            Log.d("DataWedge", "Productos: escaneo enrutado al formulario: $finalCode (seq=${scan.sequence})")
+            Log.d("BarcodeDebug", "Productos: escaneo al formulario: [$finalCode] (length=${finalCode.length})")
+            editorDataWedgeScan = scan.copy(code = finalCode)
         } else {
-            Log.d("DataWedge", "Productos: escaneo al buscador: ${scan.code} (seq=${scan.sequence})")
-            Log.d("BarcodeDebug", "Productos: escaneo al buscador: [${scan.code}] (length=${scan.code.length})")
-            search = scan.code
+            Log.d("DataWedge", "Productos: escaneo al buscador: $finalCode (seq=${scan.sequence})")
+            Log.d("BarcodeDebug", "Productos: escaneo al buscador: [$finalCode] (length=${finalCode.length})")
+            search = finalCode
         }
     }
 
@@ -679,15 +705,13 @@ private fun ProductAdvancedEditorView(
     LaunchedEffect(physicalScan) {
         val code = physicalScan ?: return@LaunchedEffect
         Log.d("PhysicalScanner", "Productos: lector físico → campo Código Barra: [$code] (length=${code.length})")
-        val trimmed = code.trim()
-        var finalCode = trimmed
-        if (trimmed.length == 12 && trimmed.all { it.isDigit() } &&
-            products.none { p -> p.id != initial.id && (p.barcode == trimmed || p.code == trimmed) }
-        ) {
-            finalCode = "0$trimmed"
-            Log.d("BarcodeDebug", "Productos: 0 inicial restaurado en el formulario: [$trimmed] → [$finalCode]")
-        }
-        barcode = finalCode
+        // El campo Código Barra guarda el valor TAL CUAL lo entrega el escáner, sin alterar
+        // dígitos, para códigos de 12 (UPC-A) y 13 (EAN-13) dígitos por igual. El 0 inicial
+        // de un EAN-13 que el lector decodificó como UPC-A ya lo restaura antes
+        // PhysicalScannerInput.normalizeBarcode() cuando el EAN-13 existe en el catálogo;
+        // anteponer "0" aquí corrompía los UPC-A reales de 12 dígitos (p.ej. "070847895459"
+        // se guardaba como "0070847895459").
+        barcode = code.trim()
         barcodeValidationMessage = null
     }
     val draftProduct = {

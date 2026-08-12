@@ -38,8 +38,20 @@ data class PosUiState(
     val cashLoading: Boolean = false,
     val cashError: String? = null,
     val message: String? = null,
+    val descuentoPorcentaje: Double = 0.0,
+    /** Líneas del carrito a las que se aplica el descuento (por lineKey). */
+    val descuentoLineKeys: Set<String> = emptySet(),
 ) {
-    val total: Double = round(cart.sumOf { it.lineTotal } * 100) / 100
+    /** Total bruto del carrito (antes de cualquier descuento). */
+    val totalAntesDescuento: Double = round(cart.sumOf { it.lineTotal } * 100) / 100
+    /** Base del descuento: solo los productos seleccionados (todo el carrito si no hay selección). */
+    val descuentoBase: Double =
+        if (descuentoLineKeys.isEmpty()) totalAntesDescuento
+        else round(cart.filter { it.lineKey in descuentoLineKeys }.sumOf { it.lineTotal } * 100) / 100
+    /** Monto descontado: round(descuentoBase * porcentaje / 100, 2). */
+    val descuentoMonto: Double = round((descuentoBase * descuentoPorcentaje.coerceIn(0.0, 100.0) / 100.0) * 100) / 100
+    /** Total final de la venta (nunca negativo). */
+    val total: Double = (round((totalAntesDescuento - descuentoMonto) * 100) / 100).coerceAtLeast(0.0)
     val subtotal: Double = round((total / 1.18) * 100) / 100
     val igv: Double = round((total - subtotal) * 100) / 100
 }
@@ -188,8 +200,39 @@ class PosViewModel(
                 val quantity = row.quantity - 1
                 if (quantity <= 0) null else row.copy(quantity = quantity)
             }
-            it.copy(cart = next)
+            // Si el carrito queda vacío, el descuento ya no aplica.
+            it.copy(
+                cart = next,
+                descuentoPorcentaje = if (next.isEmpty()) 0.0 else it.descuentoPorcentaje,
+                descuentoLineKeys = if (next.isEmpty()) emptySet() else it.descuentoLineKeys,
+            )
         }
+    }
+
+    /**
+     * Aplica el descuento a la venta actual. El porcentaje lo ingresa
+     * el cajero (0-100) y se calcula sobre los productos seleccionados.
+     * Solo se permite un descuento por venta: volver a llamar esta
+     * función reemplaza el porcentaje existente, nunca acumula.
+     */
+    fun applyGlobalDiscount(percent: Double, lineKeys: Set<String>) {
+        _uiState.update { state ->
+            when {
+                state.cart.isEmpty() -> state.copy(message = "No hay productos en el carrito para aplicar el descuento.")
+                lineKeys.isEmpty() -> state.copy(message = "Selecciona al menos un producto para aplicar el descuento.")
+                percent < 0.0 || percent > 100.0 -> state.copy(message = "El porcentaje de descuento debe estar entre 0 y 100.")
+                else -> state.copy(
+                    descuentoPorcentaje = percent,
+                    descuentoLineKeys = lineKeys,
+                    message = if (percent > 0.0) "Descuento de $percent% aplicado a ${lineKeys.size} producto(s)." else null,
+                )
+            }
+        }
+    }
+
+    /** Quita el descuento de la venta actual. */
+    fun clearGlobalDiscount() {
+        _uiState.update { it.copy(descuentoPorcentaje = 0.0, descuentoLineKeys = emptySet()) }
     }
 
     fun selectConversion(line: CartLine, conversion: ProductConversion?) {
@@ -231,12 +274,17 @@ class PosViewModel(
     ): Result<CompletedSaleReceipt> {
         if (_uiState.value.cashSession == null) return Result.failure(Exception("Abre una caja antes de registrar ventas."))
         val lines = _uiState.value.cart
+        val descuentoPorcentaje = _uiState.value.descuentoPorcentaje
+        val descuentoLineKeys = _uiState.value.descuentoLineKeys
         val result = withContext(Dispatchers.IO) {
-            catalogRepository.registerSale(lines, payment, idCliente, customerInfo, receiptType)
+            catalogRepository.registerSale(lines, payment, idCliente, customerInfo, receiptType, descuentoPorcentaje, descuentoLineKeys)
         }
         if (result.isSuccess) {
             val products = withContext(Dispatchers.IO) { catalogRepository.products() }
-            _uiState.update { it.copy(cart = emptyList(), products = products) }
+            // La venta terminó: se vacía el carrito y se reinicia el descuento.
+            _uiState.update {
+                it.copy(cart = emptyList(), products = products, descuentoPorcentaje = 0.0, descuentoLineKeys = emptySet())
+            }
         }
         return result
     }

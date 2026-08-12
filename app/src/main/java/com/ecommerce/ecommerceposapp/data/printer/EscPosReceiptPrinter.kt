@@ -99,10 +99,17 @@ class EscPosReceiptPrinter(private val context: Context) {
             wrappedLine(item.displayName)
             val left = "${item.quantity} x S/ ${money(item.unitPrice)}"
             line(columns(left, "S/ ${money(item.lineTotal)}"))
+            if (receipt.descuentoPorcentaje > 0.0 && item.lineKey in receipt.descuentoLineKeys) {
+                val discounted = Math.round(item.unitPrice * (100.0 - receipt.descuentoPorcentaje) / 100.0 * 100.0) / 100.0
+                line("S/ ${money(item.unitPrice)} -> S/ ${money(discounted)} (Desc. ${formatPctLabel(receipt.descuentoPorcentaje)}%)")
+            }
         }
         separator()
         line(columns("OP. GRAVADAS", "S/ ${money(receipt.subtotal)}"))
         line(columns("IGV (18%)", "S/ ${money(receipt.igv)}"))
+        if (receipt.descuento > 0.0) {
+            line(columns("DESC. (${formatPctLabel(receipt.descuentoPorcentaje)}%)", "-S/ ${money(receipt.descuento)}"))
+        }
         bold(true)
         line(columns("TOTAL", "S/ ${money(receipt.total)}"))
         bold(false)
@@ -180,6 +187,8 @@ class EscPosReceiptPrinter(private val context: Context) {
         .replace(Regex("[^\\x20-\\x7E]"), "?")
 
     private fun money(value: Double): String = String.format(Locale.US, "%.2f", value)
+    private fun formatPctLabel(pct: Double): String =
+        if (pct == pct.toInt().toDouble()) pct.toInt().toString() else String.format(Locale.US, "%.2f", pct)
     private fun paymentLabel(code: String): String = when (code) {
         "EFE" -> "EFECTIVO"
         "TAR" -> "TARJETA"

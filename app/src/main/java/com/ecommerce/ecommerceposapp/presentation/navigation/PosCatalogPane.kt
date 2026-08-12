@@ -271,6 +271,17 @@ internal fun CatalogPane(
             )
             product = findExactProductMatch(currentState.products, ean13Candidate)
         }
+        if (product == null && scannedCode.length == 13 && scannedCode.startsWith("0")) {
+            // Caso inverso: el lector/DataWedge entrega el EAN-13 con 0 inicial añadido,
+            // pero el producto está registrado con UPC-A de 12 dígitos. Solo se intenta si
+            // el match directo de 13 dígitos falló; no altera el matching de 13 dígitos.
+            val upcaCandidate = scannedCode.substring(1)
+            Log.d(
+                "BarcodeDebug",
+                "Sin coincidencia con 13 dígitos [$scannedCode] → reintento UPC-A sin 0 inicial: [$upcaCandidate] (length=${upcaCandidate.length})",
+            )
+            product = findExactProductMatch(currentState.products, upcaCandidate)
+        }
         lastProcessedScan = scannedCode
         when {
             product == null -> onScanMessage("Producto no encontrado: \"$scannedCode\"")

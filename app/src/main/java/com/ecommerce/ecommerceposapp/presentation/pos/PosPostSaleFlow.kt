@@ -100,6 +100,16 @@ import kotlinx.coroutines.withContext
 
 private fun r2(x: Double) = round(x * 100) / 100
 
+/** Formatea un porcentaje sin decimales innecesarios (20 → "20", 12.5 → "12.50"). */
+private fun formatPctLabel(pct: Double): String =
+    if (pct == pct.toInt().toDouble()) pct.toInt().toString() else "%.2f".format(Locale.US, pct)
+
+/** Etiqueta "S/ 20.00 → S/ 18.00 (Desc. 10%)" para líneas con descuento en el ticket. */
+private fun lineDiscountLabel(unitPrice: Double, pct: Double): String {
+    val discounted = r2(unitPrice * (100.0 - pct) / 100.0)
+    return "S/ ${ "%.2f".format(Locale.US, unitPrice)} → S/ ${ "%.2f".format(Locale.US, discounted)} (Desc. ${formatPctLabel(pct)}%)"
+}
+
 private fun formatFechaHoraPeru(millis: Long): Pair<String, String> {
     val tz = TimeZone.getTimeZone("America/Lima")
     val df = SimpleDateFormat("dd/MM/yyyy", Locale.US).apply { timeZone = tz }
@@ -342,7 +352,13 @@ internal fun createReceiptPdfForSharing(
         }
         y += itemLines[index].size * 10f + 2f
         text("${line.quantity} x S/ ${"%.2f".format(Locale.US, line.unitPrice)}", left + 32f, y, 7f)
-        y += 9f
+        if (receipt.descuentoPorcentaje > 0.0 && line.lineKey in receipt.descuentoLineKeys) {
+            y += 8f
+            text(lineDiscountLabel(line.unitPrice, receipt.descuentoPorcentaje), left + 32f, y, 6.5f)
+            y += 8f
+        } else {
+            y += 9f
+        }
         rule(y)
         y += 9f
     }
@@ -352,6 +368,11 @@ internal fun createReceiptPdfForSharing(
     y += 12f
     text("IGV (18%)", left, y, 8f)
     text("S/ ${"%.2f".format(Locale.US, receipt.igv)}", right, y, 8f, false, Paint.Align.RIGHT)
+    if (receipt.descuento > 0.0) {
+        y += 12f
+        text("DESCUENTO (${formatPctLabel(receipt.descuentoPorcentaje)}%)", left, y, 8f)
+        text("-S/ ${"%.2f".format(Locale.US, receipt.descuento)}", right, y, 8f, false, Paint.Align.RIGHT)
+    }
     y += 15f
     text("TOTAL", left, y, 11f, true, color = brand)
     text("S/ ${"%.2f".format(Locale.US, receipt.total)}", right, y, 11f, true, Paint.Align.RIGHT, brand)
@@ -480,6 +501,10 @@ private fun createLegacyA4ReceiptPdfForSharing(
         drawText(fitText(item.displayName, 330f, 10f), 108f, y, 10f)
         drawText("S/ ${"%.2f".format(Locale.US, item.lineTotal)}", 535f, y, 10f, ink, true, Paint.Align.RIGHT)
         y += 18f
+        if (receipt.descuentoPorcentaje > 0.0 && item.lineKey in receipt.descuentoLineKeys) {
+            drawText(lineDiscountLabel(item.unitPrice, receipt.descuentoPorcentaje), 108f, y, 9f, muted)
+            y += 14f
+        }
         rule(y)
         y += 10f
     }
@@ -490,6 +515,11 @@ private fun createLegacyA4ReceiptPdfForSharing(
     y += 18f
     drawText("IGV (18%)", 390f, y, 9f, muted, false, Paint.Align.RIGHT)
     drawText("S/ ${"%.2f".format(Locale.US, receipt.igv)}", 535f, y, 10f, ink, false, Paint.Align.RIGHT)
+    if (receipt.descuento > 0.0) {
+        y += 18f
+        drawText("DESCUENTO (${formatPctLabel(receipt.descuentoPorcentaje)}%)", 390f, y, 9f, muted, false, Paint.Align.RIGHT)
+        drawText("-S/ ${"%.2f".format(Locale.US, receipt.descuento)}", 535f, y, 10f, ink, false, Paint.Align.RIGHT)
+    }
     y += 25f
     drawText("TOTAL", 390f, y, 13f, brand, true, Paint.Align.RIGHT)
     drawText("S/ ${"%.2f".format(Locale.US, receipt.total)}", 535f, y, 16f, brand, true, Paint.Align.RIGHT)
@@ -919,16 +949,25 @@ fun VistaPreviaReciboDialog(
                             val desc = line.displayName.take(28)
                             val puIgv = r2(line.unitPrice)
                             val totIgv = r2(line.lineTotal)
+                            val withDiscount = receipt.descuentoPorcentaje > 0.0 && line.lineKey in receipt.descuentoLineKeys
                             Text(
                                 "${line.quantity} und  $desc",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 9.sp,
                             )
-                            Text(
-                                "S/ ${"%.2f".format(Locale.US, totIgv)}  (S/ ${"%.2f".format(Locale.US, puIgv)} c/u)",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 8.sp,
-                            )
+                            if (withDiscount) {
+                                Text(
+                                    lineDiscountLabel(line.unitPrice, receipt.descuentoPorcentaje),
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 8.sp,
+                                )
+                            } else {
+                                Text(
+                                    "S/ ${"%.2f".format(Locale.US, totIgv)}  (S/ ${"%.2f".format(Locale.US, puIgv)} c/u)",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 8.sp,
+                                )
+                            }
                         }
                         HorizontalDivider(Modifier.padding(vertical = 6.dp))
                         Text(
@@ -941,6 +980,13 @@ fun VistaPreviaReciboDialog(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 9.sp,
                         )
+                        if (receipt.descuento > 0.0) {
+                            Text(
+                                "DESCUENTO (${formatPctLabel(receipt.descuentoPorcentaje)}%): -S/ ${"%.2f".format(Locale.US, receipt.descuento)}",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                            )
+                        }
                         Text(
                             "TOTAL A PAGAR: S/ ${"%.2f".format(Locale.US, receipt.total)}",
                             fontFamily = FontFamily.Monospace,

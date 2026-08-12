@@ -43,6 +43,10 @@ data class CompletedSaleReceipt(
     val emisorRuc: String = "",
     val emisorRazonSocial: String = "",
     val emisorDireccion: String = "",
+    val descuento: Double = 0.0,
+    val descuentoPorcentaje: Double = 0.0,
+    /** lineKeys de las líneas del carrito que llevan el descuento activo (por línea). */
+    val descuentoLineKeys: Set<String> = emptySet(),
 )
 
 data class ReceiptCustomerInfo(

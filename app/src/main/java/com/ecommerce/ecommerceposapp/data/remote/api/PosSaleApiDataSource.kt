@@ -11,6 +11,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.round
 
 class PosSaleApiDataSource(context: Context) {
     private val session = ApiSessionStore(context)
@@ -26,6 +27,8 @@ class PosSaleApiDataSource(context: Context) {
         customerInfo: ReceiptCustomerInfo,
         receiptType: TipoComprobanteEmision,
         idempotencyKey: String? = null,
+        descuentoPorcentaje: Double = 0.0,
+        descuentoMonto: Double = 0.0,
     ): Result<RegisteredPosSale> {
         if (session.token.isBlank()) {
             return Result.failure(Exception("Se necesita conexion autenticada para actualizar el stock del backend."))
@@ -33,8 +36,13 @@ class PosSaleApiDataSource(context: Context) {
         return runCatching {
             require(cashSessionId > 0L) { "Debes abrir una caja antes de vender." }
             val exactTotal = PosPaymentRounding.exactTotal(lines.sumOf { it.lineTotal })
-            val total = PosPaymentRounding.finalTotal(exactTotal, payment.tipoPago, payment.aplicarRedondeo)
-            val effectivePayment = PosPaymentRounding.normalizedPayment(payment, exactTotal)
+            val pct = descuentoPorcentaje.coerceIn(0.0, 100.0)
+            // El monto llega calculado por el cliente (solo sobre los productos seleccionados).
+            val montoDescuento = descuentoMonto.coerceAtLeast(0.0)
+            // El descuento se aplica antes de las reglas de redondeo de pago.
+            val baseFinal = round((exactTotal - montoDescuento) * 100) / 100
+            val total = PosPaymentRounding.finalTotal(baseFinal, payment.tipoPago, payment.aplicarRedondeo)
+            val effectivePayment = PosPaymentRounding.normalizedPayment(payment, baseFinal)
             val payload = JSONObject().apply {
                 put("id_cliente", clientId.coerceAtLeast(0L))
                 put("cliente_nombre", customerInfo.name.trim())
@@ -45,6 +53,8 @@ class PosSaleApiDataSource(context: Context) {
                 put("monto_recibido", effectivePayment.montoRecibido)
                 put("vuelto", effectivePayment.vuelto)
                 put("aplicar_redondeo", payment.aplicarRedondeo)
+                put("descuento_porcentaje", pct)
+                put("descuento_monto", montoDescuento)
                 put("total", total)
                 put("pagos", JSONArray().put(JSONObject().apply {
                     put("metodo", payment.tipoPago)

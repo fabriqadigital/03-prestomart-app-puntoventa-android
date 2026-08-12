@@ -1068,6 +1068,8 @@ private fun PosScreen(
                                     posVm::selectConversion,
                                     onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
                                     onNewClient = { selectedModule = "Clientes" },
+                                    onApplyGlobalDiscount = posVm::applyGlobalDiscount,
+                                    onClearGlobalDiscount = posVm::clearGlobalDiscount,
                                 )
                             }
                         } else {
@@ -1103,6 +1105,8 @@ private fun PosScreen(
                                     posVm::selectConversion,
                                     onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
                                     onNewClient = { selectedModule = "Clientes" },
+                                    onApplyGlobalDiscount = posVm::applyGlobalDiscount,
+                                    onClearGlobalDiscount = posVm::clearGlobalDiscount,
                                 )
                             }
                         }

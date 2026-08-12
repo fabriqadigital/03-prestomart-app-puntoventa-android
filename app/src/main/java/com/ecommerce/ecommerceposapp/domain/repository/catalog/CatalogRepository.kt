@@ -27,6 +27,8 @@ interface CatalogRepository {
         idCliente: Long = 0L,
         customerInfo: ReceiptCustomerInfo = ReceiptCustomerInfo(),
         receiptType: TipoComprobanteEmision = TipoComprobanteEmision.SOLO_TICKET,
+        descuentoPorcentaje: Double = 0.0,
+        descuentoLineKeys: Set<String> = emptySet(),
     ): Result<CompletedSaleReceipt>
     fun emitComprobanteForVenta(
         ventaId: Long,

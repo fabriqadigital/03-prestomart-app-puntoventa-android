@@ -55,6 +55,7 @@ open class FinanzaVentaRealm : RealmObject() {
     var subtotal: Double = 0.0
     var igv: Double = 0.0
     var descuento: Double = 0.0
+    var descuentoPorcentaje: Double = 0.0
     var total: Double = 0.0
     var tipoPago: String = ""
     var montoRecibido: Double = 0.0
