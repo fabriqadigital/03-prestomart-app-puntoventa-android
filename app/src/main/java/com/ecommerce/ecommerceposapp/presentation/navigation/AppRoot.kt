@@ -1105,7 +1105,7 @@ private fun PosScreen(
                                     posVm::decrease,
                                     posVm::selectConversion,
                                     posVm::updateQuantity,
-                                    onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
+                                    onPay = posVm::pay,
                                     onNewClient = { selectedModule = "Clientes" },
                                     onBack = {
                                         dataWedgeSequence = 0
@@ -1113,7 +1113,6 @@ private fun PosScreen(
                                         mobileCartOpen = false
                                     },
                                     onOpenDiscount = { showDiscountScreen = true },
-                                    onBack = { mobileCartOpen = false },
                                     onApplyGlobalDiscount = posVm::applyGlobalDiscount,
                                     onClearGlobalDiscount = posVm::clearGlobalDiscount,
                                 )
@@ -1172,7 +1171,7 @@ private fun PosScreen(
                                     posVm::decrease,
                                     posVm::selectConversion,
                                     posVm::updateQuantity,
-                                    onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
+                                    onPay = posVm::pay,
                                     onNewClient = { selectedModule = "Clientes" },
                                     onApplyGlobalDiscount = posVm::applyGlobalDiscount,
                                     onClearGlobalDiscount = posVm::clearGlobalDiscount,
@@ -1211,7 +1210,7 @@ private fun PosScreen(
                                     posVm::decrease,
                                     posVm::selectConversion,
                                     posVm::updateQuantity,
-                                    onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
+                                    onPay = posVm::pay,
                                     onNewClient = { selectedModule = "Clientes" },
                                     onApplyGlobalDiscount = posVm::applyGlobalDiscount,
                                     onClearGlobalDiscount = posVm::clearGlobalDiscount,
