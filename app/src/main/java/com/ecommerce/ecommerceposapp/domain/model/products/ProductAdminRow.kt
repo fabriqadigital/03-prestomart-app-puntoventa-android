@@ -29,6 +29,7 @@ data class ProductAdminRow(
     val minimumStock: Double = 0.0,
     val productTypeId: Long = 0L,
     val salesChannel: String = "ambos",
+    val saleType: String = "UNIDAD",
     val ratingsEnabled: Boolean = false,
     val adminRating: Double = 0.0,
     val packageMeasures: String = "",

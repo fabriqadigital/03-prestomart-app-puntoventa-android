@@ -727,7 +727,7 @@ private fun ProductSaleCard(
                     .padding(horizontal = Spacing.sm, vertical = 2.dp),
             ) {
                 Text(
-                    "Stock: ${product.stock.toInt()}",
+                    "Stock: ${if (product.isBulk) java.math.BigDecimal.valueOf(product.stock).stripTrailingZeros().toPlainString() + " kg" else product.stock.toInt().toString()}",
                     style  = MaterialTheme.typography.labelSmall,
                     color  = if (outOfStock) BrandRed else TextSecondary,
                     fontWeight = FontWeight.Medium,

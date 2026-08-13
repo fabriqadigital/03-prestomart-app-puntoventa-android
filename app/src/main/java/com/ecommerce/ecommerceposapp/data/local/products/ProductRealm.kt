@@ -14,6 +14,7 @@ open class ProductRealm : RealmObject() {
     var description: String = ""
     var location: String = ""
     var canalVenta: String = "ambos"
+    var saleType: String = "UNIDAD"
     var imageUrl: String = ""
     var price: Double = 0.0
     var stock: Double = 0.0

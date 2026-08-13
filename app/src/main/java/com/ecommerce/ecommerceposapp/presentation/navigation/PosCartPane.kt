@@ -185,6 +185,7 @@ private fun CartItemRow(
     onSelectConversion: (ProductConversion?) -> Unit,
     onIncrease: () -> Unit,
     onDecrease: () -> Unit,
+    onQuantityChange: (Double) -> Unit,
 ) {
     var conversionMenuExpanded by remember { mutableStateOf(false) }
     Row(
@@ -255,14 +256,40 @@ private fun CartItemRow(
                     modifier = Modifier.size(16.dp),
                 )
             }
-            Text(
-                "${line.quantity}",
-                modifier   = Modifier.widthIn(min = 28.dp),
-                color      = TextPrimary,
-                fontWeight = FontWeight.Bold,
-                style      = MaterialTheme.typography.bodyMedium,
-                textAlign  = TextAlign.Center,
-            )
+            if (line.isBulk) {
+                var quantityInput by remember(line.productId, line.quantity) { mutableStateOf(line.quantityText) }
+                OutlinedTextField(
+                    value = quantityInput,
+                    onValueChange = { raw ->
+                        val normalized = raw.replace(',', '.')
+                        if (normalized.matches(Regex("^\\d*(\\.\\d{0,3})?$"))) {
+                            quantityInput = normalized
+                            normalized.toDoubleOrNull()?.takeIf { it >= 0.001 }?.let(onQuantityChange)
+                        }
+                    },
+                    modifier = Modifier.width(78.dp),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                )
+                Text(
+                    "kg",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            } else {
+                Text(
+                    line.quantityText,
+                    modifier   = Modifier.widthIn(min = 28.dp),
+                    color      = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    style      = MaterialTheme.typography.bodyMedium,
+                    textAlign  = TextAlign.Center,
+                )
+            }
             IconButton(
                 onClick  = onIncrease,
                 modifier = Modifier.size(32.dp),
@@ -360,6 +387,7 @@ internal fun CartPane(
     onIncrease: (CartLine) -> Unit,
     onDecrease: (CartLine) -> Unit,
     onSelectConversion: (CartLine, ProductConversion?) -> Unit,
+    onQuantityChange: (CartLine, Double) -> Unit,
     onPay: suspend (SalePaymentInfo, Long, ReceiptCustomerInfo, TipoComprobanteEmision) -> Result<CompletedSaleReceipt>,
     onNewClient: () -> Unit = {},
     onBack: (() -> Unit)? = null,
@@ -383,7 +411,7 @@ internal fun CartPane(
     val scope = rememberCoroutineScope()
     val compact = LocalConfiguration.current.screenWidthDp < 900
     val cartListState = rememberLazyListState()
-    var previousCartQuantities by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
+    var previousCartQuantities by remember { mutableStateOf<Map<Long, Double>>(emptyMap()) }
 
     LaunchedEffect(state.cart) {
         val changedIndex = state.cart.indexOfFirst { line ->
@@ -418,7 +446,7 @@ internal fun CartPane(
                     color      = TextPrimary,
                     style      = MaterialTheme.typography.titleSmall,
                 )
-                val qty = state.cart.sumOf { it.quantity }
+                val qty = state.cart.size
                 Text(
                     if (qty == 0) "Vacío" else "$qty ${if (qty == 1) "producto" else "productos"}",
                     style = MaterialTheme.typography.labelSmall,
@@ -554,6 +582,7 @@ internal fun CartPane(
                         onSelectConversion = { conversion -> onSelectConversion(line, conversion) },
                         onIncrease = { onIncrease(line) },
                         onDecrease = { onDecrease(line) },
+                        onQuantityChange = { onQuantityChange(line, it) },
                     )
                 }
             }

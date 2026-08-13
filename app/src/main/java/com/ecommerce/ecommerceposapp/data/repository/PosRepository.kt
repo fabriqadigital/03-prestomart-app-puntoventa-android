@@ -223,6 +223,7 @@ class PosRepositoryImpl(private val context: Context) :
                     barcode = p.barcode,
                     imageUrl = resolvedUrl,
                     salesChannel = p.canalVenta.ifBlank { "ambos" },
+                    saleType = p.saleType.ifBlank { "UNIDAD" },
                     featuredInPos = p.id.toString() in featuredIds,
                     active = p.active,
                     conversions = runCatching {
@@ -334,7 +335,8 @@ class PosRepositoryImpl(private val context: Context) :
                         idProducto = line.productId
                         nombreProducto = line.displayName
                         codigoBarras = ""
-                        cantidad = line.quantity.toDouble()
+                        saleType = line.saleType
+                        cantidad = line.quantity
                         precioUnitario = line.unitPrice
                         descuento = 0.0
                         this.subtotal = lineSub
@@ -684,7 +686,7 @@ class PosRepositoryImpl(private val context: Context) :
                         this.orden = orden
                         codigoProducto = d.idProducto.toString()
                         descripcion = d.nombreProducto
-                        unidadMedida = "NIU"
+                        unidadMedida = if (d.saleType.equals("A_GRANEL", ignoreCase = true)) "KGM" else "NIU"
                         cantidad = d.cantidad
                         valorUnitario = round((d.precioUnitario / 1.18) * 100) / 100
                         precioUnitario = precioConIgv
@@ -878,7 +880,10 @@ class PosRepositoryImpl(private val context: Context) :
                 productId = it.idProducto,
                 productName = it.nombreProducto,
                 unitPrice = it.precioUnitario,
-                quantity = it.cantidad.toInt().coerceAtLeast(1),
+                quantity = it.cantidad,
+                saleType = it.saleType.ifBlank {
+                    realm.where(ProductRealm::class.java).equalTo("id", it.idProducto).findFirst()?.saleType ?: "UNIDAD"
+                },
             )
         }
         val localReceipt = realm.where(FinanzaComprobanteRealm::class.java)
@@ -1405,6 +1410,7 @@ class PosRepositoryImpl(private val context: Context) :
                         description = rp.description
                         location = rp.location
                         canalVenta = rp.salesChannel.ifBlank { "ambos" }
+                        saleType = rp.saleType
                         imageUrl = cachedProductImageFiles[id]
                             ?: normalizedProductImageUrl(id, rp.imageUrl)
                         price = rp.price
@@ -1679,7 +1685,8 @@ class PosRepositoryImpl(private val context: Context) :
                 productId = resolveRemoteId("product", item.getLong("product_id")),
                 productName = item.getString("name"),
                 unitPrice = item.getDouble("unit_price"),
-                quantity = item.getInt("quantity"),
+                quantity = item.getDouble("quantity"),
+                saleType = item.optString("sale_type", "UNIDAD"),
                 conversionId = item.optLong("conversion_id").takeIf { it > 0L },
                 conversionName = item.optString("conversion_name"),
                 stockFactor = item.optDouble("stock_factor", 1.0),
@@ -2405,6 +2412,7 @@ class PosRepositoryImpl(private val context: Context) :
                     put("name", line.productName)
                     put("unit_price", line.unitPrice)
                     put("quantity", line.quantity)
+                    put("sale_type", line.saleType)
                     line.conversionId?.let { put("conversion_id", it) }
                     put("conversion_name", line.conversionName)
                     put("stock_factor", line.stockFactor)
@@ -2483,7 +2491,7 @@ class PosRepositoryImpl(private val context: Context) :
             val u = URL(fullUrl)
             val host = u.host
             if (host == "localhost" || host == "127.0.0.1" || host.endsWith(".localhost")) {
-                "${ApiConfig.PRODUCTION_BASE_URL}${u.file}"
+                "${ApiConfig.DEFAULT_BASE_URL}${u.file}"
             } else {
                 fullUrl
             }

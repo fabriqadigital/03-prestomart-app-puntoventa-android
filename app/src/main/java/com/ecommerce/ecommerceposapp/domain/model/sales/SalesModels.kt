@@ -1,13 +1,17 @@
 package com.ecommerce.ecommerceposapp.domain.model.sales
 
+import java.math.BigDecimal
+import kotlin.math.roundToInt
+
 data class CartLine(
     val productId: Long,
     val productName: String,
     val unitPrice: Double,
-    val quantity: Int,
+    val quantity: Double,
     val conversionId: Long? = null,
     val conversionName: String = "",
     val stockFactor: Double = 1.0,
+    val saleType: String = "UNIDAD",
 ) {
     val lineTotal: Double get() = unitPrice * quantity
     val lineKey: String get() = "$productId:${conversionId ?: 0L}"
@@ -16,6 +20,14 @@ data class CartLine(
         if (conversion.isBlank() || productName.trim().endsWith(conversion, ignoreCase = true)) return productName.trim()
         return "${productName.trim()} $conversion"
     }
+    val isBulk: Boolean get() = saleType.equals("A_GRANEL", ignoreCase = true)
+    val quantityText: String
+        get() = if (isBulk) {
+            BigDecimal.valueOf(quantity).stripTrailingZeros().toPlainString()
+        } else {
+            quantity.roundToInt().toString()
+        }
+    val quantityUnit: String get() = if (isBulk) "kg" else "und"
 }
 
 data class SalePaymentInfo(

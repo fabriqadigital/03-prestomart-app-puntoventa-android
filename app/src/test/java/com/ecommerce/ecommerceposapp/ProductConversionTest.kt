@@ -12,7 +12,7 @@ class ProductConversionTest {
             productId = 1265,
             productName = "Gaseosa Inka",
             unitPrice = 15.0,
-            quantity = 1,
+            quantity = 1.0,
             conversionId = 1,
             conversionName = "HELADA",
             stockFactor = 2.0,
@@ -24,8 +24,8 @@ class ProductConversionTest {
 
     @Test
     fun conversionLinesKeepIndependentIdentityPriceAndAvailableStock() {
-        val cold = CartLine(10L, "Gaseosa", 10.0, 2, 4L, "HELADA", 3.0)
-        val offer = CartLine(10L, "Gaseosa", 8.0, 1, 5L, "OFERTA", 2.0)
+        val cold = CartLine(10L, "Gaseosa", 10.0, 2.0, 4L, "HELADA", 3.0)
+        val offer = CartLine(10L, "Gaseosa", 8.0, 1.0, 5L, "OFERTA", 2.0)
 
         assertNotEquals(cold.lineKey, offer.lineKey)
         assertEquals(20.0, cold.lineTotal, 0.001)

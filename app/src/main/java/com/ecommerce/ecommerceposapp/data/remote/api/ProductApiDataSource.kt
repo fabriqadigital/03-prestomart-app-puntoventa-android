@@ -95,6 +95,7 @@ class ProductApiDataSource(context: Context) {
             .addFormDataPart("codigo_producto_new", row.code.trim())
             .addFormDataPart("codigo_barra", row.barcode.ifBlank { row.code }.trim())
             .addFormDataPart("canal_venta", row.salesChannel)
+            .addFormDataPart("tipo_venta", row.saleType)
             .addFormDataPart("ratings_enabled", if (row.ratingsEnabled) "1" else "0")
             .addFormDataPart("admin_rating", row.adminRating.emptyIfZero())
             .addFormDataPart("numero_estrellas", row.adminRating.emptyIfZero())

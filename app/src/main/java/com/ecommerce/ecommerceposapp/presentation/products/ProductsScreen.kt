@@ -583,7 +583,11 @@ private fun ProductTableRow(
     ) {
         Column(modifier = Modifier.weight(2f)) {
             Text(product.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (compact) Text("Stock: ${product.stock.toInt()}", color = Color(0xFF475569), style = MaterialTheme.typography.labelSmall)
+            if (compact) Text(
+                "Stock: ${if (product.saleType == "A_GRANEL") java.math.BigDecimal.valueOf(product.stock).stripTrailingZeros().toPlainString() + " kg" else product.stock.toInt().toString()}",
+                color = Color(0xFF475569),
+                style = MaterialTheme.typography.labelSmall,
+            )
             if (product.syncState == "PENDING") {
                 Text(
                     "Pendiente de sincronizar",
@@ -594,7 +598,12 @@ private fun ProductTableRow(
         }
         if (!compact) Text(product.code.ifBlank { "-" }, modifier = Modifier.weight(1.4f), color = Color(0xFF475569))
         Text("S/ %.2f".format(product.price), modifier = Modifier.weight(1f), color = Color(0xFF0F172A))
-        if (!compact) Text(product.stock.toInt().toString(), modifier = Modifier.weight(1f), color = Color(0xFF0F172A))
+        if (!compact) Text(
+            if (product.saleType == "A_GRANEL") java.math.BigDecimal.valueOf(product.stock).stripTrailingZeros().toPlainString() + " kg"
+            else product.stock.toInt().toString(),
+            modifier = Modifier.weight(1f),
+            color = Color(0xFF0F172A),
+        )
         Box {
             IconButton(onClick = { menuExpanded = true }) {
                 Icon(Icons.Filled.MoreVert, contentDescription = "Opciones")
@@ -647,7 +656,13 @@ private fun ProductAdvancedEditorView(
     var productTypeId by remember(initial) { mutableStateOf(initial.productTypeId) }
     var productTypeExpanded by remember { mutableStateOf(false) }
     var price by remember(initial) { mutableStateOf(initial.productNumberText(initial.price)) }
-    var stock by remember(initial) { mutableStateOf(initial.productNumberText(initial.stock)) }
+    var stock by remember(initial) {
+        mutableStateOf(
+            if (initial.saleType.equals("A_GRANEL", ignoreCase = true))
+                java.math.BigDecimal.valueOf(initial.stock).stripTrailingZeros().toPlainString()
+            else initial.productNumberText(initial.stock),
+        )
+    }
     var costPrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.costPrice)) }
     var oldPrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.oldPrice)) }
     var wholesalePrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.wholesalePrice)) }
@@ -668,6 +683,7 @@ private fun ProductAdvancedEditorView(
     var metaTitle by remember(initial) { mutableStateOf(initial.metaTitle) }
     var metaDescription by remember(initial) { mutableStateOf(initial.metaDescription) }
     var salesChannel by remember(initial) { mutableStateOf(initial.salesChannel.ifBlank { "ambos" }) }
+    var saleType by remember(initial) { mutableStateOf(initial.saleType.ifBlank { "UNIDAD" }) }
     var active by remember(initial) { mutableStateOf(initial.active) }
     var conversions by remember(initial) { mutableStateOf(initial.conversions) }
     var conversionStockTexts by remember(initial) {
@@ -700,8 +716,11 @@ private fun ProductAdvancedEditorView(
     val conversionsValid = conversions.size <= 30 && conversionNumbersValid && conversions.all {
         it.name.trim().isNotBlank() && it.name.trim().length <= 80 && it.code.trim().length <= 50
     } && conversionNames.distinct().size == conversionNames.size
+    val parsedStock = parseDouble(stock, -1.0)
+    val validStock = parsedStock >= 0.0 &&
+        (saleType == "A_GRANEL" || kotlin.math.abs(parsedStock - parsedStock.toInt()) < 0.000001)
     val canSaveProduct = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0 &&
-        parseDouble(stock, -1.0) >= 0.0 && duplicateBarcodeProduct == null && conversionsValid
+        validStock && duplicateBarcodeProduct == null && conversionsValid
     val compactEditor = LocalConfiguration.current.screenWidthDp < 900
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) imageUrl = copyPickedProductImage(context, uri)
@@ -744,7 +763,7 @@ private fun ProductAdvancedEditorView(
             offerMaxQuantityPrice = parseDouble(offerMaxQuantityPrice, initial.offerMaxQuantityPrice),
             ratingsEnabled = ratingsEnabled, adminRating = parseDouble(adminRating, initial.adminRating),
             productTypeId = productTypeId, metaTitle = metaTitle, metaDescription = metaDescription,
-            salesChannel = salesChannel, active = active,
+            salesChannel = salesChannel, saleType = saleType, active = active,
             conversions = conversions.mapIndexed { index, conversion ->
                 conversion.copy(
                     stockFactor = conversionStockTexts.getOrNull(index)?.editableDoubleOrNull()
@@ -780,6 +799,19 @@ private fun ProductAdvancedEditorView(
                         SalesChannelChip("ambos", "Ambos", salesChannel) { salesChannel = it }
                         SalesChannelChip("fisica", "Venta física", salesChannel) { salesChannel = it }
                         SalesChannelChip("ecommerce", "Venta Ecommerce", salesChannel) { salesChannel = it }
+                    }
+                    Text("Tipo de venta", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (saleType == "A_GRANEL") "El precio y el stock se manejarán por kilogramo."
+                        else "La cantidad se manejará solamente por unidades enteras.",
+                        color = Color(0xFF64748B),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SalesChannelChip("UNIDAD", "Por unidad", saleType) {
+                            saleType = it
+                            parseDouble(stock, 0.0).let { value -> stock = value.toInt().toString() }
+                        }
+                        SalesChannelChip("A_GRANEL", "A granel (kg)", saleType) { saleType = it }
                     }
                     Text("Información del producto", fontWeight = FontWeight.Bold)
                     FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 2, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -932,7 +964,17 @@ private fun ProductAdvancedEditorView(
                     )
 
                     Text("Inventario y Categorías", fontWeight = FontWeight.Bold)
-                    OutlinedTextField(stock, { stock = it }, label = { Text("Stock *") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                    OutlinedTextField(
+                        stock,
+                        { value ->
+                            val normalized = value.replace(',', '.')
+                            val pattern = if (saleType == "A_GRANEL") Regex("^\\d*(\\.\\d{0,3})?$") else Regex("^\\d*$")
+                            if (normalized.matches(pattern)) stock = normalized
+                        },
+                        label = { Text(if (saleType == "A_GRANEL") "Stock (kg) *" else "Stock (unidades) *") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
                     FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 2, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         ProductSelectField(
                             label = "Categoría", value = selectedCategoryName, expanded = categoryExpanded,
@@ -1034,6 +1076,7 @@ private fun ProductAdvancedEditorView(
                                         metaTitle = metaTitle,
                                         metaDescription = metaDescription,
                                         salesChannel = salesChannel,
+                                        saleType = saleType,
                                         active = active,
                                         conversions = conversions,
                                     ),

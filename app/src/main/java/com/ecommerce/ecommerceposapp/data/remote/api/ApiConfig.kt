@@ -1,10 +1,12 @@
 package com.ecommerce.ecommerceposapp.data.remote.api
 
+import com.ecommerce.ecommerceposapp.BuildConfig
+
 object ApiConfig {
     const val PREFS_NAME = "pos_prefs"
 
     const val PRODUCTION_BASE_URL = "https://prestomartperu.com"
-    const val DEFAULT_BASE_URL = PRODUCTION_BASE_URL
+    val DEFAULT_BASE_URL: String = BuildConfig.API_BASE_URL.trim().trimEnd('/')
 
     // Prefijo de las rutas del Punto de Venta en el backend.
     const val POS_PREFIX = "/post"
@@ -70,9 +72,10 @@ object ApiConfig {
         "$POS_PREFIX/proveedores/actualizar_estado"
     const val SUPPLIER_DELETE = "$POS_PREFIX/proveedores/eliminar"
 
-    fun normalizeBaseUrl(baseUrl: String): String = PRODUCTION_BASE_URL
+    fun normalizeBaseUrl(baseUrl: String): String =
+        baseUrl.trim().trimEnd('/').ifBlank { DEFAULT_BASE_URL }
 
-    fun configuredBaseUrl(savedBaseUrl: String?): String = PRODUCTION_BASE_URL
+    fun configuredBaseUrl(savedBaseUrl: String?): String = DEFAULT_BASE_URL
 
-    fun configuredHostHeader(savedHostHeader: String?): String = ""
+    fun configuredHostHeader(savedHostHeader: String?): String = BuildConfig.API_HOST_HEADER.trim()
 }

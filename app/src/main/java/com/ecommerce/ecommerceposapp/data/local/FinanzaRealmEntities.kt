@@ -73,6 +73,7 @@ open class FinanzaVentaDetalleRealm : RealmObject() {
     var idProducto: Long = 0
     var nombreProducto: String = ""
     var codigoBarras: String = ""
+    var saleType: String = "UNIDAD"
     var cantidad: Double = 0.0
     var precioUnitario: Double = 0.0
     var descuento: Double = 0.0
