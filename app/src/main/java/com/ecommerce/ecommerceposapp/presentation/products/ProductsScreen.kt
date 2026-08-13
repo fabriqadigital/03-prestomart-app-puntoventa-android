@@ -726,12 +726,6 @@ private fun ProductAdvancedEditorView(
     LaunchedEffect(physicalScan) {
         val code = physicalScan ?: return@LaunchedEffect
         Log.d("PhysicalScanner", "Productos: lector físico → campo Código Barra: [$code] (length=${code.length})")
-        // El campo Código Barra guarda el valor TAL CUAL lo entrega el escáner, sin alterar
-        // dígitos, para códigos de 12 (UPC-A) y 13 (EAN-13) dígitos por igual. El 0 inicial
-        // de un EAN-13 que el lector decodificó como UPC-A ya lo restaura antes
-        // PhysicalScannerInput.normalizeBarcode() cuando el EAN-13 existe en el catálogo;
-        // anteponer "0" aquí corrompía los UPC-A reales de 12 dígitos (p.ej. "070847895459"
-        // se guardaba como "0070847895459").
         barcode = code.trim()
         barcodeValidationMessage = null
     }

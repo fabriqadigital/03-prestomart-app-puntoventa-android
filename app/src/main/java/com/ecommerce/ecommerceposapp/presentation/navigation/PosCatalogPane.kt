@@ -272,9 +272,6 @@ internal fun CatalogPane(
             product = findExactProductMatch(currentState.products, ean13Candidate)
         }
         if (product == null && scannedCode.length == 13 && scannedCode.startsWith("0")) {
-            // Caso inverso: el lector/DataWedge entrega el EAN-13 con 0 inicial añadido,
-            // pero el producto está registrado con UPC-A de 12 dígitos. Solo se intenta si
-            // el match directo de 13 dígitos falló; no altera el matching de 13 dígitos.
             val upcaCandidate = scannedCode.substring(1)
             Log.d(
                 "BarcodeDebug",
@@ -294,8 +291,6 @@ internal fun CatalogPane(
 
     LaunchedEffect(Unit) {
         PhysicalScannerInput.scans.collect { rawCode ->
-            // Códigos del catálogo (String, sin conversión numérica) para poder
-            // restaurar el 0 inicial cuando el lector HID decodificó EAN-13→UPC-A.
             val knownCodes = currentState.products.flatMap { listOfNotNull(it.barcode, it.code) }
             val normalized = PhysicalScannerInput.normalizeBarcode(rawCode, knownCodes)
             Log.d("PhysicalScanner", "SCANNER PROCESSED: $normalized")

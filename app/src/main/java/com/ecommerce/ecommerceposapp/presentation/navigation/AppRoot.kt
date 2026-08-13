@@ -775,11 +775,6 @@ private fun PosScreen(
                 if (dimNow != dimmed) {
                     dimmed = dimNow
                     window.attributes = window.attributes.apply {
-                        // Ambos estados son explícitos: activo = brillo normal,
-                        // inactivo = brillo reducido. No se usa BRIGHTNESS_OVERRIDE_NONE
-                        // en el estado activo porque restaura el brillo del SISTEMA,
-                        // que en el Zebra puede ser menor al de atenuación (invertía el
-                        // comportamiento: al tocar bajaba el brillo).
                         screenBrightness = if (dimNow) {
                             PosIdleMonitor.DIMMED_BRIGHTNESS
                         } else {
@@ -815,6 +810,7 @@ private fun PosScreen(
     val scope = rememberCoroutineScope()
     var selectedModule by remember { mutableStateOf("Punto de venta") }
     var mobileCartOpen by rememberSaveable { mutableStateOf(false) }
+    var showDiscountScreen by rememberSaveable { mutableStateOf(false) }
     var showQuickProductDialog by remember { mutableStateOf(false) }
     var openAdvancedProductForm by remember { mutableStateOf(false) }
     var newProductCategoryId by remember { mutableStateOf<Long?>(null) }
@@ -871,6 +867,15 @@ private fun PosScreen(
     var dataWedgeCode by remember { mutableStateOf("") }
     var lastDataWedgeCode by remember { mutableStateOf("") }
     var lastDataWedgeTime by remember { mutableStateOf(0L) }
+
+    // Evita que al cerrar el carrito y volver al catálogo, CatalogPane se
+    // remonte y reprocese el último escaneo de DataWedge como si fuera nuevo.
+    LaunchedEffect(mobileCartOpen) {
+        if (!mobileCartOpen) {
+            dataWedgeSequence = 0
+            dataWedgeCode = ""
+        }
+    }
 
     DisposableEffect(context, selectedModule) {
         if (selectedModule != "Punto de venta") {
@@ -1048,14 +1053,34 @@ private fun PosScreen(
         }
     }
 
-    BackHandler(enabled = compactPosNavigation && selectedModule == "Punto de venta" && mobileCartOpen) {
+    BackHandler(enabled = showDiscountScreen) {
+        showDiscountScreen = false
+    }
+    BackHandler(enabled = !showDiscountScreen && compactPosNavigation && selectedModule == "Punto de venta" && mobileCartOpen) {
+        dataWedgeSequence = 0
+        dataWedgeCode = ""
         mobileCartOpen = false
     }
 
     val posContent: @Composable (PaddingValues) -> Unit = { padding ->
         when (selectedModule) {
             "Punto de venta" -> {
-                Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+                if (showDiscountScreen) {
+                    GlobalDiscountScreen(
+                        cart = state.cart,
+                        currentPercent = state.descuentoPorcentaje,
+                        currentLineKeys = state.descuentoLineKeys,
+                        onApply = { percent, lineKeys ->
+                            posVm.applyGlobalDiscount(percent, lineKeys)
+                            showDiscountScreen = false
+                        },
+                        onClear = {
+                            posVm.clearGlobalDiscount()
+                            showDiscountScreen = false
+                        },
+                        onBack = { showDiscountScreen = false },
+                    )
+                } else Column(modifier = Modifier.fillMaxSize().padding(padding)) {
                     if (state.cashSession != null) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             CashSessionIndicator(
@@ -1081,7 +1106,12 @@ private fun PosScreen(
                                     posVm::selectConversion,
                                     onPay = { p, idC, customer, type -> posVm.pay(p, idC, customer, type) },
                                     onNewClient = { selectedModule = "Clientes" },
-                                    onBack = { mobileCartOpen = false },
+                                    onBack = {
+                                        dataWedgeSequence = 0
+                                        dataWedgeCode = ""
+                                        mobileCartOpen = false
+                                    },
+                                    onOpenDiscount = { showDiscountScreen = true },
                                 )
                             } else {
                                 Column(Modifier.fillMaxSize()) {
@@ -1141,6 +1171,7 @@ private fun PosScreen(
                                     onNewClient = { selectedModule = "Clientes" },
                                     onApplyGlobalDiscount = posVm::applyGlobalDiscount,
                                     onClearGlobalDiscount = posVm::clearGlobalDiscount,
+                                    onOpenDiscount = { showDiscountScreen = true },
                                 )
                             }
                         } else {
@@ -1178,6 +1209,7 @@ private fun PosScreen(
                                     onNewClient = { selectedModule = "Clientes" },
                                     onApplyGlobalDiscount = posVm::applyGlobalDiscount,
                                     onClearGlobalDiscount = posVm::clearGlobalDiscount,
+                                    onOpenDiscount = { showDiscountScreen = true },
                                 )
                             }
                         }

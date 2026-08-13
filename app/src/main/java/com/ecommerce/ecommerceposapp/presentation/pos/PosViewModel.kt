@@ -198,7 +198,6 @@ class PosViewModel(
                 val quantity = row.quantity - 1
                 if (quantity <= 0) null else row.copy(quantity = quantity)
             }
-            // Si el carrito queda vacío, el descuento ya no aplica.
             it.copy(
                 cart = next,
                 descuentoPorcentaje = if (next.isEmpty()) 0.0 else it.descuentoPorcentaje,
@@ -207,12 +206,6 @@ class PosViewModel(
         }
     }
 
-    /**
-     * Aplica el descuento a la venta actual. El porcentaje lo ingresa
-     * el cajero (0-100) y se calcula sobre los productos seleccionados.
-     * Solo se permite un descuento por venta: volver a llamar esta
-     * función reemplaza el porcentaje existente, nunca acumula.
-     */
     fun applyGlobalDiscount(percent: Double, lineKeys: Set<String>) {
         _uiState.update { state ->
             when {
@@ -228,7 +221,6 @@ class PosViewModel(
         }
     }
 
-    /** Quita el descuento de la venta actual. */
     fun clearGlobalDiscount() {
         _uiState.update { it.copy(descuentoPorcentaje = 0.0, descuentoLineKeys = emptySet()) }
     }

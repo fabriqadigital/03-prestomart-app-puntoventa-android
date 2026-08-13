@@ -318,8 +318,8 @@ private fun CartTotalSection(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text("Descuento (${formatPct(descuentoPorcentaje)}%)", color = GreenSuccess, style = MaterialTheme.typography.bodySmall)
-                    Text("-S/ ${"%.2f".format(descuentoMonto)}", color = GreenSuccess, style = MaterialTheme.typography.bodySmall)
+                    Text("Descuento (${formatPct(descuentoPorcentaje)}%)", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text("-S/ ${"%.2f".format(descuentoMonto)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
             Spacer(Modifier.height(Spacing.sm))
@@ -365,10 +365,10 @@ internal fun CartPane(
     onBack: (() -> Unit)? = null,
     onApplyGlobalDiscount: (Double, Set<String>) -> Unit = { _, _ -> },
     onClearGlobalDiscount: () -> Unit = {},
+    onOpenDiscount: () -> Unit = {},
 ) {
     var message              by remember { mutableStateOf("") }
     var showCobrarVenta      by remember { mutableStateOf(false) }
-    var showGlobalDiscount   by remember { mutableStateOf(false) }
     var selectedCliente      by remember { mutableStateOf<ClientRow?>(null) }
     var showClientePicker    by remember { mutableStateOf(false) }
     var pendingReceipt       by remember { mutableStateOf<CompletedSaleReceipt?>(null) }
@@ -425,7 +425,6 @@ internal fun CartPane(
                     color = if (qty == 0) TextTertiary else TextSecondary,
                 )
             }
-            // ── Botón DESCUENTO, alineado con el encabezado del carrito ──────
             OutlinedButton(
                 onClick = {
                     if (state.cart.isEmpty()) {
@@ -433,13 +432,13 @@ internal fun CartPane(
                         return@OutlinedButton
                     }
                     message = ""
-                    showGlobalDiscount = true
+                    onOpenDiscount()
                 },
                 modifier = Modifier.height(if (compact) 36.dp else 40.dp),
                 shape    = RoundedCornerShape(Radius.md),
                 colors   = ButtonDefaults.outlinedButtonColors(
                     containerColor = SurfaceWhite,
-                    contentColor   = if (state.descuentoPorcentaje > 0.0) GreenSuccess else TextPrimary,
+                    contentColor   = GrayMedium,
                 ),
                 border   = androidx.compose.foundation.BorderStroke(1.dp, BorderDefault),
                 contentPadding = PaddingValues(horizontal = Spacing.sm),
@@ -447,7 +446,7 @@ internal fun CartPane(
                 Icon(
                     Icons.Filled.AttachMoney,
                     contentDescription = null,
-                    tint = if (state.descuentoPorcentaje > 0.0) GreenSuccess else BrandRed,
+                    tint = GrayMedium,
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(Modifier.width(4.dp))
@@ -613,23 +612,6 @@ internal fun CartPane(
     }
 
     // ── Dialogs ──────────────────────────────────────────────────────────────
-    if (showGlobalDiscount) {
-        GlobalDiscountDialog(
-            cart            = state.cart,
-            currentPercent  = state.descuentoPorcentaje,
-            currentLineKeys = state.descuentoLineKeys,
-            onApply = { pct, lineKeys ->
-                onApplyGlobalDiscount(pct, lineKeys)
-                showGlobalDiscount = false
-            },
-            onClear = {
-                onClearGlobalDiscount()
-                showGlobalDiscount = false
-            },
-            onDismiss = { showGlobalDiscount = false },
-        )
-    }
-
     if (showCobrarVenta) {
         CobrarVentaDialog(
             total        = state.total,
@@ -892,16 +874,16 @@ private fun LegacyCobrarVentaDialog(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  DESCUENTO DIALOG  — porcentaje + selección de productos del carrito
+//  PANTALLA DESCUENTO  — porcentaje + selección de productos del carrito
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
-private fun GlobalDiscountDialog(
+internal fun GlobalDiscountScreen(
     cart: List<CartLine>,
     currentPercent: Double,
     currentLineKeys: Set<String>,
     onApply: (Double, Set<String>) -> Unit,
     onClear: () -> Unit,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
 ) {
     var text  by remember { mutableStateOf(if (currentPercent > 0.0) formatPct(currentPercent) else "") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -920,20 +902,32 @@ private fun GlobalDiscountDialog(
     val pct = parsed?.coerceIn(0.0, 100.0) ?: 0.0
     val canApply = pctValid && selectedKeys.isNotEmpty()
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier        = Modifier.fillMaxWidth().widthIn(max = 420.dp),
-            shape           = RoundedCornerShape(Radius.lg),
-            color           = SurfaceWhite,
-            shadowElevation = 12.dp,
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = AppBackground,
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .widthIn(max = 680.dp)
+                .padding(Spacing.lg),
         ) {
-            Column(Modifier.padding(Spacing.lg)) {
-                Text(
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Volver al POS",
+                            tint = TextPrimary,
+                        )
+                    }
+                    Text(
                     "Descuento",
+                    modifier = Modifier.padding(start = Spacing.xs),
                     fontWeight = FontWeight.Bold,
                     color      = TextPrimary,
                     style      = MaterialTheme.typography.titleMedium,
                 )
+                }
                 Spacer(Modifier.height(Spacing.xs))
                 Text(
                     "Ingresa el porcentaje y selecciona los productos a los que se aplicará.",
@@ -960,10 +954,6 @@ private fun GlobalDiscountDialog(
                 }
                 Spacer(Modifier.height(Spacing.md))
 
-                // ── Seleccionar todo ─────────────────────────────────────────
-                // El tri-state se recalcula en cada recomposición a partir de la
-                // selección individual: On si están todos, Off si ninguno,
-                // Indeterminate si solo algunos (aunque se marquen uno a uno).
                 val allSelected = cartKeys.isNotEmpty() &&
                     selectedKeys.size == cartKeys.size &&
                     cartKeys.all { it in selectedKeys }
@@ -1041,7 +1031,7 @@ private fun GlobalDiscountDialog(
                                     if (checked && pct > 0.0) {
                                         Text(
                                             "S/ ${"%.2f".format(discountedUnit)}",
-                                            color      = GreenSuccess,
+                                            color      = TextSecondary,
                                             fontWeight = FontWeight.SemiBold,
                                             style      = MaterialTheme.typography.bodySmall,
                                         )
@@ -1054,37 +1044,41 @@ private fun GlobalDiscountDialog(
                     }
                 }
                 Spacer(Modifier.height(Spacing.md))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs, Alignment.End),
-                    verticalAlignment     = Alignment.CenterVertically,
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onBack) { Text("Cancelar") }
+                Spacer(Modifier.weight(1f))
+                Button(
+                    onClick = {
+                        val pctValue = parsed
+                        when {
+                            pctValue == null || pctValue < 0.0 || pctValue > 100.0 ->
+                                error = "Ingresa un porcentaje entre 0 y 100."
+                            selectedKeys.isEmpty() ->
+                                error = "Selecciona al menos un producto."
+                            else -> onApply(pctValue, selectedKeys)
+                        }
+                    },
+                    enabled = canApply,
+                    colors   = ButtonDefaults.buttonColors(
+                        containerColor         = BrandRed,
+                        contentColor           = Color.White,
+                        disabledContainerColor = GrayLight,
+                        disabledContentColor   = GrayMedium,
+                    ),
+                    shape  = RoundedCornerShape(Radius.md),
+                    contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
                 ) {
-                    TextButton(onClick = onDismiss) { Text("Cancelar") }
-                    if (currentPercent > 0.0 || currentLineKeys.isNotEmpty()) {
-                        TextButton(onClick = onClear) { Text("Quitar descuento", color = BrandRed) }
-                    }
-                    Button(
-                        onClick = {
-                            val pctValue = parsed
-                            when {
-                                pctValue == null || pctValue < 0.0 || pctValue > 100.0 ->
-                                    error = "Ingresa un porcentaje entre 0 y 100."
-                                selectedKeys.isEmpty() ->
-                                    error = "Selecciona al menos un producto."
-                                else -> onApply(pctValue, selectedKeys)
-                            }
-                        },
-                        enabled = canApply,
-                        colors   = ButtonDefaults.buttonColors(
-                            containerColor         = BrandRed,
-                            contentColor           = Color.White,
-                            disabledContainerColor = GrayLight,
-                            disabledContentColor   = GrayMedium,
-                        ),
-                        shape  = RoundedCornerShape(Radius.md),
-                    ) { Text("Aplicar descuento") }
+                    Text(
+                        "Aplicar descuento",
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
                 }
             }
-        }
     }
+}
 }

@@ -420,7 +420,9 @@ class PosRepositoryImpl(private val context: Context) :
             )
             pushPendingSale(pending).onSuccess {
                 val remoteId = resolveRemoteId("sale", receipt.ventaId)
-                return getSaleReceipt(remoteId).recover { receipt.copy(ventaId = remoteId) }
+                return getSaleReceipt(remoteId)
+                    .map { it.copy(descuentoLineKeys = descuentoLineKeys) }
+                    .recover { receipt.copy(ventaId = remoteId) }
             }
         }
         return Result.success(receipt)
