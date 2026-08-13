@@ -100,8 +100,11 @@ class EscPosReceiptPrinter(private val context: Context) {
             val left = "${item.quantity} x S/ ${money(item.unitPrice)}"
             line(columns(left, "S/ ${money(item.lineTotal)}"))
             if (receipt.descuentoPorcentaje > 0.0 && item.lineKey in receipt.descuentoLineKeys) {
-                val discounted = Math.round(item.unitPrice * (100.0 - receipt.descuentoPorcentaje) / 100.0 * 100.0) / 100.0
-                line("S/ ${money(item.unitPrice)} -> S/ ${money(discounted)} (Desc. ${formatPctLabel(receipt.descuentoPorcentaje)}%)")
+                val discountAmount = kotlin.math.round(item.lineTotal * receipt.descuentoPorcentaje / 100.0 * 100.0) / 100.0
+                line(columns(
+                    "Descuento ${formatPctLabel(receipt.descuentoPorcentaje)}%",
+                    "-${String.format(Locale.US, "%.2f", discountAmount)}"
+                ))
             }
         }
         separator()

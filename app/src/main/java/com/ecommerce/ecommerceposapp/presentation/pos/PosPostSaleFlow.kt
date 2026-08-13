@@ -104,10 +104,10 @@ private fun r2(x: Double) = round(x * 100) / 100
 private fun formatPctLabel(pct: Double): String =
     if (pct == pct.toInt().toDouble()) pct.toInt().toString() else "%.2f".format(Locale.US, pct)
 
-/** Etiqueta "S/ 20.00 → S/ 18.00 (Desc. 10%)" para líneas con descuento en el ticket. */
-private fun lineDiscountLabel(unitPrice: Double, pct: Double): String {
-    val discounted = r2(unitPrice * (100.0 - pct) / 100.0)
-    return "S/ ${ "%.2f".format(Locale.US, unitPrice)} → S/ ${ "%.2f".format(Locale.US, discounted)} (Desc. ${formatPctLabel(pct)}%)"
+/** Etiqueta "Descuento 10%  S/ 2.00" para líneas con descuento en el ticket. */
+private fun lineDiscountLabel(lineTotal: Double, pct: Double): String {
+    val discountAmount = r2(lineTotal * pct / 100.0)
+    return "Descuento ${formatPctLabel(pct)}%".padEnd(18) + "S/ ${"%.2f".format(Locale.US, discountAmount)}"
 }
 
 private fun formatFechaHoraPeru(millis: Long): Pair<String, String> {
@@ -363,7 +363,7 @@ internal fun createReceiptPdfForSharing(
         text("${line.quantity} x S/ ${"%.2f".format(Locale.US, line.unitPrice)}", left + 32f, y, 7f)
         if (receipt.descuentoPorcentaje > 0.0 && line.lineKey in receipt.descuentoLineKeys) {
             y += 8f
-            text(lineDiscountLabel(line.unitPrice, receipt.descuentoPorcentaje), left + 32f, y, 6.5f)
+            text(lineDiscountLabel(line.lineTotal, receipt.descuentoPorcentaje), left + 32f, y, 6.5f)
             y += 8f
         } else {
             y += 9f
@@ -511,7 +511,7 @@ private fun createLegacyA4ReceiptPdfForSharing(
         drawText("S/ ${"%.2f".format(Locale.US, item.lineTotal)}", 535f, y, 10f, ink, true, Paint.Align.RIGHT)
         y += 18f
         if (receipt.descuentoPorcentaje > 0.0 && item.lineKey in receipt.descuentoLineKeys) {
-            drawText(lineDiscountLabel(item.unitPrice, receipt.descuentoPorcentaje), 108f, y, 9f, muted)
+            drawText(lineDiscountLabel(item.lineTotal, receipt.descuentoPorcentaje), 108f, y, 9f, muted)
             y += 14f
         }
         rule(y)
@@ -966,7 +966,7 @@ fun VistaPreviaReciboDialog(
                             )
                             if (withDiscount) {
                                 Text(
-                                    lineDiscountLabel(line.unitPrice, receipt.descuentoPorcentaje),
+                                    lineDiscountLabel(totIgv, receipt.descuentoPorcentaje),
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 8.sp,
                                 )
