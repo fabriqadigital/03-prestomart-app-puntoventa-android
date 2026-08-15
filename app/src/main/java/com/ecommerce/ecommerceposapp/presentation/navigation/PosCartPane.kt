@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.ShoppingBasket
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.outlined.ShoppingBasket
@@ -453,40 +454,22 @@ internal fun CartPane(
                     color = if (qty == 0) TextTertiary else TextSecondary,
                 )
             }
-            OutlinedButton(
+            IconButton(
                 onClick = {
                     if (state.cart.isEmpty()) {
                         message = "No hay productos en el carrito para aplicar el descuento."
-                        return@OutlinedButton
+                        return@IconButton
                     }
                     message = ""
                     onOpenDiscount()
                 },
-                modifier = Modifier.height(if (compact) 36.dp else 40.dp),
-                shape    = RoundedCornerShape(Radius.md),
-                colors   = ButtonDefaults.outlinedButtonColors(
-                    containerColor = SurfaceWhite,
-                    contentColor   = GrayMedium,
-                ),
-                border   = androidx.compose.foundation.BorderStroke(1.dp, BorderDefault),
-                contentPadding = PaddingValues(horizontal = Spacing.sm),
+                modifier = Modifier.size(if (compact) 36.dp else 40.dp)
             ) {
                 Icon(
-                    Icons.Filled.AttachMoney,
-                    contentDescription = null,
-                    tint = GrayMedium,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    if (state.descuentoPorcentaje > 0.0)
-                        if (compact) "DESC ${formatPct(state.descuentoPorcentaje)}%" else "DESCUENTO (${formatPct(state.descuentoPorcentaje)}%)"
-                    else
-                        if (compact) "DESC." else "DESCUENTO",
-                    fontWeight = FontWeight.Bold,
-                    style      = MaterialTheme.typography.labelSmall,
-                    maxLines   = 1,
-                    overflow   = TextOverflow.Ellipsis,
+                    painter = androidx.compose.ui.res.painterResource(id = com.ecommerce.ecommerceposapp.R.drawable.ic_rosette_discount),
+                    contentDescription = "Abrir Descuentos",
+                    tint = if (state.descuentoPorcentaje > 0.0) BrandRed else GrayMedium,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
@@ -907,6 +890,7 @@ private fun LegacyCobrarVentaDialog(
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 internal fun GlobalDiscountScreen(
+    modifier: Modifier = Modifier,
     cart: List<CartLine>,
     currentPercent: Double,
     currentLineKeys: Set<String>,
@@ -932,78 +916,99 @@ internal fun GlobalDiscountScreen(
     val canApply = pctValid && selectedKeys.isNotEmpty()
 
     Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = AppBackground,
+        modifier = modifier.fillMaxSize(),
+        color = SurfaceWhite,
     ) {
         Column(
             Modifier
                 .fillMaxSize()
-                .widthIn(max = 680.dp)
-                .padding(Spacing.lg),
+                .padding(vertical = Spacing.lg),
         ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Volver al POS",
-                            tint = TextPrimary,
-                        )
-                    }
-                    Text(
-                    "Descuento",
-                    modifier = Modifier.padding(start = Spacing.xs),
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Descuentos globales",
                     fontWeight = FontWeight.Bold,
                     color      = TextPrimary,
-                    style      = MaterialTheme.typography.titleMedium,
+                    style      = MaterialTheme.typography.titleLarge,
+                    modifier   = Modifier.weight(1f)
                 )
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "Cerrar",
+                        tint = TextSecondary,
+                    )
                 }
+            }
+            Text(
+                "Añade descuentos a todos los ítems de una venta de forma fácil y rápida.",
+                color   = TextSecondary,
+                style   = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = Spacing.lg).padding(bottom = Spacing.md)
+            )
+
+            HorizontalDivider(color = BorderDefault)
+            Spacer(Modifier.height(Spacing.md))
+
+            // Percentage Input
+            Column(Modifier.padding(horizontal = Spacing.lg)) {
+                Text("Porcentaje", style = MaterialTheme.typography.labelMedium, color = TextPrimary, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(Spacing.xs))
-                Text(
-                    "Ingresa el porcentaje y selecciona los productos a los que se aplicará.",
-                    color   = TextSecondary,
-                    style   = MaterialTheme.typography.bodySmall,
-                )
-                Spacer(Modifier.height(Spacing.md))
                 OutlinedTextField(
                     value         = text,
                     onValueChange = { value ->
                         text = value.filter { it.isDigit() || it == '.' || it == ',' }
                         error = null
                     },
-                    label         = { Text("Descuento (%)") },
-                    suffix        = { Text("%") },
                     isError       = error != null,
                     singleLine    = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier      = Modifier.fillMaxWidth(),
+                    shape         = RoundedCornerShape(Radius.md),
+                    colors        = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = BorderDefault,
+                        focusedBorderColor = BrandRed
+                    )
                 )
                 if (error != null) {
                     Spacer(Modifier.height(Spacing.xs))
                     Text(error!!, color = BrandRed, style = MaterialTheme.typography.bodySmall)
                 }
-                Spacer(Modifier.height(Spacing.md))
+            }
 
-                val allSelected = cartKeys.isNotEmpty() &&
-                    selectedKeys.size == cartKeys.size &&
-                    cartKeys.all { it in selectedKeys }
-                val triState = when {
-                    allSelected -> ToggleableState.On
-                    selectedKeys.isEmpty() -> ToggleableState.Off
-                    else -> ToggleableState.Indeterminate
-                }
+            Spacer(Modifier.height(Spacing.md))
+            HorizontalDivider(color = BorderDefault)
+            Spacer(Modifier.height(Spacing.md))
+
+            // Products list
+            val allSelected = cartKeys.isNotEmpty() &&
+                selectedKeys.size == cartKeys.size &&
+                cartKeys.all { it in selectedKeys }
+            val triState = when {
+                allSelected -> ToggleableState.On
+                selectedKeys.isEmpty() -> ToggleableState.Off
+                else -> ToggleableState.Indeterminate
+            }
+
+            Column(Modifier.weight(1f)) {
+                // Select All Row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(Radius.md))
                         .clickable {
                             selectedKeys = if (allSelected) emptySet() else cartKeys
-                        },
+                        }
+                        .padding(horizontal = Spacing.md, vertical = Spacing.xs),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TriStateCheckbox(state = triState, onClick = null)
                     Text(
                         "Seleccionar todo",
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Normal,
                         color      = TextPrimary,
                         style      = MaterialTheme.typography.bodyMedium,
                         modifier   = Modifier.weight(1f),
@@ -1014,46 +1019,50 @@ internal fun GlobalDiscountScreen(
                         style   = MaterialTheme.typography.bodySmall,
                     )
                 }
-                Spacer(Modifier.height(Spacing.xs))
 
-                // ── Lista de productos del carrito ───────────────────────────
                 if (cart.isEmpty()) {
                     Text(
                         "No hay productos en el carrito.",
                         color = TextTertiary,
                         style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)
                     )
                 } else {
                     LazyColumn(
-                        modifier            = Modifier.fillMaxWidth().heightIn(max = 300.dp),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                        modifier            = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         items(cart, key = { it.lineKey }) { line ->
                             val checked = line.lineKey in selectedKeys
-                            val discountedUnit = (line.unitPrice * (100.0 - pct) / 100.0)
-                                .let { round(it * 100.0) / 100.0 }
+                            val discountedUnit = (line.unitPrice * (100.0 - pct) / 100.0).let { java.lang.Math.round(it * 100.0) / 100.0 }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(Radius.md))
                                     .clickable {
                                         selectedKeys = if (checked) selectedKeys - line.lineKey else selectedKeys + line.lineKey
-                                    },
+                                    }
+                                    .padding(horizontal = Spacing.md, vertical = Spacing.xs),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Checkbox(checked = checked, onCheckedChange = null)
-                                Text(
-                                    line.displayName,
-                                    modifier  = Modifier.weight(1f),
-                                    color     = TextPrimary,
-                                    style     = MaterialTheme.typography.bodySmall,
-                                    maxLines  = 2,
-                                    overflow  = TextOverflow.Ellipsis,
-                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        line.displayName,
+                                        color     = TextPrimary,
+                                        style     = MaterialTheme.typography.bodyMedium,
+                                        maxLines  = 2,
+                                        overflow  = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        "S/ ${"%.2f".format(line.unitPrice)}",
+                                        color          = TextTertiary,
+                                        style          = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(
                                         "S/ ${"%.2f".format(line.unitPrice)}",
-                                        color          = if (checked) TextTertiary else TextSecondary,
+                                        color          = if (checked) TextTertiary else TextPrimary,
                                         style          = MaterialTheme.typography.bodySmall,
                                         textDecoration = if (checked) TextDecoration.LineThrough else TextDecoration.None,
                                     )
@@ -1072,20 +1081,16 @@ internal fun GlobalDiscountScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(Spacing.md))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                verticalAlignment     = Alignment.CenterVertically,
-            ) {
-                TextButton(onClick = onBack) { Text("Cancelar") }
-                Spacer(Modifier.weight(1f))
+            }
+
+            // Bottom Button
+            Box(Modifier.fillMaxWidth().padding(Spacing.lg)) {
                 Button(
                     onClick = {
                         val pctValue = parsed
                         when {
                             pctValue == null || pctValue < 0.0 || pctValue > 100.0 ->
-                                error = "Ingresa un porcentaje entre 0 y 100."
+                                error = "Ingresa un porcentaje válido."
                             selectedKeys.isEmpty() ->
                                 error = "Selecciona al menos un producto."
                             else -> onApply(pctValue, selectedKeys)
@@ -1095,19 +1100,18 @@ internal fun GlobalDiscountScreen(
                     colors   = ButtonDefaults.buttonColors(
                         containerColor         = BrandRed,
                         contentColor           = Color.White,
-                        disabledContainerColor = GrayLight,
-                        disabledContentColor   = GrayMedium,
+                        disabledContainerColor = BrandRed.copy(alpha = 0.5f),
+                        disabledContentColor   = Color.White.copy(alpha = 0.7f),
                     ),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape  = RoundedCornerShape(Radius.md),
-                    contentPadding = PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
                 ) {
                     Text(
                         "Aplicar descuento",
-                        maxLines = 1,
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
             }
+        }
     }
-}
 }

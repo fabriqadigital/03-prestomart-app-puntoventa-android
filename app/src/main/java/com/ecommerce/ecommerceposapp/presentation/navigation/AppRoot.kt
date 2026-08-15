@@ -1,4 +1,4 @@
-﻿package com.ecommerce.ecommerceposapp.presentation.navigation
+package com.ecommerce.ecommerceposapp.presentation.navigation
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -1065,8 +1065,9 @@ private fun PosScreen(
     val posContent: @Composable (PaddingValues) -> Unit = { padding ->
         when (selectedModule) {
             "Punto de venta" -> {
-                if (showDiscountScreen) {
+                val renderDiscountScreen: @Composable (Modifier) -> Unit = { mod ->
                     GlobalDiscountScreen(
+                        modifier = mod,
                         cart = state.cart,
                         currentPercent = state.descuentoPorcentaje,
                         currentLineKeys = state.descuentoLineKeys,
@@ -1080,7 +1081,8 @@ private fun PosScreen(
                         },
                         onBack = { showDiscountScreen = false },
                     )
-                } else Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+                }
+                Column(modifier = Modifier.fillMaxSize().padding(padding)) {
                     if (state.cashSession != null) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             CashSessionIndicator(
@@ -1095,27 +1097,31 @@ private fun PosScreen(
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                         if (compactPosNavigation) {
                             if (mobileCartOpen) {
-                                CartPane(
-                                    Modifier.fillMaxSize(),
-                                    state,
-                                    "${session.name} ${session.lastName}".trim(),
-                                    clientsState.clients,
-                                    catalog,
-                                    posVm::increase,
-                                    posVm::decrease,
-                                    posVm::selectConversion,
-                                    posVm::updateQuantity,
-                                    onPay = posVm::pay,
-                                    onNewClient = { selectedModule = "Clientes" },
-                                    onBack = {
-                                        dataWedgeSequence = 0
-                                        dataWedgeCode = ""
-                                        mobileCartOpen = false
-                                    },
-                                    onOpenDiscount = { showDiscountScreen = true },
-                                    onApplyGlobalDiscount = posVm::applyGlobalDiscount,
-                                    onClearGlobalDiscount = posVm::clearGlobalDiscount,
-                                )
+                                if (showDiscountScreen) {
+                                    renderDiscountScreen(Modifier.fillMaxSize())
+                                } else {
+                                    CartPane(
+                                        Modifier.fillMaxSize(),
+                                        state,
+                                        "${session.name} ${session.lastName}".trim(),
+                                        clientsState.clients,
+                                        catalog,
+                                        posVm::increase,
+                                        posVm::decrease,
+                                        posVm::selectConversion,
+                                        posVm::updateQuantity,
+                                        onPay = posVm::pay,
+                                        onNewClient = { selectedModule = "Clientes" },
+                                        onBack = {
+                                            dataWedgeSequence = 0
+                                            dataWedgeCode = ""
+                                            mobileCartOpen = false
+                                        },
+                                        onOpenDiscount = { showDiscountScreen = true },
+                                        onApplyGlobalDiscount = posVm::applyGlobalDiscount,
+                                        onClearGlobalDiscount = posVm::clearGlobalDiscount,
+                                    )
+                                }
                             } else {
                                 Column(Modifier.fillMaxSize()) {
                                     CatalogPane(
@@ -1161,22 +1167,26 @@ private fun PosScreen(
                                         scope.launch { snackbarHostState.showSnackbar(message) }
                                     },
                                 )
-                                CartPane(
-                                    Modifier.width(360.dp),
-                                    state,
-                                    "${session.name} ${session.lastName}".trim(),
-                                    clientsState.clients,
-                                    catalog,
-                                    posVm::increase,
-                                    posVm::decrease,
-                                    posVm::selectConversion,
-                                    posVm::updateQuantity,
-                                    onPay = posVm::pay,
-                                    onNewClient = { selectedModule = "Clientes" },
-                                    onApplyGlobalDiscount = posVm::applyGlobalDiscount,
-                                    onClearGlobalDiscount = posVm::clearGlobalDiscount,
-                                    onOpenDiscount = { showDiscountScreen = true },
-                                )
+                                if (showDiscountScreen) {
+                                    renderDiscountScreen(Modifier.width(360.dp))
+                                } else {
+                                    CartPane(
+                                        Modifier.width(360.dp),
+                                        state,
+                                        "${session.name} ${session.lastName}".trim(),
+                                        clientsState.clients,
+                                        catalog,
+                                        posVm::increase,
+                                        posVm::decrease,
+                                        posVm::selectConversion,
+                                        posVm::updateQuantity,
+                                        onPay = posVm::pay,
+                                        onNewClient = { selectedModule = "Clientes" },
+                                        onApplyGlobalDiscount = posVm::applyGlobalDiscount,
+                                        onClearGlobalDiscount = posVm::clearGlobalDiscount,
+                                        onOpenDiscount = { showDiscountScreen = true },
+                                    )
+                                }
                             }
                         } else {
                             Column(modifier = Modifier.fillMaxSize()) {

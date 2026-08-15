@@ -170,7 +170,7 @@ class PosViewModel(
         _uiState.update {
             it.copy(
                 cart = current,
-                message = "${product.name} agregado al carrito. Cantidad: ${formatStock(nextQuantity, product.isBulk)}",
+                message = "Producto agregado al carrito",
             )
         }
     }
