@@ -79,14 +79,15 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
     var search by remember { mutableStateOf("") }
     val compact = LocalConfiguration.current.screenWidthDp < 760
+    val smallScreen = LocalConfiguration.current.screenWidthDp < 480
 
     LaunchedEffect(search) {
         delay(350)
         vm.load(page = 1, perPage = state.perPage, search = search)
     }
 
-    Column(Modifier.fillMaxSize().background(Color.White).padding(if (compact) 12.dp else 16.dp)) {
-        ClientsHeader(compact) { creating = true }
+    Column(Modifier.fillMaxSize().background(Color.White).padding(if (smallScreen) 8.dp else if (compact) 12.dp else 16.dp)) {
+        ClientsHeader(compact, smallScreen) { creating = true }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
         state.message?.let { Text(it, color = ClientsAccent, modifier = Modifier.padding(top = 8.dp)) }
         Spacer(Modifier.height(12.dp))
@@ -135,7 +136,7 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
 }
 
 @Composable
-private fun ClientsHeader(compact: Boolean, onAdd: () -> Unit) {
+private fun ClientsHeader(compact: Boolean, smallScreen: Boolean, onAdd: () -> Unit) {
     val title: @Composable () -> Unit = {
         Column {
             Text("Clientes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -145,16 +146,19 @@ private fun ClientsHeader(compact: Boolean, onAdd: () -> Unit) {
     val button: @Composable () -> Unit = {
         Button(
             onClick = onAdd,
-            modifier = if (compact) Modifier.fillMaxWidth() else Modifier,
+            modifier = if (compact && !smallScreen) Modifier.fillMaxWidth() else Modifier,
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(containerColor = ClientsAccent, contentColor = Color.White),
         ) {
             Icon(Icons.Filled.Add, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text("Nuevo cliente")
+            Text(if (smallScreen) "Nuevo" else "Nuevo cliente")
         }
     }
-    if (compact) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { title(); button() }
+    if (smallScreen) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text("Clientes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        button()
+    } else if (compact) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { title(); button() }
     else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) { title(); button() }
 }
 
@@ -240,16 +244,18 @@ private fun ClientsPaginationBar(
     val from = if (total == 0) 0 else currentPage * pageSize + 1
     val to = minOf(total, (currentPage + 1) * pageSize)
     val info: @Composable () -> Unit = {
-        Text(if (compact) "Filas:" else "Registros por pagina:", color = ClientsMuted)
-        Box {
-            TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = ClientsText) }
-            DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
-                listOf(20, 50, 100).forEach { size ->
-                    DropdownMenuItem(text = { Text(size.toString()) }, onClick = { onPageSize(size); pageSizeExpanded = false })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Filas:", color = ClientsMuted)
+            Box {
+                TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = ClientsText) }
+                DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
+                    listOf(20, 50, 100).forEach { size ->
+                        DropdownMenuItem(text = { Text(size.toString()) }, onClick = { onPageSize(size); pageSizeExpanded = false })
+                    }
                 }
             }
+            Text("$from-$to de $total", color = ClientsMuted)
         }
-        Text("$from-$to de $total", color = ClientsMuted)
     }
     val buttons: @Composable () -> Unit = {
         IconButton(onClick = { onPageChange(currentPage - 1) }, enabled = currentPage > 0) {
@@ -260,10 +266,10 @@ private fun ClientsPaginationBar(
         }
     }
     if (compact) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { info() }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-                Text("Pagina ${currentPage + 1} de $totalPages", color = ClientsMuted)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            info()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${currentPage + 1}/$totalPages", color = ClientsMuted)
                 buttons()
             }
         }

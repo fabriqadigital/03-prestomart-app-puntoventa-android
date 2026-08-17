@@ -1,3 +1,5 @@
+@file:Suppress("UnusedBoxWithConstraintsScope")
+
 package com.ecommerce.ecommerceposapp.presentation.profile
 
 import android.net.Uri
@@ -616,7 +618,7 @@ private fun SecurityForm(
             PasswordField(currentPassword, onCurrentPassword, "Contrasena actual", currentVisible) { currentVisible = !currentVisible }
             PasswordField(password, onPassword, "Nueva contrasena", passwordVisible) { passwordVisible = !passwordVisible }
             PasswordField(confirmation, onConfirmation, "Confirmar nueva contrasena", confirmationVisible) { confirmationVisible = !confirmationVisible }
-            Text("Al guardar, el backend recibira la senal para enviar la confirmacion al correo del cajero.", color = Muted, style = MaterialTheme.typography.bodySmall)
+            Text("Al guardar, se te enviará un correo de confirmación a tu correo electrónico.", color = Muted, style = MaterialTheme.typography.bodySmall)
             ActionRow(saving, "Guardar seguridad", onCancel, onSave)
         }
     }

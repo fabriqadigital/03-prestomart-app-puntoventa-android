@@ -20,7 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -67,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -288,9 +288,20 @@ internal fun createReceiptPdfForSharing(
     val customerLines = wrapText(customerName.ifBlank { "Cliente genérico" }, contentWidth, 8f)
     val wordsLines = wrapText(emitido.totalLetras, contentWidth, 7f)
     val itemLines = receipt.lines.map { line -> wrapText(line.displayName, contentWidth - 36f, 8f) }
-    val calculatedHeight = 205 + companyLines.size * 12 + addressLines.size * 9 + customerLines.size * 10 +
-        wordsLines.size * 9 + itemLines.sumOf { it.size * 10 + 17 } + if (resolvedQrBitmap != null) 100 else 15
-    val pageHeight = calculatedHeight.coerceAtLeast(360)
+
+    val headerHeight = 18 + companyLines.size * 12 + 11 + addressLines.size * 9 +
+        14 + 13 + 13 + 11 + customerLines.size * 10 +
+        (if (customerDocument.isNotBlank()) 10 else 0) +
+        (if (receipt.vendedorNombre.isNotBlank()) 10 else 0) +
+        11 + 10 + 11
+    val itemsHeight = receipt.lines.indices.sumOf { index ->
+        itemLines[index].size * 10 + if (
+            receipt.descuentoPorcentaje > 0.0 && receipt.lines[index].lineKey in receipt.descuentoLineKeys
+        ) 27 else 20
+    }
+    val footerHeight = 12 + (if (receipt.descuento > 0.0) 12 else 0) + 15 + 13 +
+        wordsLines.size * 9 + 11 + 11 + 12 + (if (resolvedQrBitmap != null) 92 else 0)
+    val pageHeight = (headerHeight + itemsHeight + footerHeight + 20).coerceAtLeast(360)
 
     val document = PdfDocument()
     val page = document.startPage(PdfDocument.PageInfo.Builder(pageWidth.toInt(), pageHeight, 1).create())
@@ -1045,8 +1056,8 @@ fun VistaPreviaReciboDialog(
                         )
                         Spacer(Modifier.height(8.dp))
                     }
-                    BoxWithConstraints(Modifier.fillMaxWidth()) {
-                        val compact = maxWidth < 420.dp
+                    Box(Modifier.fillMaxWidth()) {
+                        val compact = LocalConfiguration.current.screenWidthDp < 420
                         val whatsappButton: @Composable (Modifier) -> Unit = { modifier ->
                             OutlinedButton(
                                 onClick = { showWhatsappDestination = true },

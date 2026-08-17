@@ -1,3 +1,5 @@
+@file:Suppress("UnusedBoxWithConstraintsScope")
+
 package com.ecommerce.ecommerceposapp.presentation.sales
 
 import androidx.compose.foundation.background
@@ -736,7 +738,7 @@ fun SalesHistoryScreen(
                 modifier = Modifier.fillMaxWidth().background(SurfaceWhite).padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Registros por pagina:", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("Filas:", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Box {
                     TextButton(onClick = { pageSizeExpanded = true }) {
                         Text(pageSize.toString(), color = TextPrimary)

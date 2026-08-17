@@ -61,9 +61,16 @@ fun CategoriesCrudScreen(vm: CategoriesViewModel) {
     var creatingSubcategoryCategoryId by remember { mutableStateOf<Long?>(null) }
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
     val compact = LocalConfiguration.current.screenWidthDp < 600
+    val smallScreen = LocalConfiguration.current.screenWidthDp < 480
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        if (compact) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize().padding(if (smallScreen) 8.dp else 16.dp)) {
+        if (smallScreen) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Categorias", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedButton(onClick = { creatingSubcategoryCategoryId = state.allCategories.firstOrNull { it.active }?.id }, enabled = state.allCategories.any { it.active }, shape = RoundedCornerShape(8.dp)) { Text("+ Sub") }
+                Button(onClick = { creatingCategory = true }, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFD0505), contentColor = Color.White)) { Text("+ Nueva") }
+            }
+        } else if (compact) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Column {
                 Text("Categorias", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(

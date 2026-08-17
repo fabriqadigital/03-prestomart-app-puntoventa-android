@@ -460,21 +460,23 @@ private fun CashFlowTable(
             val paginationInfo: @Composable () -> Unit = {
                 val from = if (items.isEmpty()) 0 else currentPage * pageSize + 1
                 val to = minOf(total, (currentPage + 1) * pageSize)
-                Text(if (compact) "Filas:" else "Registros por pagina:", color = TextSecondary)
-                Box {
-                    TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = TextPrimary) }
-                    MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
-                        DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
-                            listOf(20, 50, 100).forEach { size ->
-                                DropdownMenuItem(
-                                    text = { Text(size.toString()) },
-                                    onClick = { onPageSize(size); pageSizeExpanded = false },
-                                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Filas:", color = TextSecondary)
+                    Box {
+                        TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = TextPrimary) }
+                        MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
+                            DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
+                                listOf(20, 50, 100).forEach { size ->
+                                    DropdownMenuItem(
+                                        text = { Text(size.toString()) },
+                                        onClick = { onPageSize(size); pageSizeExpanded = false },
+                                    )
+                                }
                             }
                         }
                     }
+                    Text("$from-$to de $total", color = TextSecondary)
                 }
-                Text("$from-$to de $total", color = TextSecondary)
             }
             val paginationButtons: @Composable () -> Unit = {
                 IconButton(onClick = { onPageChange(currentPage - 1) }, enabled = currentPage > 0) {
@@ -485,10 +487,10 @@ private fun CashFlowTable(
                 }
             }
             if (compact) {
-                Column(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 10.dp, vertical = 6.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { paginationInfo() }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-                        Text("Pagina ${currentPage + 1} de $totalPages", color = TextSecondary)
+                Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    paginationInfo()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${currentPage + 1}/$totalPages", color = TextSecondary)
                         paginationButtons()
                     }
                 }

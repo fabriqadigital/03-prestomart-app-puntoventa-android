@@ -237,6 +237,7 @@ fun ProductsCrudScreen(
         it.active && it.categoryId == selectedCategoryId
     }
     val compactScreen = LocalConfiguration.current.screenWidthDp < 600
+    val smallScreen = LocalConfiguration.current.screenWidthDp < 480
 
     if (creatingAdvanced || editing != null) {
         ProductAdvancedEditorView(
@@ -280,8 +281,13 @@ fun ProductsCrudScreen(
         return
     }
 
-    Column(Modifier.fillMaxSize().background(Color.White).padding(16.dp)) {
-        if (compactScreen) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(Modifier.fillMaxSize().background(Color.White).padding(if (smallScreen) 8.dp else 16.dp)) {
+        if (smallScreen) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Productos", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Button(onClick = { creatingAdvanced = true }, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFD0505), contentColor = Color.White)) {
+                Text("+ Nuevo")
+            }
+        } else if (compactScreen) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Column {
                 Text("Productos y servicios", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
@@ -499,21 +505,23 @@ private fun ProductsTable(
             val paginationInfo: @Composable () -> Unit = {
                 val from = if (products.isEmpty()) 0 else (currentPage - 1) * pageSize + 1
                 val to = minOf(total, currentPage * pageSize)
-                Text(if (compact) "Filas:" else "Registros por pagina:", color = Color(0xFF475569))
-                Box {
-                    TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = Color(0xFF111827)) }
-                    MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
-                        DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
-                            listOf(20, 50, 100).forEach { size ->
-                                DropdownMenuItem(
-                                    text = { Text(size.toString()) },
-                                    onClick = { onPageSize(size); pageSizeExpanded = false },
-                                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Filas:", color = Color(0xFF475569))
+                    Box {
+                        TextButton(onClick = { pageSizeExpanded = true }) { Text(pageSize.toString(), color = Color(0xFF111827)) }
+                        MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
+                            DropdownMenu(expanded = pageSizeExpanded, onDismissRequest = { pageSizeExpanded = false }) {
+                                listOf(20, 50, 100).forEach { size ->
+                                    DropdownMenuItem(
+                                        text = { Text(size.toString()) },
+                                        onClick = { onPageSize(size); pageSizeExpanded = false },
+                                    )
+                                }
                             }
                         }
                     }
+                    Text("$from-$to de $total", color = Color(0xFF475569))
                 }
-                Text("$from-$to de $total", color = Color(0xFF475569))
             }
             val paginationButtons: @Composable () -> Unit = {
                 IconButton(onClick = { onPage(currentPage - 1) }, enabled = currentPage > 1) {
@@ -524,10 +532,10 @@ private fun ProductsTable(
                 }
             }
             if (compact) {
-                Column(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 10.dp, vertical = 6.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { paginationInfo() }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-                        Text("Pagina $currentPage de $totalPages", color = Color(0xFF475569))
+                Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    paginationInfo()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("$currentPage/$totalPages", color = Color(0xFF475569))
                         paginationButtons()
                     }
                 }

@@ -276,21 +276,23 @@ private fun CategoryPagination(
     val from = if (itemCount == 0) 0 else page * pageSize + 1
     val to = minOf(itemCount, (page + 1) * pageSize)
     val pageSizeSelector: @Composable () -> Unit = {
-        Text(if (compact) "Filas:" else "Registros por pagina:", color = TableMuted)
-        Box {
-            TextButton(onClick = { sizeMenuExpanded = true }) { Text("$pageSize", color = TableText) }
-            MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
-                DropdownMenu(expanded = sizeMenuExpanded, onDismissRequest = { sizeMenuExpanded = false }) {
-                    listOf(20, 50, 100).forEach { size ->
-                        DropdownMenuItem(
-                            text = { Text(size.toString()) },
-                            onClick = { sizeMenuExpanded = false; onPageSize(size) },
-                        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Filas:", color = TableMuted)
+            Box {
+                TextButton(onClick = { sizeMenuExpanded = true }) { Text("$pageSize", color = TableText) }
+                MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(surface = Color.White, surfaceTint = Color.Transparent)) {
+                    DropdownMenu(expanded = sizeMenuExpanded, onDismissRequest = { sizeMenuExpanded = false }) {
+                        listOf(20, 50, 100).forEach { size ->
+                            DropdownMenuItem(
+                                text = { Text(size.toString()) },
+                                onClick = { sizeMenuExpanded = false; onPageSize(size) },
+                            )
+                        }
                     }
                 }
             }
+            Text("$from-$to de $itemCount", color = TableMuted)
         }
-        Text("$from-$to de $itemCount", color = TableMuted)
     }
     val navigation: @Composable () -> Unit = {
         IconButton(onClick = onPrevious, enabled = page > 0) {
@@ -301,10 +303,10 @@ private fun CategoryPagination(
         }
     }
     if (compact) {
-        Column(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 10.dp, vertical = 6.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { pageSizeSelector() }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-                Text("Pagina ${page + 1} de $totalPages", color = TableMuted)
+        Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            pageSizeSelector()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${page + 1}/$totalPages", color = TableMuted)
                 navigation()
             }
         }
