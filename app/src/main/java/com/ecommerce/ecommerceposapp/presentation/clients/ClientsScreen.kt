@@ -295,30 +295,39 @@ private fun ClientRow.displayName(): String {
     return fullName.ifBlank { businessName.cleanValue() }.ifBlank { alias.cleanValue() }.ifBlank { email.cleanValue() }.ifBlank { "Cliente sin nombre" }
 }
 
-private fun String.cleanValue(): String = trim().takeUnless { it.equals("null", true) } ?: ""
+internal fun String.cleanValue(): String = trim().takeUnless { it.equals("null", true) } ?: ""
 
-private fun filterDocumentInput(documentType: String, raw: String): String = when (documentType) {
+internal fun filterDocumentInput(documentType: String, raw: String): String = when (documentType) {
     "DNI" -> raw.filter(Char::isDigit).take(8)
     "RUC" -> raw.filter(Char::isDigit).take(11)
     "CE" -> raw.filter(Char::isLetterOrDigit).take(16)
     else -> raw.filter(Char::isLetterOrDigit)
 }
 
-private fun isDocumentValid(documentType: String, document: String): Boolean = when (documentType) {
+internal fun isDocumentValid(documentType: String, document: String): Boolean = when (documentType) {
     "DNI" -> document.length == 8
     "RUC" -> document.length == 11
     "CE" -> document.isNotBlank() && document.length <= 16
     else -> document.isNotBlank()
 }
 
-private fun documentHelperText(documentType: String): String = when (documentType) {
+internal fun documentHelperText(documentType: String): String = when (documentType) {
     "DNI" -> "Debe tener 8 digitos"
     "RUC" -> "Debe tener 11 digitos"
     "CE" -> "Letras y numeros, maximo 16 caracteres"
     else -> ""
 }
 
-private fun isEmailValid(email: String): Boolean = email.isBlank() || Patterns.EMAIL_ADDRESS.matcher(email).matches()
+internal fun isEmailValid(email: String): Boolean = email.isBlank() || Patterns.EMAIL_ADDRESS.matcher(email).matches()
+
+internal fun documentTypeOptionsFor(personType: String): List<String> =
+    if (personType == "Juridica") listOf("RUC") else listOf("DNI", "CE")
+
+internal fun documentTypeForPersonChange(personType: String, currentDocumentType: String): String = when {
+    personType == "Juridica" -> "RUC"
+    currentDocumentType == "RUC" -> "DNI"
+    else -> currentDocumentType
+}
 
 @Composable
 private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: (ClientRow) -> Unit) {
@@ -341,8 +350,12 @@ private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: 
     var webAccess by remember(initial) { mutableStateOf(initial.webAccess) }
 
     val fields: @Composable () -> Unit = {
-        SelectField("Tipo de persona", personType, listOf("Natural", "Juridica")) { personType = it }
-        SelectField("Tipo de documento", documentType, listOf("DNI", "RUC", "CE")) { documentType = it; document = "" }
+        SelectField("Tipo de persona", personType, listOf("Natural", "Juridica")) {
+            personType = it
+            documentType = documentTypeForPersonChange(it, documentType)
+            document = ""
+        }
+        SelectField("Tipo de documento", documentType, documentTypeOptionsFor(personType), enabled = personType != "Juridica") { documentType = it; document = "" }
         ClientTextField(
             "Nro. de documento", document,
             { document = filterDocumentInput(documentType, it) },
@@ -392,8 +405,12 @@ private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: 
                 if (compact) fields() else {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SelectField("Tipo de persona", personType, listOf("Natural", "Juridica")) { personType = it }
-                            SelectField("Tipo de documento", documentType, listOf("DNI", "RUC", "CE")) { documentType = it; document = "" }
+                            SelectField("Tipo de persona", personType, listOf("Natural", "Juridica")) {
+                                personType = it
+                                documentType = documentTypeForPersonChange(it, documentType)
+                                document = ""
+                            }
+                            SelectField("Tipo de documento", documentType, documentTypeOptionsFor(personType), enabled = personType != "Juridica") { documentType = it; document = "" }
                             ClientTextField(
                                 "Nro. de documento", document,
                                 { document = filterDocumentInput(documentType, it) },
@@ -448,7 +465,7 @@ private fun ClientEditDialog(initial: ClientRow, onDismiss: () -> Unit, onSave: 
 }
 
 @Composable
-private fun ClientTextField(
+internal fun ClientTextField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
@@ -469,23 +486,26 @@ private fun ClientTextField(
 }
 
 @Composable
-private fun SelectField(label: String, value: String, options: List<String>, onSelected: (String) -> Unit) {
+internal fun SelectField(label: String, value: String, options: List<String>, enabled: Boolean = true, onSelected: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = value,
             onValueChange = {},
             readOnly = true,
+            enabled = enabled,
             label = { Text(label) },
             trailingIcon = { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
-        Box(
-            Modifier
-                .matchParentSize()
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { expanded = true },
-        )
+        if (enabled) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { expanded = true },
+            )
+        }
         DropdownMenu(expanded, { expanded = false }, modifier = Modifier.widthIn(min = 220.dp)) {
             options.forEach { option -> DropdownMenuItem(text = { Text(option.ifBlank { "No especificado" }) }, onClick = { onSelected(option); expanded = false }) }
         }

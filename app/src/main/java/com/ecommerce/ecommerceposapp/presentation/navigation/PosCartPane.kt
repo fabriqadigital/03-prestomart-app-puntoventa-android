@@ -92,6 +92,7 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
+import com.ecommerce.ecommerceposapp.presentation.clients.QuickAddClientDialog
 import com.ecommerce.ecommerceposapp.presentation.pos.PosUiState
 import com.ecommerce.ecommerceposapp.presentation.pos.VistaPreviaReciboDialog
 import com.ecommerce.ecommerceposapp.ui.theme.AppBackground
@@ -429,7 +430,11 @@ internal fun CartPane(
     onQuantityChange: (CartLine, Double) -> Unit,
     onDeleteLine: (CartLine) -> Unit,
     onPay: suspend (SalePaymentInfo, Long, ReceiptCustomerInfo, TipoComprobanteEmision) -> Result<CompletedSaleReceipt>,
-    onNewClient: () -> Unit = {},
+    onSaveClient: (ClientRow) -> Unit = {},
+    clientsSaving: Boolean = false,
+    clientsSaveError: String? = null,
+    clientsSaveMessage: String? = null,
+    onClearClientMessages: () -> Unit = {},
     onBack: (() -> Unit)? = null,
     onApplyGlobalDiscount: (Double, Set<String>) -> Unit = { _, _ -> },
     onClearGlobalDiscount: () -> Unit = {},
@@ -439,6 +444,7 @@ internal fun CartPane(
     var showCobrarVenta      by remember { mutableStateOf(false) }
     var selectedCliente      by remember { mutableStateOf<ClientRow?>(null) }
     var showClientePicker    by remember { mutableStateOf(false) }
+    var showAddClientDialog  by remember { mutableStateOf(false) }
     var pendingReceipt       by remember { mutableStateOf<CompletedSaleReceipt?>(null) }
     var showPreview          by remember { mutableStateOf(false) }
     var comprobanteEmitido   by remember { mutableStateOf<ComprobanteEmitidoResult?>(null) }
@@ -452,6 +458,24 @@ internal fun CartPane(
     val compact = LocalConfiguration.current.screenWidthDp < 900
     val cartListState = rememberLazyListState()
     var previousCartQuantities by remember { mutableStateOf<Map<Long, Double>>(emptyMap()) }
+    var pendingNewClientDocument by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(clientsSaving) {
+        if (!clientsSaving && showAddClientDialog && clientsSaveError == null && clientsSaveMessage != null) {
+            showAddClientDialog = false
+            onClearClientMessages()
+        }
+    }
+
+    LaunchedEffect(clients, pendingNewClientDocument) {
+        val pendingDocument = pendingNewClientDocument
+        if (pendingDocument != null) {
+            clients.firstOrNull { it.document == pendingDocument }?.let {
+                selectedCliente = it
+                pendingNewClientDocument = null
+            }
+        }
+    }
 
     LaunchedEffect(state.cart) {
         val changedIndex = state.cart.indexOfFirst { line ->
@@ -570,7 +594,7 @@ internal fun CartPane(
                 }
             }
             IconButton(
-                onClick  = onNewClient,
+                onClick  = { showAddClientDialog = true },
                 modifier = Modifier
                     .size(if (compact) 40.dp else 46.dp)
                     .clip(RoundedCornerShape(Radius.md))
@@ -664,6 +688,15 @@ internal fun CartPane(
     }
 
     // ── Dialogs ──────────────────────────────────────────────────────────────
+    if (showAddClientDialog) {
+        QuickAddClientDialog(
+            isSaving     = clientsSaving,
+            errorMessage = clientsSaveError,
+            onDismiss    = { showAddClientDialog = false; onClearClientMessages() },
+            onSave       = { client -> pendingNewClientDocument = client.document; onSaveClient(client) },
+        )
+    }
+
     if (showCobrarVenta) {
         CobrarVentaDialog(
             total        = state.total,

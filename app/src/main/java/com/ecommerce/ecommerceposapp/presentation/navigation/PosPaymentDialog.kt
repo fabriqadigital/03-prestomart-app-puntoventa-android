@@ -41,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -254,14 +256,6 @@ internal fun CobrarVentaDialog(
                         },
                     )
                 }
-                if (hasCustomerData && !customerValid) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        if (receiptType == TipoComprobanteEmision.FACTURA) "Ingrese RUC de 11 digitos y razon social." else "Ingrese DNI de 8 digitos y nombre del cliente.",
-                        color = PaymentBrand,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
                 Spacer(Modifier.height(22.dp))
 
                 if (step == PaymentStep.Methods) {
@@ -405,6 +399,16 @@ private fun ReceiptCustomerSection(
     val activeClients = remember(clients) { clients.filter { it.active } }
     val isInvoice = receiptType == TipoComprobanteEmision.FACTURA
     val manualEntry = selectedClient == null && (customerName.isNotBlank() || customerDoc.isNotBlank())
+    val hasCustomerData = selectedClient != null || customerName.isNotBlank() || customerDoc.isNotBlank()
+    var docTouched by remember { mutableStateOf(false) }
+    var nameTouched by remember { mutableStateOf(false) }
+    val requiredDocLength = if (isInvoice) 11 else 8
+    LaunchedEffect(hasCustomerData) {
+        if (!hasCustomerData) {
+            docTouched = false
+            nameTouched = false
+        }
+    }
 
     Text("Cliente del comprobante", color = PaymentMuted, fontWeight = FontWeight.SemiBold)
     Spacer(Modifier.height(7.dp))
@@ -460,13 +464,21 @@ private fun ReceiptCustomerSection(
         )
         Spacer(Modifier.height(8.dp))
     }
+    val docError = docTouched && customerDoc.length != requiredDocLength
+    val nameError = nameTouched && customerName.isBlank()
     OutlinedTextField(
         value = customerDoc,
         onValueChange = onDocChange,
         label = { Text(if (isInvoice) "RUC" else "DNI") },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) docTouched = true },
         shape = RoundedCornerShape(8.dp),
         singleLine = true,
+        isError = docError,
+        supportingText = {
+            if (docError) {
+                Text(if (isInvoice) "Ingrese RUC de 11 digitos." else "Ingrese DNI de 8 digitos.")
+            }
+        },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
     )
     Spacer(Modifier.height(8.dp))
@@ -474,9 +486,15 @@ private fun ReceiptCustomerSection(
         value = customerName,
         onValueChange = onNameChange,
         label = { Text(if (isInvoice) "Razon social" else "Nombre del cliente") },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) nameTouched = true },
         shape = RoundedCornerShape(8.dp),
         singleLine = true,
+        isError = nameError,
+        supportingText = {
+            if (nameError) {
+                Text(if (isInvoice) "Ingrese la razon social." else "Ingrese el nombre del cliente.")
+            }
+        },
     )
 }
 
