@@ -1110,6 +1110,7 @@ private fun PosScreen(
                                         posVm::decrease,
                                         posVm::selectConversion,
                                         posVm::updateQuantity,
+                                        posVm::removeLine,
                                         onPay = posVm::pay,
                                         onNewClient = { selectedModule = "Clientes" },
                                         onBack = {
@@ -1180,6 +1181,7 @@ private fun PosScreen(
                                         posVm::decrease,
                                         posVm::selectConversion,
                                         posVm::updateQuantity,
+                                        posVm::removeLine,
                                         onPay = posVm::pay,
                                         onNewClient = { selectedModule = "Clientes" },
                                         onApplyGlobalDiscount = posVm::applyGlobalDiscount,
@@ -1220,6 +1222,7 @@ private fun PosScreen(
                                     posVm::decrease,
                                     posVm::selectConversion,
                                     posVm::updateQuantity,
+                                    posVm::removeLine,
                                     onPay = posVm::pay,
                                     onNewClient = { selectedModule = "Clientes" },
                                     onApplyGlobalDiscount = posVm::applyGlobalDiscount,

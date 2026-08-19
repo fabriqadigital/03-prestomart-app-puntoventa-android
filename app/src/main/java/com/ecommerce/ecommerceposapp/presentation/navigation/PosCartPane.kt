@@ -78,6 +78,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.ExperimentalMaterial3Api
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
@@ -111,7 +116,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
 private enum class PosPaymentMethod { Efectivo, Tarjeta, Yape, Plin }
 
 /** Formatea un porcentaje sin decimales innecesarios (20 → "20", 12.5 → "12.50"). */
@@ -179,6 +183,7 @@ private fun CartEmptyState(modifier: Modifier = Modifier) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  CART ITEM ROW  — fondo blanco, sin grises
 // ─────────────────────────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CartItemRow(
     line: CartLine,
@@ -187,7 +192,39 @@ private fun CartItemRow(
     onIncrease: () -> Unit,
     onDecrease: () -> Unit,
     onQuantityChange: (Double) -> Unit,
+    onDelete: () -> Unit,
 ) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else {
+                false
+            }
+        },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = true,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(Radius.md))
+                    .background(BrandRed)
+                    .padding(horizontal = Spacing.md),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = "Eliminar producto",
+                    tint = Color.White,
+                )
+            }
+        },
+    ) {
     var conversionMenuExpanded by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
@@ -247,16 +284,17 @@ private fun CartItemRow(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             IconButton(
-                onClick  = onDecrease,
+                onClick = onDecrease,
                 modifier = Modifier.size(32.dp),
             ) {
                 Icon(
                     Icons.Filled.Remove,
                     contentDescription = "Menos",
-                    tint     = BrandRed,
+                    tint = BrandRed,
                     modifier = Modifier.size(16.dp),
                 )
             }
+        }
             if (line.isBulk) {
                 var quantityInput by remember(line.productId, line.quantity) { mutableStateOf(line.quantityText) }
                 OutlinedTextField(
@@ -389,6 +427,7 @@ internal fun CartPane(
     onDecrease: (CartLine) -> Unit,
     onSelectConversion: (CartLine, ProductConversion?) -> Unit,
     onQuantityChange: (CartLine, Double) -> Unit,
+    onDeleteLine: (CartLine) -> Unit,
     onPay: suspend (SalePaymentInfo, Long, ReceiptCustomerInfo, TipoComprobanteEmision) -> Result<CompletedSaleReceipt>,
     onNewClient: () -> Unit = {},
     onBack: (() -> Unit)? = null,
@@ -558,7 +597,7 @@ internal fun CartPane(
                 verticalArrangement   = Arrangement.spacedBy(Spacing.sm),
                 contentPadding        = PaddingValues(vertical = Spacing.xs),
             ) {
-                items(state.cart) { line ->
+                items(state.cart, key = { it.lineKey }) { line ->
                     CartItemRow(
                         line       = line,
                         conversions = state.products.firstOrNull { it.id == line.productId }?.conversions.orEmpty(),
@@ -566,6 +605,7 @@ internal fun CartPane(
                         onIncrease = { onIncrease(line) },
                         onDecrease = { onDecrease(line) },
                         onQuantityChange = { onQuantityChange(line, it) },
+                        onDelete   = { onDeleteLine(line) },
                     )
                 }
             }
@@ -716,6 +756,7 @@ internal fun CartPane(
                 selectedCliente     = null
                 receiptCustomerInfo = ReceiptCustomerInfo()
                 message             = ""
+                onBack?.invoke()
             },
         )
     }

@@ -302,14 +302,6 @@ internal fun CobrarVentaDialog(
                             errorText = ""
                         },
                     )
-                    if (!isOnline && method != PaymentMethod.Cash) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            "Modo offline: confirma el pago en el POS, terminal o billetera antes de continuar. La app lo registrará pendiente de sincronización, pero no puede autorizarlo con el banco.",
-                            color = Color(0xFFC2410C),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
                     if (errorText.isNotBlank()) {
                         Spacer(Modifier.height(10.dp))
                         Text(errorText, color = PaymentBrand, style = MaterialTheme.typography.bodySmall)

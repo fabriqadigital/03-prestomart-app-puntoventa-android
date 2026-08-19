@@ -349,4 +349,16 @@ class PosViewModel(
         }
         return result
     }
+
+    fun removeLine(line: CartLine) {
+        _uiState.update { state ->
+            val next = state.cart.filterNot { it.lineKey == line.lineKey }
+            state.copy(
+                cart = next,
+                descuentoPorcentaje = if (next.isEmpty()) 0.0 else state.descuentoPorcentaje,
+                descuentoLineKeys = if (next.isEmpty()) emptySet() else state.descuentoLineKeys,
+                message = "Producto eliminado del carrito",
+            )
+        }
+    }
 }

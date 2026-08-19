@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material.icons.filled.Close
 import com.ecommerce.ecommerceposapp.R
 import com.ecommerce.ecommerceposapp.data.remote.api.ReceiptDeliveryApiDataSource
 import com.ecommerce.ecommerceposapp.data.sync.OfflineReceiptDeliveryQueue
@@ -267,8 +268,8 @@ internal fun SaleCompletedDialog(
                         .verticalScroll(rememberScrollState())
                         .padding(26.dp),
                 ) {
-                Text("${receiptTypeLabel(type)} guardada", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(24.dp))
+                    Text("${receiptTypeLabel(type)} guardada", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(24.dp))
                 Surface(
                     modifier = Modifier.size(64.dp).align(Alignment.CenterHorizontally),
                     shape = CircleShape,
