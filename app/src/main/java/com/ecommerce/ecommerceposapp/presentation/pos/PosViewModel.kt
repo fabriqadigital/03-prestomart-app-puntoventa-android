@@ -272,7 +272,7 @@ class PosViewModel(
         }
         _uiState.update {
             it.copy(
-                cart = current,
+                cart = applyVolumePricing(current, product),
                 message = "Producto agregado al carrito",
             )
         }
@@ -292,12 +292,11 @@ class PosViewModel(
             } else if (conversionStock != null && nextQuantity > conversionStock + 0.000001) {
                 it.copy(message = "Stock insuficiente para ${line.conversionName}.")
             } else {
-                it.copy(
-                    cart = it.cart.map { row ->
-                        if (row.lineKey == line.lineKey) row.copy(quantity = nextQuantity) else row
-                    },
-                    message = "${line.productName}: ${formatStock(nextQuantity, line.isBulk)}",
+                val recalculated = applyVolumePricing(
+                    it.cart.map { row -> if (row.lineKey == line.lineKey) row.copy(quantity = nextQuantity) else row },
+                    product ?: return@update it,
                 )
+                it.copy(cart = recalculated, message = "${line.productName}: ${formatStock(nextQuantity, line.isBulk)}")
             }
         }
         saveCartDraft()
@@ -311,10 +310,12 @@ class PosViewModel(
                 val quantity = normalizeQuantity(row.quantity - step, row.isBulk)
                 if (quantity <= 0) null else row.copy(quantity = quantity)
             }
+            val product = it.products.firstOrNull { p -> p.id == line.productId }
+            val recalculated = product?.let { prod -> applyVolumePricing(next, prod) } ?: next
             it.copy(
-                cart = next,
-                descuentoPorcentaje = if (next.isEmpty()) 0.0 else it.descuentoPorcentaje,
-                descuentoLineKeys = if (next.isEmpty()) emptySet() else it.descuentoLineKeys,
+                cart = recalculated,
+                descuentoPorcentaje = if (recalculated.isEmpty()) 0.0 else it.descuentoPorcentaje,
+                descuentoLineKeys = if (recalculated.isEmpty()) emptySet() else it.descuentoLineKeys,
             )
         }
         saveCartDraft()
@@ -398,12 +399,10 @@ class PosViewModel(
                 conversionStock != null && normalized > conversionStock + 0.000001 -> state.copy(
                     message = "Stock insuficiente para ${line.conversionName}.",
                 )
-                else -> state.copy(
-                    cart = state.cart.map { row ->
-                        if (row.lineKey == line.lineKey) row.copy(quantity = normalized) else row
-                    },
-                    message = null,
-                )
+                else -> {
+                    val updatedCart = state.cart.map { row -> if (row.lineKey == line.lineKey) row.copy(quantity = normalized) else row }
+                    state.copy(cart = applyVolumePricing(updatedCart, product), message = null)
+                }
             }
         }
         saveCartDraft()
@@ -415,6 +414,18 @@ class PosViewModel(
     private fun formatStock(quantity: Double, isBulk: Boolean): String =
         if (isBulk) "${java.math.BigDecimal.valueOf(quantity).stripTrailingZeros().toPlainString()} kg"
         else "${quantity.roundToInt()} unidad(es)"
+
+    private fun applyVolumePricing(cart: List<CartLine>, product: ProductItem): List<CartLine> {
+        if (!product.hasVolumePricing) return cart
+        val totalQty = cart.filter { it.productId == product.id }.sumOf { it.quantity }
+        val applies = totalQty + 1e-9 >= product.offerMaxQuantity
+        val targetPrice = if (applies) product.offerMaxQuantityPrice else product.price
+        return cart.map { line ->
+            if (line.productId != product.id || line.conversionId != null) line
+            else if (line.unitPrice == targetPrice) line
+            else line.copy(unitPrice = targetPrice)
+        }
+    }
 
     suspend fun pay(
         payment: SalePaymentInfo,

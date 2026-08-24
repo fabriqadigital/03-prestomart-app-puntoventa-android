@@ -38,6 +38,9 @@ data class ProductItem(
     val featuredInPos: Boolean = false,
     val active: Boolean = true,
     val conversions: List<ProductConversion> = emptyList(),
+    val offerMaxQuantity: Double = 0.0,
+    val offerMaxQuantityPrice: Double = 0.0,
 ) {
     val isBulk: Boolean get() = saleType.equals("A_GRANEL", ignoreCase = true)
+    val hasVolumePricing: Boolean get() = offerMaxQuantity > 0.0 && offerMaxQuantityPrice > 0.0
 }

@@ -226,6 +226,8 @@ class PosRepositoryImpl(private val context: Context) :
                     saleType = p.saleType.ifBlank { "UNIDAD" },
                     featuredInPos = p.id.toString() in featuredIds,
                     active = p.active,
+                    offerMaxQuantity = p.offerMaxQuantity,
+                    offerMaxQuantityPrice = p.offerMaxQuantityPrice,
                     conversions = runCatching {
                         val array = JSONArray(p.conversionsJson)
                         (0 until array.length()).mapNotNull { index ->
