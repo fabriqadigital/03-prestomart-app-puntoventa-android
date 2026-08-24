@@ -1,5 +1,7 @@
 package com.ecommerce.ecommerceposapp.presentation.categories
 
+import com.ecommerce.ecommerceposapp.presentation.common.AppPullRefreshIndicator
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +32,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -52,6 +57,7 @@ import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
 import com.ecommerce.ecommerceposapp.presentation.common.ToolbarAddIconButton
 import com.ecommerce.ecommerceposapp.presentation.categories.CategoriesViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoriesCrudScreen(vm: CategoriesViewModel) {
     val state by vm.uiState.collectAsState()
@@ -62,7 +68,24 @@ fun CategoriesCrudScreen(vm: CategoriesViewModel) {
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
     val compact = LocalConfiguration.current.screenWidthDp < 600
     val smallScreen = LocalConfiguration.current.screenWidthDp < 480
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullRefreshState = rememberPullToRefreshState()
 
+    
+    LaunchedEffect(state.isLoading) {
+        if (!state.isLoading) isRefreshing = false
+    }
+
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = {
+            isRefreshing = true
+            vm.loadAll()
+        },
+        state = pullRefreshState,
+        modifier = Modifier.fillMaxSize(),
+        indicator = { AppPullRefreshIndicator(state = pullRefreshState, isRefreshing = isRefreshing) },
+    ) {
     Column(Modifier.fillMaxSize().padding(if (smallScreen) 8.dp else 16.dp)) {
         if (smallScreen) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Categorias", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -140,6 +163,7 @@ fun CategoriesCrudScreen(vm: CategoriesViewModel) {
             },
         )
     }
+    } // end PullToRefreshBox
 
     if (creatingCategory) {
         CategoryEditDialog(CategoryAdminRow(0, "", true), { creatingCategory = false; vm.clearMessages() }) {

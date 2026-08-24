@@ -205,34 +205,121 @@ private fun FloatingRightNotice(data: SnackbarData) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  PANTALLA DE CARGA INICIAL (SPLASH)
+// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun AppLoadingScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(SurfaceWhite),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(88.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Brand),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.ShoppingCart,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(48.dp),
+                )
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "PrestoMart POS",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = TextPrimary,
+                )
+                Text(
+                    "Cargando tu sesión…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
+            }
+            CircularProgressIndicator(
+                color = Brand,
+                modifier = Modifier.size(36.dp),
+                strokeWidth = 3.dp,
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PANTALLA DE CARGA DEL POS (catálogo + caja)
+// ─────────────────────────────────────────────────────────────────────────────
+@Composable
+private fun PosLoadingScreen() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(AppBg),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            CircularProgressIndicator(color = Brand, modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Preparando el punto de venta",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                )
+                Text(
+                    "Cargando catálogo y configuración de caja…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun PosAppRoot(navController: NavHostController = rememberNavController()) {
     var currentUser by remember { mutableStateOf<UserSession?>(null) }
     val auth: AuthRepository = koinInject()
     val syncRepo: SyncRepository = koinInject()
 
-    var bootstrapped by remember { mutableStateOf(false) }
+  
+    var startDestination by remember { mutableStateOf<String?>(null) }
+
+   
     LaunchedEffect(Unit) {
-        if (bootstrapped) return@LaunchedEffect
-        bootstrapped = true
-        val saved = auth.getSession() ?: return@LaunchedEffect
-        // Para sesiones online se requiere un token guardado; sin él la sesión está corrupta
-        // y debemos ir al Login en lugar de aterrizar en el POS sin autenticación.
-        // Las sesiones offline (offlineSession = true) no usan token JWT, así que las dejamos pasar.
-        if (!saved.offlineSession && !auth.hasStoredToken()) return@LaunchedEffect
-        currentUser = saved
-        if (syncRepo.hasInitialSync(saved.id)) {
-            navController.navigate(POS) {
-                popUpTo(LOGIN) { inclusive = true }
+        val saved = auth.getSession()
+        val target = if (saved != null && (saved.offlineSession || auth.hasStoredToken())) {
+            currentUser = saved
+            val synced = withContext(Dispatchers.IO) {
+                syncRepo.hasInitialSync(saved.id)
             }
+            if (synced) POS else SYNC
         } else {
-            navController.navigate(SYNC) {
-                popUpTo(LOGIN) { inclusive = true }
-            }
+            LOGIN
         }
+        startDestination = target
     }
 
-    NavHost(navController = navController, startDestination = LOGIN) {
+   
+    if (startDestination == null) {
+        Box(Modifier.fillMaxSize().background(Color.White))
+        return
+    }
+
+    NavHost(navController = navController, startDestination = startDestination!!) {
         composable(LOGIN) {
             val vm: LoginViewModel = koinViewModel()
             val state by vm.uiState.collectAsState()
@@ -304,7 +391,14 @@ fun PosAppRoot(navController: NavHostController = rememberNavController()) {
             val usersVm: UsersViewModel = koinViewModel()
             val posVm: PosViewModel = koinViewModel()
             val cashModuleVm: CashModuleViewModel = koinViewModel()
-            LaunchedEffect(Unit) { posVm.load() }
+            val posState by posVm.uiState.collectAsState()
+            // Carga local inmediata: catálogo desde Realm + caja desde caché (< 200 ms).
+            // El splash solo cubre ese tiempo mínimo — sin red, sin demoras.
+            LaunchedEffect(Unit) { posVm.loadImmediate(session.cashierId) }
+            if (posState.initialLoading) {
+                PosLoadingScreen()
+                return@composable
+            }
             PosScreen(
                 session = session,
                 categoriesVm = categoriesVm,
@@ -375,22 +469,7 @@ private fun ModernLoginScreen(
                     )
                     Spacer(Modifier.height(if (compactHeight) 14.dp else 22.dp))
                 }
-                Text("Modo de conectividad", fontWeight = FontWeight.Bold, color = TextPrimary)
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                    Icon(Icons.Filled.Cloud, null, tint = if (!state.offlineMode) Color(0xFF16A34A) else TextSecondary, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(6.dp)); Text("Online", color = if (!state.offlineMode) Color(0xFF16A34A) else TextSecondary)
-                    androidx.compose.material3.Switch(
-                        checked = state.offlineMode,
-                        onCheckedChange = onOfflineModeChange,
-                        enabled = !state.busy,
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                    )
-                    Icon(Icons.Filled.CloudOff, null, tint = if (state.offlineMode) Brand else TextSecondary, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(6.dp)); Text("Offline", color = if (state.offlineMode) Brand else TextSecondary)
-                }
-                if (!state.offlineAvailable) Text("El modo offline se habilita después del primer acceso online.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                Spacer(Modifier.height(if (compactHeight) 18.dp else 28.dp))
+                Spacer(Modifier.height(if (compactHeight) 4.dp else 8.dp))
                 Text("PrestoMart POS", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold, color = Color(0xFF10213F))
                 Text(if (state.offlineMode) "Accede sin conexión con tus credenciales guardadas." else "Bienvenido. Ingresa con tu cuenta de cajero.", color = TextSecondary)
                 Spacer(Modifier.height(if (compactHeight) 18.dp else 28.dp))
@@ -957,6 +1036,7 @@ private fun PosScreen(
     }
 
     LaunchedEffect(session.cashierId) {
+        
         posVm.loadCashSession(session.cashierId)
     }
 
@@ -1017,34 +1097,33 @@ private fun PosScreen(
         if (selectedModule != "Punto de venta") mobileCartOpen = false
         when (selectedModule) {
             "Punto de venta", "Historial de ventas" -> {
-                posVm.refreshCatalog()
+                posVm.refreshCatalog(isOnline)
                 clientsVm.load()
             }
             "Productos" -> {
-                posVm.refreshCatalog()
+                posVm.refreshCatalog(isOnline)
                 productsVm.load()
             }
             "Categorías" -> {
-                posVm.refreshCatalog()
+                posVm.refreshCatalog(isOnline)
                 categoriesVm.loadAll()
             }
         }
     }
 
-    // Mantiene visible la información reciente del servidor sin obligar al
-    // cajero a navegar. Cinco segundos evita saturar la red del Zebra.
+    
     LaunchedEffect(isOnline, selectedModule) {
         while (isActive && isOnline) {
             delay(5_000)
             when (selectedModule) {
-                "Punto de venta" -> posVm.refreshCatalog()
+                "Punto de venta" -> posVm.refreshCatalog(isOnline = true)
                 "Productos" -> {
                     productsVm.load()
-                    posVm.refreshCatalog()
+                    posVm.refreshCatalog(isOnline = true)
                 }
                 "Categorías" -> {
                     categoriesVm.loadAll()
-                    posVm.refreshCatalog()
+                    posVm.refreshCatalog(isOnline = true)
                 }
                 "Clientes" -> clientsVm.load()
                 "Proveedores" -> suppliersVm.load()
@@ -1144,6 +1223,7 @@ private fun PosScreen(
                                             showQuickProductDialog = true
                                         },
                                         onScanMessage = { message -> scope.launch { snackbarHostState.showSnackbar(message) } },
+                                        onRefresh = { posVm.refreshCatalog(isOnline) },
                                     )
                                     MobileCartSummaryBar(
                                         itemCount = state.cart.size,
@@ -1171,6 +1251,7 @@ private fun PosScreen(
                                     onScanMessage = { message ->
                                         scope.launch { snackbarHostState.showSnackbar(message) }
                                     },
+                                    onRefresh = { posVm.refreshCatalog(isOnline) },
                                 )
                                 if (showDiscountScreen) {
                                     renderDiscountScreen(Modifier.width(360.dp))
@@ -1217,6 +1298,7 @@ private fun PosScreen(
                                     onScanMessage = { message ->
                                         scope.launch { snackbarHostState.showSnackbar(message) }
                                     },
+                                    onRefresh = { posVm.refreshCatalog(isOnline) },
                                 )
                                 CartPane(
                                     Modifier
@@ -1523,7 +1605,7 @@ private fun PosScreen(
                 showQuickProductDialog = false
                 productsVm.save(it) {
                     scope.launch {
-                        posVm.refreshCatalog()
+                        posVm.refreshCatalog(isOnline)
                     }
                 }
             },

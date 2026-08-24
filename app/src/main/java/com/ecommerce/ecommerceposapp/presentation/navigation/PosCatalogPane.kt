@@ -1,5 +1,7 @@
 package com.ecommerce.ecommerceposapp.presentation.navigation
 
+import com.ecommerce.ecommerceposapp.presentation.common.AppPullRefreshIndicator
+
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,11 +48,14 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -105,13 +111,12 @@ import com.ecommerce.ecommerceposapp.ui.theme.TextPrimary
 import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 import com.ecommerce.ecommerceposapp.ui.theme.TextTertiary
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.ecommerce.ecommerceposapp.util.PhysicalScannerInput
 import com.ecommerce.ecommerceposapp.util.rememberPhysicalScannerConnected
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  ONBOARDING STEPS  (sin cambios estructurales, solo ajuste de colores)
-// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 internal fun PosOnboardingSteps(
     hasProducts: Boolean,
@@ -222,9 +227,8 @@ private fun findExactProductMatch(products: List<ProductItem>, scannedCode: Stri
     return match
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  CATALOG PANE
-// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CatalogPane(
     modifier: Modifier,
@@ -237,6 +241,7 @@ internal fun CatalogPane(
     onToggleFeatured: (ProductItem) -> Unit,
     onNewProduct: () -> Unit,
     onScanMessage: (String) -> Unit,
+    onRefresh: suspend () -> Unit = {},
 ) {
     var scanMode by rememberSaveable { mutableStateOf(false) }
     var lastProcessedScan by remember { mutableStateOf<String?>(null) }
@@ -377,13 +382,19 @@ internal fun CatalogPane(
         else -> 150.dp
     }
 
+  
+    var productLimit by rememberSaveable { mutableStateOf<Int?>(50) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullRefreshState = rememberPullToRefreshState()
+
+    val displayedProducts = if (productLimit == null) products else products.take(productLimit!!)
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(AppBackground)
             .padding(Spacing.md),
     ) {
-        // ── Barra de búsqueda + botones ──────────────────────────────────────
         val searchField: @Composable (Modifier) -> Unit = { fieldMod ->
             OutlinedTextField(
                 value       = if (scanMode) scanBuffer else state.search,
@@ -504,7 +515,6 @@ internal fun CatalogPane(
 
         Spacer(Modifier.height(Spacing.sm))
 
-        // ── Chips de categoría ───────────────────────────────────────────────
         LazyRow(
             contentPadding     = PaddingValues(horizontal = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -526,7 +536,6 @@ internal fun CatalogPane(
             }
         }
 
-        // ── Chips de subcategoría ────────────────────────────────────────────
         if (visibleSubcategories.isNotEmpty()) {
             Spacer(Modifier.height(Spacing.sm))
             LazyRow(
@@ -551,9 +560,53 @@ internal fun CatalogPane(
             }
         }
 
-        Spacer(Modifier.height(Spacing.md))
+        Spacer(Modifier.height(Spacing.sm))
 
-        // ── Grid de productos ────────────────────────────────────────────────
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+            verticalAlignment     = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Mostrar:",
+                style      = MaterialTheme.typography.labelSmall,
+                color      = TextSecondary,
+                fontWeight = FontWeight.Medium,
+            )
+            listOf(50 to "50", 100 to "100", 200 to "200", null to "Todos").forEach { (limit, label) ->
+                val selected = productLimit == limit
+                Surface(
+                    onClick  = { productLimit = limit },
+                    shape    = RoundedCornerShape(Radius.pill),
+                    color    = if (selected) BrandRed else SurfaceWhite,
+                    border   = BorderStroke(1.dp, if (selected) BrandRed else BorderDefault),
+                    modifier = Modifier.height(28.dp),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.padding(horizontal = 10.dp),
+                    ) {
+                        Text(
+                            label,
+                            style      = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            color      = if (selected) Color.White else TextSecondary,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            if (products.size > (productLimit ?: Int.MAX_VALUE)) {
+                Text(
+                    "${products.size} total",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextTertiary,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(Spacing.sm))
+
         if (products.isEmpty()) {
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -571,19 +624,36 @@ internal fun CatalogPane(
                 )
             }
         } else {
-            LazyVerticalGrid(
-                columns  = GridCells.Adaptive(minSize = gridMinWidth),
+            val refreshScope = rememberCoroutineScope()
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh    = {
+                    if (!isRefreshing) {
+                        isRefreshing = true
+                        refreshScope.launch {
+                            onRefresh()
+                            isRefreshing = false
+                        }
+                    }
+                },
+                state    = pullRefreshState,
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                contentPadding     = PaddingValues(Spacing.xs),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                verticalArrangement   = Arrangement.spacedBy(Spacing.md),
+                indicator = { AppPullRefreshIndicator(state = pullRefreshState, isRefreshing = isRefreshing) },
             ) {
-                items(products, key = { it.id }) { product ->
-                    ProductSaleCard(
-                        product          = product,
-                        onAddToCart      = ::requestProductAdd,
-                        onToggleFeatured = onToggleFeatured,
-                    )
+                LazyVerticalGrid(
+                    columns  = GridCells.Adaptive(minSize = gridMinWidth),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding        = PaddingValues(Spacing.xs),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                    verticalArrangement   = Arrangement.spacedBy(Spacing.md),
+                ) {
+                    items(displayedProducts, key = { it.id }) { product ->
+                        ProductSaleCard(
+                            product          = product,
+                            onAddToCart      = ::requestProductAdd,
+                            onToggleFeatured = onToggleFeatured,
+                        )
+                    }
                 }
             }
         }
@@ -600,14 +670,6 @@ internal fun CatalogPane(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  PRODUCT SALE CARD  — rediseñada
-//  • Sin fondo coloreado detrás de la estrella
-//  • Bordes redondeados, sombra ligera
-//  • Espaciado interno consistente
-//  • Precio en rojo de marca, nombre centrado
-//  • Badge "Sin stock" en rojo como ribbon
-// ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun ProductSaleCard(
     product: ProductItem,
@@ -636,7 +698,6 @@ private fun ProductSaleCard(
                 .padding(Spacing.sm),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // ── Imagen + acciones superpuestas ───────────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -673,7 +734,7 @@ private fun ProductSaleCard(
                     }
                 }
 
-                // ── Estrella — SIN fondo coloreado ───────────────────────────
+        
                 if (!outOfStock) {
                     val favoriteShape = RoundedCornerShape(bottomStart = Radius.md)
                     IconButton(
@@ -697,7 +758,6 @@ private fun ProductSaleCard(
                     }
                 }
 
-                // ── Badge "Sin stock" ─────────────────────────────────────────
                 if (outOfStock) {
                     Box(
                         modifier = Modifier
@@ -719,7 +779,6 @@ private fun ProductSaleCard(
 
             Spacer(Modifier.height(Spacing.sm))
 
-            // ── Inventario pill ──────────────────────────────────────────────
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(Radius.pill))
@@ -736,7 +795,6 @@ private fun ProductSaleCard(
 
             Spacer(Modifier.height(Spacing.xs))
 
-            // ── Nombre ───────────────────────────────────────────────────────
             Text(
                 text       = product.name,
                 style      = MaterialTheme.typography.bodySmall,
@@ -751,7 +809,6 @@ private fun ProductSaleCard(
 
             Spacer(Modifier.height(Spacing.xs))
 
-            // ── Precio ───────────────────────────────────────────────────────
             Text(
                 text       = "S/ ${"%.2f".format(product.price)}",
                 style      = MaterialTheme.typography.titleSmall,

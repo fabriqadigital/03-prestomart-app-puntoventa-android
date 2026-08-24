@@ -2,6 +2,8 @@
 
 package com.ecommerce.ecommerceposapp.presentation.sales
 
+import com.ecommerce.ecommerceposapp.presentation.common.AppPullRefreshIndicator
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +35,9 @@ import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -103,9 +109,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// ─────────────────────────────────────────────────────────────────────────────
 //  HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
+
 private fun formatVentaFecha(millis: Long): String =
     SimpleDateFormat("dd/MM/yyyy  HH:mm", Locale.US).format(Date(millis))
 
@@ -126,9 +131,9 @@ private fun mapTipoForReissue(tipoComprobante: String): TipoComprobanteEmision =
     else            -> TipoComprobanteEmision.SOLO_TICKET
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 //  SALE HISTORY CARD
-// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 private fun SaleHistoryCard(
     row: SalesHistoryRow,
@@ -145,13 +150,13 @@ private fun SaleHistoryCard(
             .clip(RoundedCornerShape(Radius.md))
             .background(SurfaceWhite),
     ) {
-        // Acento lateral de color
+       
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         ) {
-            // ── Fila 1: comprobante + estado + importe ─────────────────────
+         
             Row(
                 modifier              = Modifier.fillMaxWidth(),
                 verticalAlignment     = Alignment.Top,
@@ -262,7 +267,7 @@ private fun InfoChip(label: String, value: String, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun SaleStatusBadge(isAnulada: Boolean, cancellationStatus: String = "") {
+private fun SaleStatusBadge(isAnulada: Boolean, cancellationStatus: String = "", isPendingSync: Boolean = false) {
     val pending = !isAnulada && cancellationStatus.equals("Pendiente", ignoreCase = true)
     Box(
         modifier = Modifier
@@ -354,7 +359,27 @@ private fun SaleHistoryTableRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1.65f)) {
-            Text(row.numeroComprobante.ifBlank { "Sin comprobante" }, fontWeight = FontWeight.SemiBold, color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    row.numeroComprobante.ifBlank { "Sin comprobante" },
+                    fontWeight = FontWeight.SemiBold,
+                    color = rowTextColor,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = rowDecoration,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (row.ventaId < 0L) {
+                    Spacer(Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(Color(0xFFF97316)),
+                    )
+                }
+            }
             Text(mapPago(row.tipoPago), color = if (isAnulada) GrayMedium else TextTertiary, style = MaterialTheme.typography.labelSmall, textDecoration = rowDecoration)
         }
         Text(formatVentaFecha(row.fechaMillis), Modifier.weight(1.05f), color = if (isAnulada) GrayMedium else TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, textDecoration = rowDecoration)
@@ -384,7 +409,28 @@ private fun SaleHistoryCompactRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1.45f)) {
-            Text(row.numeroComprobante.ifBlank { "Sin comprobante" }, fontWeight = FontWeight.SemiBold, color = if (isAnulada) GrayMedium else TextPrimary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
+            
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    row.numeroComprobante.ifBlank { "Sin comprobante" },
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isAnulada) GrayMedium else TextPrimary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = rowDecoration,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (row.ventaId < 0L) {
+                    Spacer(Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(Color(0xFFF97316)),
+                    )
+                }
+            }
             Text(formatVentaFechaShort(row.fechaMillis), color = if (isAnulada) GrayMedium else TextTertiary, style = MaterialTheme.typography.labelSmall, textDecoration = rowDecoration)
             Text(row.clienteNombre.ifBlank { "Cliente genérico" }, color = if (isAnulada) GrayMedium else TextSecondary, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
         }
@@ -398,9 +444,9 @@ private fun SaleHistoryCompactRow(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 //  CANCEL DIALOG
-// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 private fun CancelSaleDialog(
     row: SalesHistoryRow,
@@ -490,9 +536,24 @@ private fun CancelSaleDialog(
     )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
+//  SYNC PENDING BADGE — punto naranja discreto para ventas no sincronizadas
+
+@Composable
+private fun SyncPendingBadge(modifier: Modifier = Modifier) {
+    // Punto naranja de 7dp — mínimo visual, sin texto, sin fondo extra
+    Box(
+        modifier = modifier
+            .size(8.dp)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(Color(0xFFF97316)),
+    )
+}
+
+
 //  SALES HISTORY SCREEN
-// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SalesHistoryScreen(
     catalog: CatalogRepository,
@@ -512,6 +573,8 @@ fun SalesHistoryScreen(
     var pageSizeExpanded by remember { mutableStateOf(false) }
     var currentPage   by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+    var isRefreshing  by remember { mutableStateOf(false) }
+    val pullRefreshState = rememberPullToRefreshState()
 
     fun reprint(row: SalesHistoryRow) {
         scope.launch {
@@ -560,7 +623,6 @@ fun SalesHistoryScreen(
             if (showLoading) loading = false
         }
     }
-
     val totalPages = maxOf(1, (totalRows + pageSize - 1) / pageSize)
     val pageRows = rows
 
@@ -576,13 +638,32 @@ fun SalesHistoryScreen(
         }
     }
 
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh    = {
+            isRefreshing = true
+            scope.launch {
+                error = null
+                runCatching { withContext(Dispatchers.IO) { catalog.listSalesHistory(currentPage + 1, pageSize, search.trim()) } }
+                    .onSuccess { result ->
+                        totalRows = result.total
+                        val lastPage = ((result.total - 1).coerceAtLeast(0) / pageSize)
+                        if (result.rows.isEmpty() && currentPage > lastPage) currentPage = lastPage else rows = result.rows
+                    }
+                    .onFailure { error = it.message ?: "No se pudo cargar el historial." }
+                isRefreshing = false
+            }
+        },
+        state        = pullRefreshState,
+        modifier     = Modifier.fillMaxSize(),
+        indicator    = { AppPullRefreshIndicator(state = pullRefreshState, isRefreshing = isRefreshing) },
+    ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(AppBackground)
             .padding(horizontal = Spacing.lg, vertical = Spacing.md),
-    ) {
-        // ── Header ───────────────────────────────────────────────────────────
+    ) {        // ── Header 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
@@ -611,7 +692,7 @@ fun SalesHistoryScreen(
 
         Spacer(Modifier.height(Spacing.lg))
 
-        // ── Barra de búsqueda ────────────────────────────────────────────────
+        // ── Barra de búsqueda
         OutlinedTextField(
             value         = search,
             onValueChange = { search = it },
@@ -633,7 +714,7 @@ fun SalesHistoryScreen(
 
         Spacer(Modifier.height(Spacing.sm))
 
-        // ── Loader / error ───────────────────────────────────────────────────
+        // ── Loader / error
         if (loading) {
             PosLinearLoader(modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(Spacing.sm))
@@ -651,7 +732,7 @@ fun SalesHistoryScreen(
             Spacer(Modifier.height(Spacing.sm))
         }
 
-        // ── Contador de resultados ───────────────────────────────────────────
+        // ── Contador de resultados
         if (!loading && rows.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -680,7 +761,7 @@ fun SalesHistoryScreen(
             Spacer(Modifier.height(Spacing.sm))
         }
 
-        // ── Lista ────────────────────────────────────────────────────────────
+        // ── Lista 
         if (!loading && rows.isEmpty() && error == null) {
             Box(
                 modifier         = Modifier.weight(1f).fillMaxWidth(),
@@ -766,8 +847,9 @@ fun SalesHistoryScreen(
             }
         }
     }
+    } // end PullToRefreshBox
 
-    // ── Preview dialog ───────────────────────────────────────────────────────
+    // ── Preview dialog 
     previewReceipt?.let { receipt ->
         previewComp?.let { comp ->
         val cdisp   = if (receipt.clienteNombre.isNotBlank() || receipt.clienteDocumento.isNotBlank()) {
@@ -787,7 +869,7 @@ fun SalesHistoryScreen(
         }
     }
 
-    // ── Cancel dialog ────────────────────────────────────────────────────────
+    // ── Cancel dialog 
     saleToWithdraw?.let { row ->
         AlertDialog(
             onDismissRequest = { if (!cancelling) saleToWithdraw = null },

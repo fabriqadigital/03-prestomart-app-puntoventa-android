@@ -2,6 +2,10 @@
 
 package com.ecommerce.ecommerceposapp.presentation.suppliers
 
+import com.ecommerce.ecommerceposapp.presentation.common.AppPullRefreshIndicator
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -53,6 +57,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -89,6 +95,7 @@ private fun isValidEmail(value: String): Boolean {
     val regex = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
     return regex.matches(value.trim())
 }
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SuppliersCrudScreen(vm: SuppliersViewModel) {
     val state by vm.uiState.collectAsState()
@@ -98,11 +105,19 @@ fun SuppliersCrudScreen(vm: SuppliersViewModel) {
     var pendingConfirm by remember { mutableStateOf<PendingConfirm?>(null) }
     var search by remember { mutableStateOf("") }
     var selectedEstado by remember { mutableStateOf<String?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullRefreshState = rememberPullToRefreshState()
 
     LaunchedEffect(search, selectedEstado) {
         delay(350)
         vm.load(page = 1, perPage = state.perPage, search = search, status = selectedEstado)
     }
+
+   
+    LaunchedEffect(state.isLoading) {
+        if (!state.isLoading) isRefreshing = false
+    }
+
     val compactScreen = LocalConfiguration.current.screenWidthDp < 600
     val smallScreen = LocalConfiguration.current.screenWidthDp < 480
 
@@ -123,6 +138,16 @@ fun SuppliersCrudScreen(vm: SuppliersViewModel) {
         return
     }
 
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = {
+            isRefreshing = true
+            vm.load(page = state.page, perPage = state.perPage, search = search, status = selectedEstado)
+        },
+        state        = pullRefreshState,
+        modifier     = Modifier.fillMaxSize(),
+        indicator    = { AppPullRefreshIndicator(state = pullRefreshState, isRefreshing = isRefreshing) },
+    ) {
     Column(Modifier.fillMaxSize().background(Color.White).padding(if (smallScreen) 8.dp else 16.dp)) {
         if (smallScreen) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Proveedores", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -179,6 +204,7 @@ fun SuppliersCrudScreen(vm: SuppliersViewModel) {
                 )
             },
         )
+    }
     }
     ConfirmDestructiveDialog(pendingConfirm) { pendingConfirm = null }
 }

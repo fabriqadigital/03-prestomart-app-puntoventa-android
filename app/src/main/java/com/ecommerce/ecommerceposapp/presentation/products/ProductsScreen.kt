@@ -1,5 +1,7 @@
 package com.ecommerce.ecommerceposapp.presentation.products
 
+import com.ecommerce.ecommerceposapp.presentation.common.AppPullRefreshIndicator
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -38,6 +40,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -49,6 +52,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -97,16 +102,10 @@ import com.ecommerce.ecommerceposapp.util.DataWedgeScanner
 import com.ecommerce.ecommerceposapp.util.PhysicalScannerInput
 import com.ecommerce.ecommerceposapp.util.rememberPhysicalScannerConnected
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Resuelve la longitud correcta de un código de barra recibido por DataWedge.
- *
- * `DataWedgeScanner.extractBarcode()` restaura el 0 inicial de TODO símbolo UPC-A
- * (12 dígitos) como si fuera un EAN-13 truncado, pero un UPC-A legítimo (p. ej.
- * "027084120134") debe conservar sus 12 dígitos. Se usa el catálogo local como
- * referencia: si solo el EAN-13 de 13 dígitos existe → es EAN-13; en cualquier otro
- * caso (el UPC-A existe, o ninguno existe — producto nuevo) → se conservan los
- * 12 dígitos que DataWedge decodificó del símbolo.
  */
 private fun resolveDataWedgeBarcode(code: String, known: List<ProductAdminRow>): String {
     val trimmed = code.trim()
@@ -118,6 +117,7 @@ private fun resolveDataWedgeBarcode(code: String, known: List<ProductAdminRow>):
     return upcaCandidate
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductsCrudScreen(
     vm: ProductsViewModel,
@@ -133,6 +133,13 @@ fun ProductsCrudScreen(
     var search by remember { mutableStateOf("") }
     var selectedCategoryId by remember { mutableStateOf<Long?>(null) }
     var selectedSubcategoryId by remember { mutableStateOf<Long?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullRefreshState = rememberPullToRefreshState()
+
+ 
+    LaunchedEffect(state.isLoading) {
+        if (!state.isLoading) isRefreshing = false
+    }
 
     LaunchedEffect(search, selectedCategoryId, selectedSubcategoryId) {
         delay(350)
@@ -199,8 +206,7 @@ fun ProductsCrudScreen(
 
     LaunchedEffect(externalScan) {
         val scan = externalScan ?: return@LaunchedEffect
-        // DataWedge restaura el 0 inicial de todo UPC-A (12 dígitos); se resuelve con el
-        // catálogo para que el campo Código Barra guarde el código tal cual (12 o 13).
+       
         val finalCode = resolveDataWedgeBarcode(scan.code, state.products)
         if (finalCode != scan.code) {
             Log.d("BarcodeDebug", "Productos: DataWedge UPC-A resuelto con catálogo: [${scan.code}] → [$finalCode]")
@@ -281,6 +287,21 @@ fun ProductsCrudScreen(
         return
     }
 
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh    = {
+            isRefreshing = true
+            vm.load(
+                page          = 1,
+                search        = search,
+                categoryId    = selectedCategoryId,
+                subcategoryId = selectedSubcategoryId,
+            )
+        },
+        state    = pullRefreshState,
+        modifier = Modifier.fillMaxSize(),
+        indicator = { AppPullRefreshIndicator(state = pullRefreshState, isRefreshing = isRefreshing) },
+    ) {
     Column(Modifier.fillMaxSize().background(Color.White).padding(if (smallScreen) 8.dp else 16.dp)) {
         if (smallScreen) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Productos", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -344,6 +365,7 @@ fun ProductsCrudScreen(
                         )
             },
         )
+    }
     }
     ConfirmDestructiveDialog(pendingConfirm) { pendingConfirm = null }
 }

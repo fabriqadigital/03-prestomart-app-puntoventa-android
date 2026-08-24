@@ -46,7 +46,7 @@ val appModules = module {
 
     viewModel { LoginViewModel(get()) }
     viewModel { SyncViewModel(get()) }
-    viewModel { PosViewModel(get()) }
+    viewModel { PosViewModel(get(), androidContext()) }
     viewModel { CashModuleViewModel(get(), CashApiDataSource(androidContext())) }
     factory { GetCategoriesUseCase(get()) }
     factory { GetCategoriesPageUseCase(get()) }

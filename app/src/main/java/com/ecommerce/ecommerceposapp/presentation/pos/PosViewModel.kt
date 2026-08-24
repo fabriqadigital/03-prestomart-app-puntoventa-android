@@ -1,5 +1,6 @@
 package com.ecommerce.ecommerceposapp.presentation.pos
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,11 +20,13 @@ import com.ecommerce.ecommerceposapp.domain.model.cash.CashSummary
 import kotlin.math.round
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -43,7 +46,11 @@ data class PosUiState(
     val message: String? = null,
     val descuentoPorcentaje: Double = 0.0,
     val descuentoLineKeys: Set<String> = emptySet(),
+    val catalogReady: Boolean = false,
+    val cashReady: Boolean = false,
 ) {
+    
+    val initialLoading: Boolean get() = !catalogReady || !cashReady
     val totalAntesDescuento: Double = round(cart.sumOf { it.lineTotal } * 100) / 100
     val descuentoBase: Double =
         if (descuentoLineKeys.isEmpty()) totalAntesDescuento
@@ -56,14 +63,104 @@ data class PosUiState(
 
 class PosViewModel(
     private val catalogRepository: CatalogRepository,
+    private val context: Context,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(PosUiState())
     val uiState: StateFlow<PosUiState> = _uiState
     private val catalogRefreshMutex = Mutex()
 
+   
+    private fun saveCartDraft() {
+        val s = _uiState.value
+        if (s.cart.isEmpty()) {
+            CartPersistence.clear(context)
+        } else {
+            CartPersistence.save(context, s.cart, s.descuentoPorcentaje, s.descuentoLineKeys)
+        }
+    }
+
+   
+    private fun clearCartDraft() = CartPersistence.clear(context)
+
+    
+    fun loadImmediate(cashierId: Long) {
+        viewModelScope.launch {
+            
+            val catalogDeferred = async(Dispatchers.IO) {
+                Triple(
+                    catalogRepository.categories(),
+                    catalogRepository.subcategories(),
+                    catalogRepository.products(),
+                )
+            }
+            val cashDeferred = async(Dispatchers.IO) {
+                runCatching {
+                    val registers = catalogRepository.listCashRegisters().getOrThrow()
+                    val current   = catalogRepository.findOpenCashSession(cashierId).getOrThrow()
+                    registers to current
+                }
+            }
+
+          
+            val (cats, subs, prods) = catalogDeferred.await()
+            val cashResult = cashDeferred.await()
+
+            
+            val savedCart = CartPersistence.load(context)
+
+            cashResult.onSuccess { (registers, current) ->
+                _uiState.update {
+                    it.copy(
+                        categories    = cats,
+                        subcategories = subs,
+                        products      = prods,
+                        cart          = savedCart?.cart ?: emptyList(),
+                        descuentoPorcentaje = savedCart?.descuentoPorcentaje ?: 0.0,
+                        descuentoLineKeys   = savedCart?.descuentoLineKeys ?: emptySet(),
+                        cashRegisters = registers,
+                        cashSession   = current,
+                        cashLoading   = false,
+                        cashError     = null,
+                        catalogReady  = true,
+                        cashReady     = true,
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        categories    = cats,
+                        subcategories = subs,
+                        products      = prods,
+                        cart          = savedCart?.cart ?: emptyList(),
+                        descuentoPorcentaje = savedCart?.descuentoPorcentaje ?: 0.0,
+                        descuentoLineKeys   = savedCart?.descuentoLineKeys ?: emptySet(),
+                        cashLoading   = false,
+                        cashError     = error.message ?: "No se pudo consultar la caja.",
+                        catalogReady  = true,
+                        cashReady     = true,
+                    )
+                }
+            }
+
+            
+            launch {
+                try { refreshCatalog() }
+                catch (e: Exception) {
+                    android.util.Log.e("PosViewModel", "background refresh failed", e)
+                }
+            }
+        }
+    }
+
     fun load() {
         viewModelScope.launch {
-            refreshCatalog()
+            try {
+                refreshCatalog()
+            } catch (e: Exception) {
+                android.util.Log.e("PosViewModel", "refreshCatalog failed on load", e)
+            } finally {
+                _uiState.update { it.copy(catalogReady = true) }
+            }
         }
     }
 
@@ -78,9 +175,9 @@ class PosViewModel(
                 }
             }
             result.onSuccess { (registers, current) ->
-                _uiState.update { it.copy(cashRegisters = registers, cashSession = current, cashLoading = false) }
+                _uiState.update { it.copy(cashRegisters = registers, cashSession = current, cashLoading = false, cashReady = true) }
             }.onFailure { error ->
-                _uiState.update { it.copy(cashLoading = false, cashError = error.message ?: "No se pudo consultar la caja.") }
+                _uiState.update { it.copy(cashLoading = false, cashError = error.message ?: "No se pudo consultar la caja.", cashReady = true) }
             }
         }
     }
@@ -104,11 +201,17 @@ class PosViewModel(
             .onSuccess { _uiState.update { it.copy(cashSession = null, cashSummary = null) } }
     }
 
-    suspend fun refreshCatalog() = catalogRefreshMutex.withLock {
+    suspend fun refreshCatalog(isOnline: Boolean = true) = catalogRefreshMutex.withLock {
         val catalog = withContext(Dispatchers.IO) {
-            // Actualiza Realm desde el backend antes de construir el catálogo visible.
-            // Si no hay conexión, se conserva y muestra el catálogo local existente.
-            catalogRepository.refreshCatalog()
+            if (isOnline) {
+              
+                try {
+                    withTimeout(8_000L) { catalogRepository.refreshCatalog() }
+                } catch (_: Exception) {
+                   
+                }
+            }
+            // Siempre leer desde Realm local (resultado fresco o caché)
             Triple(catalogRepository.categories(), catalogRepository.subcategories(), catalogRepository.products())
         }
         _uiState.update { it.copy(categories = catalog.first, subcategories = catalog.second, products = catalog.third) }
@@ -173,6 +276,7 @@ class PosViewModel(
                 message = "Producto agregado al carrito",
             )
         }
+        saveCartDraft()
     }
 
     fun increase(line: CartLine) {
@@ -196,6 +300,7 @@ class PosViewModel(
                 )
             }
         }
+        saveCartDraft()
     }
 
     fun decrease(line: CartLine) {
@@ -212,6 +317,7 @@ class PosViewModel(
                 descuentoLineKeys = if (next.isEmpty()) emptySet() else it.descuentoLineKeys,
             )
         }
+        saveCartDraft()
     }
 
     fun applyGlobalDiscount(percent: Double, lineKeys: Set<String>) {
@@ -227,10 +333,12 @@ class PosViewModel(
                 )
             }
         }
+        saveCartDraft()
     }
 
     fun clearGlobalDiscount() {
         _uiState.update { it.copy(descuentoPorcentaje = 0.0, descuentoLineKeys = emptySet()) }
+        saveCartDraft()
     }
 
     fun selectConversion(line: CartLine, conversion: ProductConversion?) {
@@ -262,6 +370,7 @@ class PosViewModel(
             }
             state.copy(cart = cart, message = "Conversión actualizada")
         }
+        saveCartDraft()
     }
 
     fun updateQuantity(line: CartLine, requestedQuantity: Double) {
@@ -297,6 +406,7 @@ class PosViewModel(
                 )
             }
         }
+        saveCartDraft()
     }
 
     private fun normalizeQuantity(quantity: Double, isBulk: Boolean): Double =
@@ -315,8 +425,7 @@ class PosViewModel(
         if (_uiState.value.cashSession == null) return Result.failure(Exception("Abre una caja antes de registrar ventas."))
         val lines = _uiState.value.cart
         val previousProducts = _uiState.value.products
-        // Refleja el stock en pantalla desde el clic de cobro. Si el registro
-        // falla, se restaura el catálogo anterior sin obligar a navegar.
+        
         _uiState.update { state ->
             state.copy(products = state.products.map { product ->
                 val soldLines = lines.filter { it.productId == product.id }
@@ -339,11 +448,11 @@ class PosViewModel(
         }
         if (result.isSuccess) {
             val products = withContext(Dispatchers.IO) { catalogRepository.products() }
-            // La venta terminó: se vacía el carrito y se reinicia el descuento.
+          
+            clearCartDraft()
             _uiState.update {
                 it.copy(cart = emptyList(), products = products, descuentoPorcentaje = 0.0, descuentoLineKeys = emptySet())
             }
-            _uiState.update { it.copy(cart = emptyList(), products = products) }
         } else {
             _uiState.update { it.copy(products = previousProducts) }
         }
@@ -360,5 +469,6 @@ class PosViewModel(
                 message = "Producto eliminado del carrito",
             )
         }
+        saveCartDraft()
     }
 }

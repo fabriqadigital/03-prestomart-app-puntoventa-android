@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachMoney
+import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -63,6 +64,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -119,6 +121,143 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 private enum class PosPaymentMethod { Efectivo, Tarjeta, Yape, Plin }
 
+
+
+private enum class CartCurrency { PEN, USD }
+
+private const val DEFAULT_EXCHANGE_RATE = 3.75
+
+/**
+ * Diálogo para configurar el tipo de cambio (S/ ↔ $).
+ */
+@Composable
+private fun ExchangeRateDialog(
+    currentRate: Double,
+    currentCurrency: CartCurrency,
+    onConfirm: (rate: Double, currency: CartCurrency) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var rateInput by remember { mutableStateOf("%.4f".format(currentRate).trimEnd('0').trimEnd('.')) }
+    var selectedCurrency by remember { mutableStateOf(currentCurrency) }
+    val parsedRate = rateInput.replace(',', '.').toDoubleOrNull()
+    val valid = parsedRate != null && parsedRate > 0.0
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = SurfaceWhite,
+        tonalElevation   = 0.dp,
+        shape            = RoundedCornerShape(Radius.xl),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Box(
+                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(Radius.md)).background(Color(0xFFEFF6FF)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.CurrencyExchange, contentDescription = null, tint = Color(0xFF2563EB), modifier = Modifier.size(20.dp))
+                }
+                Text("Tipo de cambio", fontWeight = FontWeight.Bold, color = TextPrimary)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+             
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    listOf(CartCurrency.PEN to "Soles  (S/)", CartCurrency.USD to "Dólares  ($)").forEach { (cur, label) ->
+                        val selected = selectedCurrency == cur
+                        Surface(
+                            onClick  = { selectedCurrency = cur },
+                            modifier = Modifier.weight(1f),
+                            shape    = RoundedCornerShape(Radius.md),
+                            color    = if (selected) BrandRed else SurfaceWhite,
+                            border   = androidx.compose.foundation.BorderStroke(1.dp, if (selected) BrandRed else BorderDefault),
+                        ) {
+                            Box(Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    label,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    color      = if (selected) Color.White else TextSecondary,
+                                    style      = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
+               
+                OutlinedTextField(
+                    value         = rateInput,
+                    onValueChange = { raw ->
+                        val normalized = raw.replace(',', '.')
+                        if (normalized.matches(Regex("^\\d*(\\.\\d{0,6})?$"))) rateInput = normalized
+                    },
+                    label         = { Text("1 USD = X soles") },
+                    placeholder   = { Text("Ej: 3.75") },
+                    singleLine    = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier      = Modifier.fillMaxWidth(),
+                    shape         = RoundedCornerShape(Radius.md),
+                    colors        = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor      = BrandRed,
+                        unfocusedBorderColor    = BorderDefault,
+                        focusedLabelColor       = BrandRed,
+                        focusedContainerColor   = SurfaceWhite,
+                        unfocusedContainerColor = SurfaceWhite,
+                    ),
+                    isError = !valid && rateInput.isNotBlank(),
+                    supportingText = if (!valid && rateInput.isNotBlank()) {
+                        { Text("Ingresa un número mayor que 0", color = BrandRed, style = MaterialTheme.typography.labelSmall) }
+                    } else null,
+                )
+                if (selectedCurrency == CartCurrency.USD) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(Radius.md))
+                            .background(Color(0xFFEFF6FF))
+                            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    ) {
+                        Text(
+                            "Los precios se mostrarán en dólares.\nEl pago se registra siempre en soles.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF1D4ED8),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = valid,
+                onClick = { onConfirm(parsedRate!!, selectedCurrency) },
+                colors  = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                shape   = RoundedCornerShape(Radius.md),
+            ) {
+                Text("Aplicar", color = Color.White, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar", color = BrandRed) }
+        },
+    )
+}
+
+/** Formatea un monto con el símbolo correcto según la moneda activa. */
+private fun formatAmount(amount: Double, currency: CartCurrency, rate: Double): String =
+    if (currency == CartCurrency.USD) {
+        "$ ${"%.2f".format(amount / rate)}"
+    } else {
+        "S/ ${"%.2f".format(amount)}"
+    }
+
+/** Formatea el precio unitario mostrando también la equivalencia si aplica. */
+private fun formatUnitPrice(unitPrice: Double, quantity: Double, currency: CartCurrency, rate: Double): String =
+    if (currency == CartCurrency.USD) {
+        "$ ${"%.2f".format(unitPrice / rate)} · Total $ ${"%.2f".format(unitPrice * quantity / rate)}"
+    } else {
+        "S/ ${"%.2f".format(unitPrice)} · Total S/ ${"%.2f".format(unitPrice * quantity)}"
+    }
+
 /** Formatea un porcentaje sin decimales innecesarios (20 → "20", 12.5 → "12.50"). */
 private fun formatPct(pct: Double): String =
     if (pct == pct.toInt().toDouble()) pct.toInt().toString() else "%.2f".format(Locale.US, pct)
@@ -143,9 +282,9 @@ private fun mapPosPaymentMethodToTipoPago(m: PosPaymentMethod): String = when (m
     PosPaymentMethod.Plin     -> "PLN"
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 //  EMPTY STATE DEL CARRITO
-// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 private fun CartEmptyState(modifier: Modifier = Modifier) {
     Column(
@@ -181,9 +320,9 @@ private fun CartEmptyState(modifier: Modifier = Modifier) {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 //  CART ITEM ROW  — fondo blanco, sin grises
-// ─────────────────────────────────────────────────────────────────────────────
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CartItemRow(
@@ -194,6 +333,8 @@ private fun CartItemRow(
     onDecrease: () -> Unit,
     onQuantityChange: (Double) -> Unit,
     onDelete: () -> Unit,
+    currency: CartCurrency = CartCurrency.PEN,
+    exchangeRate: Double = DEFAULT_EXCHANGE_RATE,
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -273,7 +414,7 @@ private fun CartItemRow(
             }
             Spacer(Modifier.height(2.dp))
             Text(
-                "S/ ${"%.2f".format(line.unitPrice)} · Total S/ ${"%.2f".format(line.unitPrice * line.quantity)}",
+                formatUnitPrice(line.unitPrice, line.quantity, currency, exchangeRate),
                 color = TextSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -345,9 +486,9 @@ private fun CartItemRow(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 //  RESUMEN TOTALES
-// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 private fun CartTotalSection(
     subtotal: Double,
@@ -355,6 +496,8 @@ private fun CartTotalSection(
     descuentoPorcentaje: Double,
     descuentoMonto: Double,
     total: Double,
+    currency: CartCurrency = CartCurrency.PEN,
+    exchangeRate: Double = DEFAULT_EXCHANGE_RATE,
 ) {
     Surface(
         modifier        = Modifier.fillMaxWidth(),
@@ -369,7 +512,7 @@ private fun CartTotalSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text("Subtotal", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                Text("S/ ${"%.2f".format(subtotal)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text(formatAmount(subtotal, currency, exchangeRate), color = TextSecondary, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(Spacing.xs))
             Row(
@@ -377,7 +520,7 @@ private fun CartTotalSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text("IGV (18%)", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                Text("S/ ${"%.2f".format(igv)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text(formatAmount(igv, currency, exchangeRate), color = TextSecondary, style = MaterialTheme.typography.bodySmall)
             }
             if (descuentoMonto > 0.0) {
                 Spacer(Modifier.height(Spacing.xs))
@@ -386,7 +529,8 @@ private fun CartTotalSection(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text("Descuento (${formatPct(descuentoPorcentaje)}%)", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                    Text("-S/ ${"%.2f".format(descuentoMonto)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                    val descStr = formatAmount(descuentoMonto, currency, exchangeRate)
+                    Text("-$descStr", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
             Spacer(Modifier.height(Spacing.sm))
@@ -397,14 +541,23 @@ private fun CartTotalSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Column {
+                    Text(
+                        "TOTAL",
+                        fontWeight = FontWeight.Bold,
+                        color      = TextPrimary,
+                        style      = MaterialTheme.typography.titleSmall,
+                    )
+                    if (currency == CartCurrency.USD) {
+                        Text(
+                            "≈ S/ ${"%.2f".format(total)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary,
+                        )
+                    }
+                }
                 Text(
-                    "TOTAL",
-                    fontWeight = FontWeight.Bold,
-                    color      = TextPrimary,
-                    style      = MaterialTheme.typography.titleSmall,
-                )
-                Text(
-                    "S/ ${"%.2f".format(total)}",
+                    formatAmount(total, currency, exchangeRate),
                     fontWeight = FontWeight.Bold,
                     color      = BrandRed,
                     style      = MaterialTheme.typography.titleMedium,
@@ -414,9 +567,9 @@ private fun CartTotalSection(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 //  CART PANE  — panel derecho completo
-// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 internal fun CartPane(
     modifier: Modifier,
@@ -454,6 +607,10 @@ internal fun CartPane(
     var showSaleCompleted    by remember { mutableStateOf(false) }
     var receiptPhone         by remember { mutableStateOf("") }
     var postSaleDismissed    by remember { mutableStateOf(false) }
+    // Tipo de cambio — persiste mientras el carrito está activo
+    var cartCurrency         by rememberSaveable { mutableStateOf(CartCurrency.PEN) }
+    var exchangeRate         by rememberSaveable { mutableStateOf(DEFAULT_EXCHANGE_RATE) }
+    var showExchangeDialog   by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val compact = LocalConfiguration.current.screenWidthDp < 900
     val cartListState = rememberLazyListState()
@@ -490,7 +647,7 @@ internal fun CartPane(
             .background(AppBackground)
             .padding(if (compact) Spacing.sm else Spacing.md),
     ) {
-        // ── Header del carrito ───────────────────────────────────────────────
+        // ── Header del carrito 
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth(),
@@ -535,11 +692,23 @@ internal fun CartPane(
                     modifier = Modifier.size(24.dp)
                 )
             }
+            // ── Tipo de cambio
+            IconButton(
+                onClick  = { showExchangeDialog = true },
+                modifier = Modifier.size(if (compact) 36.dp else 40.dp),
+            ) {
+                Icon(
+                    Icons.Filled.CurrencyExchange,
+                    contentDescription = "Tipo de cambio",
+                    tint     = if (cartCurrency == CartCurrency.USD) Color(0xFF2563EB) else GrayMedium,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
 
         Spacer(Modifier.height(Spacing.md))
 
-        // ── Selector de cliente ──────────────────────────────────────────────
+        
         if (!compact) {
             Text("Cliente", style = MaterialTheme.typography.labelMedium, color = TextSecondary, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(Spacing.xs))
@@ -606,7 +775,7 @@ internal fun CartPane(
 
         Spacer(Modifier.height(if (compact) Spacing.xs else Spacing.md))
 
-        // ── Lista de items o empty state ─────────────────────────────────────
+       
         if (state.cart.isEmpty()) {
             Box(
                 modifier         = Modifier.weight(1f).fillMaxWidth(),
@@ -630,6 +799,8 @@ internal fun CartPane(
                         onDecrease = { onDecrease(line) },
                         onQuantityChange = { onQuantityChange(line, it) },
                         onDelete   = { onDeleteLine(line) },
+                        currency     = cartCurrency,
+                        exchangeRate = exchangeRate,
                     )
                 }
             }
@@ -637,18 +808,20 @@ internal fun CartPane(
 
         Spacer(Modifier.height(if (compact) Spacing.xs else Spacing.md))
 
-        // ── Totales ──────────────────────────────────────────────────────────
+       
         CartTotalSection(
             subtotal            = state.subtotal,
             igv                 = state.igv,
             descuentoPorcentaje = state.descuentoPorcentaje,
             descuentoMonto      = state.descuentoMonto,
             total               = state.total,
+            currency            = cartCurrency,
+            exchangeRate        = exchangeRate,
         )
 
         Spacer(Modifier.height(if (compact) Spacing.xs else Spacing.md))
 
-        // ── Botón pagar ──────────────────────────────────────────────────────
+        // ── Botón pagar
         Button(
             onClick  = {
                 if (state.cart.isEmpty()) {
@@ -670,7 +843,7 @@ internal fun CartPane(
             Icon(Icons.Filled.Payment, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(Spacing.sm))
             Text(
-                "COBRAR  S/ ${"%.2f".format(state.total)}",
+                "COBRAR  ${formatAmount(state.total, cartCurrency, exchangeRate)}",
                 color      = Color.White,
                 fontWeight = FontWeight.Bold,
                 style      = MaterialTheme.typography.titleSmall,
@@ -687,7 +860,19 @@ internal fun CartPane(
         }
     }
 
-    // ── Dialogs ──────────────────────────────────────────────────────────────
+    if (showExchangeDialog) {
+        ExchangeRateDialog(
+            currentRate     = exchangeRate,
+            currentCurrency = cartCurrency,
+            onConfirm       = { rate, cur ->
+                exchangeRate   = rate
+                cartCurrency   = cur
+                showExchangeDialog = false
+            },
+            onDismiss = { showExchangeDialog = false },
+        )
+    }
+
     if (showAddClientDialog) {
         QuickAddClientDialog(
             isSaving     = clientsSaving,
@@ -814,9 +999,9 @@ internal fun CartPane(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 //  COBRAR VENTA DIALOG  — rediseñado
-// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 private fun LegacyCobrarVentaDialog(
     total: Double,
@@ -959,9 +1144,9 @@ private fun LegacyCobrarVentaDialog(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 //  PANTALLA DESCUENTO  — porcentaje + selección de productos del carrito
-// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
 internal fun GlobalDiscountScreen(
     modifier: Modifier = Modifier,
@@ -974,9 +1159,7 @@ internal fun GlobalDiscountScreen(
 ) {
     var text  by remember { mutableStateOf(if (currentPercent > 0.0) formatPct(currentPercent) else "") }
     var error by remember { mutableStateOf<String?>(null) }
-    // Si ya hay un descuento activo se restauran exactamente los productos
-    // seleccionados; si no, el modal inicia sin selección y el cajero marca
-    // manualmente qué productos desea descontar.
+   
     val cartKeys = remember(cart) { cart.map { it.lineKey }.toSet() }
     var selectedKeys by remember(cart, currentLineKeys) {
         mutableStateOf(

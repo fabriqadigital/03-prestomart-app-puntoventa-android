@@ -779,6 +779,30 @@ class PosRepositoryImpl(private val context: Context) :
                         tipoPago = row.tipoPago.ifBlank { localRow?.tipoPago.orEmpty() },
                     )
                 }
+               
+                val localIds = local.map { it.ventaId }.toSet()
+                val toCache = enrichedRemote.filter { it.ventaId > 0L && it.ventaId !in localIds }
+                if (toCache.isNotEmpty()) {
+                    realmWrite { realm ->
+                        toCache.forEach { row ->
+                           
+                            if (realm.where(FinanzaVentaRealm::class.java)
+                                    .equalTo("id", row.ventaId).findFirst() == null) {
+                                realm.insert(FinanzaVentaRealm().apply {
+                                    id             = row.ventaId
+                                    numeroComprobante = row.numeroComprobante
+                                    tipoComprobante   = row.tipoComprobante
+                                    idSesion       = sessionId
+                                    idCliente      = row.idCliente
+                                    fechaVenta     = row.fechaMillis
+                                    total          = row.total
+                                    tipoPago       = row.tipoPago
+                                    estado         = if (row.estado.equals("Anulada", ignoreCase = true)) "N" else "A"
+                                })
+                            }
+                        }
+                    }
+                }
                 val remoteBySaleId = enrichedRemote.associateBy { it.ventaId }
                 val enrichedLocal = local.map { row ->
                     val remoteName = remoteBySaleId[row.ventaId]?.clienteNombre.orEmpty()
@@ -804,8 +828,15 @@ class PosRepositoryImpl(private val context: Context) :
     }
 
     private fun localSalesHistory(sessionId: Long): List<SalesHistoryRow> = realmQuery { realm ->
+        // Muestra ventas de la sesión actual Y de todas las sesiones de los últimos
+        // 3 meses — así el historial completo está disponible en modo offline.
+        val threeMonthsAgoMillis = System.currentTimeMillis() - (90L * 24 * 60 * 60 * 1000)
         realm.where(FinanzaVentaRealm::class.java)
-            .equalTo("idSesion", sessionId)
+            .beginGroup()
+                .equalTo("idSesion", sessionId)
+                .or()
+                .greaterThanOrEqualTo("fechaVenta", threeMonthsAgoMillis)
+            .endGroup()
             .findAll()
             .map { sale ->
                 val registeredClientName = sale.idCliente.takeIf { it != 0L }?.let { clientId ->

@@ -1,5 +1,7 @@
 ﻿package com.ecommerce.ecommerceposapp.presentation.clients
 
+import com.ecommerce.ecommerceposapp.presentation.common.AppPullRefreshIndicator
+
 import android.util.Patterns
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -45,6 +47,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -71,6 +76,7 @@ private val ClientsText = Color(0xFF111827)
 private val ClientsMuted = Color(0xFF64748B)
 private val ClientsDivider = Color(0xFFE2E8F0)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ClientsCrudScreen(vm: ClientsViewModel) {
     val state by vm.uiState.collectAsState()
@@ -80,12 +86,29 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
     var search by remember { mutableStateOf("") }
     val compact = LocalConfiguration.current.screenWidthDp < 760
     val smallScreen = LocalConfiguration.current.screenWidthDp < 480
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullRefreshState = rememberPullToRefreshState()
 
     LaunchedEffect(search) {
         delay(350)
         vm.load(page = 1, perPage = state.perPage, search = search)
     }
 
+    // Apagamos isRefreshing en cuanto isLoading vuelve a false tras un pull-to-refresh
+    LaunchedEffect(state.isLoading) {
+        if (!state.isLoading) isRefreshing = false
+    }
+
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = {
+            isRefreshing = true
+            vm.load(page = state.page, perPage = state.perPage, search = search)
+        },
+        state = pullRefreshState,
+        modifier = Modifier.fillMaxSize(),
+        indicator = { AppPullRefreshIndicator(state = pullRefreshState, isRefreshing = isRefreshing) },
+    ) {
     Column(Modifier.fillMaxSize().background(Color.White).padding(if (smallScreen) 8.dp else if (compact) 12.dp else 16.dp)) {
         ClientsHeader(compact, smallScreen) { creating = true }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
@@ -102,8 +125,8 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
         )
         Spacer(Modifier.height(10.dp))
         when {
-            state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ClientsAccent) }
-            state.clients.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No se encontraron clientes", color = ClientsMuted) }
+            state.isLoading && state.clients.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = ClientsAccent) }
+            !state.isLoading && state.clients.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No se encontraron clientes", color = ClientsMuted) }
             else -> ClientTable(
                 clients = state.clients,
                 total = state.total,
@@ -116,7 +139,8 @@ fun ClientsCrudScreen(vm: ClientsViewModel) {
                 onDelete = { client -> pendingConfirm = deleteConfirmation(client, vm) },
             )
         }
-    }
+    }   // fin Column
+    }   // fin PullToRefreshBox
 
     if (creating) {
         ClientEditDialog(
