@@ -343,7 +343,6 @@ class PosRepositoryImpl(private val context: Context) :
                         saleType = line.saleType
                         cantidad = line.quantity
                         precioUnitario = line.unitPrice
-                        originalPrice = line.originalPrice ?: line.unitPrice
                         descuento = 0.0
                         this.subtotal = lineSub
                     },
@@ -891,18 +890,7 @@ class PosRepositoryImpl(private val context: Context) :
                     .equalTo("idVenta", ventaId)
                     .sort("id", io.realm.Sort.DESCENDING)
                     .findFirst()
-                val localDetails = realm.where(FinanzaVentaDetalleRealm::class.java).equalTo("idVenta", ventaId).findAll()
-                val enrichedLines = remote.lines.map { remoteLine ->
-                    val local = localDetails.firstOrNull { 
-                        it.idProducto == remoteLine.productId && 
-                        kotlin.math.abs(it.cantidad - remoteLine.quantity) < 0.0001
-                    }
-                    if (local != null && local.originalPrice > 0.0) {
-                        remoteLine.copy(originalPrice = local.originalPrice)
-                    } else remoteLine
-                }
                 remote.copy(
-                    lines = enrichedLines,
                     subtotal = localSale?.subtotal?.takeIf { it > 0.0 } ?: remote.subtotal,
                     igv = localSale?.igv?.takeIf { it > 0.0 } ?: remote.igv,
                     descuento = localSale?.descuento?.takeIf { it > 0.0 } ?: remote.descuento,
@@ -935,7 +923,6 @@ class PosRepositoryImpl(private val context: Context) :
                 saleType = it.saleType.ifBlank {
                     realm.where(ProductRealm::class.java).equalTo("id", it.idProducto).findFirst()?.saleType ?: "UNIDAD"
                 },
-                originalPrice = it.originalPrice.takeIf { p -> p > 0.0 },
             )
         }
         val localReceipt = realm.where(FinanzaComprobanteRealm::class.java)
@@ -1743,7 +1730,6 @@ class PosRepositoryImpl(private val context: Context) :
                 conversionId = item.optLong("conversion_id").takeIf { it > 0L },
                 conversionName = item.optString("conversion_name"),
                 stockFactor = item.optDouble("stock_factor", 1.0),
-                originalPrice = item.optDouble("original_price").takeIf { it > 0.0 },
             )
         }
         val paymentJson = payload.getJSONObject("payment")
@@ -2476,7 +2462,6 @@ class PosRepositoryImpl(private val context: Context) :
                     line.conversionId?.let { put("conversion_id", it) }
                     put("conversion_name", line.conversionName)
                     put("stock_factor", line.stockFactor)
-                    line.originalPrice?.let { put("original_price", it) }
                 })
             }
         })

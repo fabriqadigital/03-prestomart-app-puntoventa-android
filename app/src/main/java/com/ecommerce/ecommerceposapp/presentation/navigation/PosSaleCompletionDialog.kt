@@ -290,11 +290,6 @@ internal fun SaleCompletedDialog(
                     Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Total S/ ${String.format(Locale.US, "%.2f", receipt.total)}", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         Text("Vuelto S/ ${String.format(Locale.US, "%.2f", receipt.vuelto)}", color = CompletionBrand, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                        
-                        val totalVolumeSavings = receipt.lines.sumOf { line ->
-                            val original = line.originalPrice ?: 0.0
-                            if (original > line.unitPrice + 0.001) (original - line.unitPrice) * line.quantity else 0.0
-                        }
                     }
                 }
                 Spacer(Modifier.height(22.dp))

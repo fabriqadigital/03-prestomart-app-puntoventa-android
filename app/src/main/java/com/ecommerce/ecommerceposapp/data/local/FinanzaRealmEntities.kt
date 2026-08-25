@@ -79,7 +79,6 @@ open class FinanzaVentaDetalleRealm : RealmObject() {
     var saleType: String = "UNIDAD"
     var cantidad: Double = 0.0
     var precioUnitario: Double = 0.0
-    var originalPrice: Double = 0.0
     var descuento: Double = 0.0
     var subtotal: Double = 0.0
 }
