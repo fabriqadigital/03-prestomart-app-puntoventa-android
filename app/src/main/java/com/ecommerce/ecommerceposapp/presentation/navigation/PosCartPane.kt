@@ -93,6 +93,7 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion
+import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.presentation.clients.QuickAddClientDialog
 import com.ecommerce.ecommerceposapp.presentation.pos.PosUiState
@@ -327,6 +328,7 @@ private fun CartEmptyState(modifier: Modifier = Modifier) {
 @Composable
 private fun CartItemRow(
     line: CartLine,
+    product: ProductItem?,
     conversions: List<ProductConversion>,
     onSelectConversion: (ProductConversion?) -> Unit,
     onIncrease: () -> Unit,
@@ -336,6 +338,11 @@ private fun CartItemRow(
     currency: CartCurrency = CartCurrency.PEN,
     exchangeRate: Double = DEFAULT_EXCHANGE_RATE,
 ) {
+    val volumeApplied = product != null &&
+            line.conversionId == null &&
+            product.hasVolumePricing &&
+            line.unitPrice == product.offerMaxQuantityPrice
+
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {
@@ -413,6 +420,24 @@ private fun CartItemRow(
             }
             }
             Spacer(Modifier.height(2.dp))
+            if (volumeApplied) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        formatAmount(product!!.price, currency, exchangeRate),
+                        color = TextTertiary,
+                        style = MaterialTheme.typography.labelSmall,
+                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Precio por volumen",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+            }
             Text(
                 formatUnitPrice(line.unitPrice, line.quantity, currency, exchangeRate),
                 color = TextSecondary,
@@ -493,6 +518,7 @@ private fun CartItemRow(
 private fun CartTotalSection(
     subtotal: Double,
     igv: Double,
+    volumeDiscountMonto: Double,
     descuentoPorcentaje: Double,
     descuentoMonto: Double,
     total: Double,
@@ -521,6 +547,13 @@ private fun CartTotalSection(
             ) {
                 Text("IGV (18%)", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Text(formatAmount(igv, currency, exchangeRate), color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+            }
+            if (volumeDiscountMonto > 0.0) {
+                Spacer(Modifier.height(Spacing.xs))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Descuento por volumen", color = TextSecondary, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                    Text("-${formatAmount(volumeDiscountMonto, currency, exchangeRate)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                }
             }
             if (descuentoMonto > 0.0) {
                 Spacer(Modifier.height(Spacing.xs))
@@ -791,8 +824,10 @@ internal fun CartPane(
                 contentPadding        = PaddingValues(vertical = Spacing.xs),
             ) {
                 items(state.cart, key = { it.lineKey }) { line ->
+                    val product = state.products.firstOrNull { it.id == line.productId }
                     CartItemRow(
                         line       = line,
+                        product = product,
                         conversions = state.products.firstOrNull { it.id == line.productId }?.conversions.orEmpty(),
                         onSelectConversion = { conversion -> onSelectConversion(line, conversion) },
                         onIncrease = { onIncrease(line) },
@@ -812,6 +847,7 @@ internal fun CartPane(
         CartTotalSection(
             subtotal            = state.subtotal,
             igv                 = state.igv,
+            volumeDiscountMonto = state.volumeDiscountMonto,
             descuentoPorcentaje = state.descuentoPorcentaje,
             descuentoMonto      = state.descuentoMonto,
             total               = state.total,

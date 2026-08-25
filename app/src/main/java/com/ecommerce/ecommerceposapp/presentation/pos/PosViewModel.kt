@@ -59,6 +59,21 @@ data class PosUiState(
     val total: Double = (round((totalAntesDescuento - descuentoMonto) * 100) / 100).coerceAtLeast(0.0)
     val subtotal: Double = round((total / 1.18) * 100) / 100
     val igv: Double = round((total - subtotal) * 100) / 100
+    val volumeDiscountMonto: Double = run {
+        val total = cart.sumOf { line ->
+            val product = products.firstOrNull { it.id == line.productId }
+            if (product != null &&
+                line.conversionId == null &&
+                product.hasVolumePricing &&
+                line.unitPrice == product.offerMaxQuantityPrice
+            ) {
+                (product.price - line.unitPrice) * line.quantity
+            } else {
+                0.0
+            }
+        }
+        round(total * 100) / 100
+    }
 }
 
 class PosViewModel(
