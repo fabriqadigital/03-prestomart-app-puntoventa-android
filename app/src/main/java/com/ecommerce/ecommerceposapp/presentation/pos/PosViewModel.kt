@@ -283,6 +283,7 @@ class PosViewModel(
                 conversionId = conversionId,
                 conversionName = conversion?.name.orEmpty(),
                 stockFactor = conversion?.stockFactor ?: 0.0,
+                originalPrice = if (conversion == null) product.price else null,
             ))
         }
         _uiState.update {
@@ -437,8 +438,7 @@ class PosViewModel(
         val targetPrice = if (applies) product.offerMaxQuantityPrice else product.price
         return cart.map { line ->
             if (line.productId != product.id || line.conversionId != null) line
-            else if (line.unitPrice == targetPrice) line
-            else line.copy(unitPrice = targetPrice)
+            else line.copy(unitPrice = targetPrice, originalPrice = product.price)
         }
     }
 

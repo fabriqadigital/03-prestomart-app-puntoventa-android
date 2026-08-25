@@ -85,6 +85,7 @@ import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
+import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -297,9 +298,13 @@ internal fun createReceiptPdfForSharing(
         (if (receipt.vendedorNombre.isNotBlank()) 10 else 0) +
         11 + 10 + 11
     val itemsHeight = receipt.lines.indices.sumOf { index ->
-        itemLines[index].size * 10 + if (
-            receipt.descuentoPorcentaje > 0.0 && receipt.lines[index].lineKey in receipt.descuentoLineKeys
-        ) 27 else 20
+        val line = receipt.lines[index]
+        val nameSize = itemLines[index].size * 10
+        val baseSize = 20
+        val globalDiscountSize = if (receipt.descuentoPorcentaje > 0.0 && line.lineKey in receipt.descuentoLineKeys) 8 else 0
+        val original = line.originalPrice ?: 0.0
+        val volumeDiscountSize = if (original > line.unitPrice + 0.0001) 8 else 0
+        nameSize + baseSize + globalDiscountSize + volumeDiscountSize
     }
     val footerHeight = 12 + (if (receipt.descuento > 0.0) 12 else 0) + 15 + 13 +
         wordsLines.size * 9 + 11 + 11 + 12 + (if (resolvedQrBitmap != null) 92 else 0)
@@ -374,6 +379,16 @@ internal fun createReceiptPdfForSharing(
         }
         y += itemLines[index].size * 10f + 2f
         text("${line.quantity} x S/ ${"%.2f".format(Locale.US, line.unitPrice)}", left + 32f, y, 7f)
+        
+        // Volume Discount (Ahorro por volumen) in PDF
+        val original = line.originalPrice ?: 0.0
+        if (original > line.unitPrice + 0.0001) {
+            y += 8f
+            val unitDiscount = original - line.unitPrice
+            val totalVolumeDiscount = unitDiscount * line.quantity
+            text("Ahorro Vol. (-S/ ${"%.2f".format(Locale.US, unitDiscount)} u.): -S/ ${"%.2f".format(Locale.US, totalVolumeDiscount)}", left + 32f, y, 6.5f)
+        }
+
         if (receipt.descuentoPorcentaje > 0.0 && line.lineKey in receipt.descuentoLineKeys) {
             y += 8f
             text(lineDiscountLabel(line.lineTotal, receipt.descuentoPorcentaje), left + 32f, y, 6.5f)
@@ -395,6 +410,17 @@ internal fun createReceiptPdfForSharing(
         text("DESCUENTO (${formatPctLabel(receipt.descuentoPorcentaje)}%)", left, y, 8f)
         text("-S/ ${"%.2f".format(Locale.US, receipt.descuento)}", right, y, 8f, false, Paint.Align.RIGHT)
     }
+
+    val totalAhorroVol = receipt.lines.sumOf { line ->
+        val original = line.originalPrice ?: 0.0
+        if (original > line.unitPrice + 0.0001) (original - line.unitPrice) * line.quantity else 0.0
+    }
+    if (totalAhorroVol > 0.0) {
+        y += 12f
+        text("DESC. VOLUMEN", left, y, 8f)
+        text("-S/ ${"%.2f".format(Locale.US, totalAhorroVol)}", right, y, 8f, false, Paint.Align.RIGHT)
+    }
+
     y += 15f
     text("TOTAL", left, y, 11f, true, color = brand)
     text("S/ ${"%.2f".format(Locale.US, receipt.total)}", right, y, 11f, true, Paint.Align.RIGHT, brand)
@@ -518,11 +544,21 @@ private fun createLegacyA4ReceiptPdfForSharing(
     drawText("DESCRIPCIÓN", 108f, y + 17f, 9f, brand, true)
     drawText("IMPORTE", 535f, y + 17f, 9f, brand, true, Paint.Align.RIGHT)
     y += 40f
-    receipt.lines.forEach { item ->
+        receipt.lines.forEach { item ->
         drawText("${item.quantityText} ${item.quantityUnit}", 72f, y, 10f, ink, true, Paint.Align.CENTER)
         drawText(fitText(item.displayName, 330f, 10f), 108f, y, 10f)
         drawText("S/ ${"%.2f".format(Locale.US, item.lineTotal)}", 535f, y, 10f, ink, true, Paint.Align.RIGHT)
         y += 18f
+        
+        // Volume Discount in A4 PDF
+        val original = item.originalPrice ?: 0.0
+        if (original > item.unitPrice + 0.0001) {
+            val unitDiscount = original - item.unitPrice
+            val totalVolumeDiscount = unitDiscount * item.quantity
+            drawText("Ahorro Vol. (-S/ ${"%.2f".format(Locale.US, unitDiscount)} u.): -S/ ${"%.2f".format(Locale.US, totalVolumeDiscount)}", 108f, y, 9f, muted)
+            y += 14f
+        }
+
         if (receipt.descuentoPorcentaje > 0.0 && item.lineKey in receipt.descuentoLineKeys) {
             drawText(lineDiscountLabel(item.lineTotal, receipt.descuentoPorcentaje), 108f, y, 9f, muted)
             y += 14f
@@ -542,6 +578,17 @@ private fun createLegacyA4ReceiptPdfForSharing(
         drawText("DESCUENTO (${formatPctLabel(receipt.descuentoPorcentaje)}%)", 390f, y, 9f, muted, false, Paint.Align.RIGHT)
         drawText("-S/ ${"%.2f".format(Locale.US, receipt.descuento)}", 535f, y, 10f, ink, false, Paint.Align.RIGHT)
     }
+
+    val totalAhorroVol = receipt.lines.sumOf { line ->
+        val original = line.originalPrice ?: 0.0
+        if (original > line.unitPrice + 0.0001) (original - line.unitPrice) * line.quantity else 0.0
+    }
+    if (totalAhorroVol > 0.0) {
+        y += 18f
+        drawText("DESC. VOLUMEN", 390f, y, 9f, muted, false, Paint.Align.RIGHT)
+        drawText("-S/ ${"%.2f".format(Locale.US, totalAhorroVol)}", 535f, y, 10f, ink, false, Paint.Align.RIGHT)
+    }
+
     y += 25f
     drawText("TOTAL", 390f, y, 13f, brand, true, Paint.Align.RIGHT)
     drawText("S/ ${"%.2f".format(Locale.US, receipt.total)}", 535f, y, 16f, brand, true, Paint.Align.RIGHT)
@@ -972,11 +1019,28 @@ fun VistaPreviaReciboDialog(
                             val puIgv = r2(line.unitPrice)
                             val totIgv = r2(line.lineTotal)
                             val withDiscount = receipt.descuentoPorcentaje > 0.0 && line.lineKey in receipt.descuentoLineKeys
+                            
+                            val original = line.originalPrice ?: 0.0
+                            val hasVolumeDiscount = original > line.unitPrice + 0.0001
+
                             Text(
                                 "${line.quantityText} ${line.quantityUnit}  $desc",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 9.sp,
                             )
+                            
+                            if (hasVolumeDiscount) {
+                                val unitDiscount = original - line.unitPrice
+                                val totalVolumeDiscount = unitDiscount * line.quantity
+                                Text(
+                                    " Ahorro Vol. (-S/ ${"%.2f".format(Locale.US, unitDiscount)} u.): -S/ ${"%.2f".format(Locale.US, totalVolumeDiscount)}",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 8.sp,
+                                    color = Color(0xFF2E7D32),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
                             if (withDiscount) {
                                 Text(
                                     lineDiscountLabel(totIgv, receipt.descuentoPorcentaje),
@@ -1009,6 +1073,19 @@ fun VistaPreviaReciboDialog(
                                 fontSize = 9.sp,
                             )
                         }
+                        
+                        val totalAhorroVol = receipt.lines.sumOf { line ->
+                            val original = line.originalPrice ?: 0.0
+                            if (original > line.unitPrice + 0.0001) (original - line.unitPrice) * line.quantity else 0.0
+                        }
+                        if (totalAhorroVol > 0.0) {
+                            Text(
+                                "DESC. VOLUMEN: -S/ ${"%.2f".format(Locale.US, totalAhorroVol)}",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.sp,
+                            )
+                        }
+
                         Text(
                             "TOTAL A PAGAR: S/ ${"%.2f".format(Locale.US, receipt.total)}",
                             fontFamily = FontFamily.Monospace,
