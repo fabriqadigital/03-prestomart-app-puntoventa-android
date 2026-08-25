@@ -84,6 +84,13 @@ fun ProductEditDialog(
             else initial.productNumberText(initial.stock),
         )
     }
+    var stockWeb by remember(initial) {
+        mutableStateOf(
+            if (initial.saleType.equals("A_GRANEL", ignoreCase = true))
+                java.math.BigDecimal.valueOf(initial.stockWeb).stripTrailingZeros().toPlainString()
+            else initial.productNumberText(initial.stockWeb),
+        )
+    }
     var salesChannel by remember(initial) { mutableStateOf(initial.salesChannel.ifBlank { "ambos" }) }
     var saleType by remember(initial) { mutableStateOf(initial.saleType.ifBlank { "UNIDAD" }) }
     var categoryExpanded by remember { mutableStateOf(false) }
@@ -98,7 +105,12 @@ fun ProductEditDialog(
     val parsedStock = parseDouble(stock, -1.0)
     val validStock = parsedStock >= 0.0 &&
         (saleType == "A_GRANEL" || kotlin.math.abs(parsedStock - parsedStock.toInt()) < 0.000001)
-    val canSave = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0 && validStock
+    val parsedStockWeb = parseDouble(stockWeb, -1.0)
+    val validStockWeb = salesChannel != "ambos" || (
+        parsedStockWeb >= 0.0 &&
+            (saleType == "A_GRANEL" || kotlin.math.abs(parsedStockWeb - parsedStockWeb.toInt()) < 0.000001)
+        )
+    val canSave = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0 && validStock && validStockWeb
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -139,6 +151,7 @@ fun ProductEditDialog(
                         ChannelChip("UNIDAD", "Por unidad", saleType) {
                             saleType = it
                             stock = parseDouble(stock, 0.0).toInt().toString()
+                            stockWeb = parseDouble(stockWeb, 0.0).toInt().toString()
                         }
                         ChannelChip("A_GRANEL", "A granel (kg)", saleType) { saleType = it }
                     }
@@ -176,10 +189,29 @@ fun ProductEditDialog(
                                 val pattern = if (saleType == "A_GRANEL") Regex("^\\d*(\\.\\d{0,3})?$") else Regex("^\\d*$")
                                 if (normalized.matches(pattern)) stock = normalized
                             },
-                            label = { Text(if (saleType == "A_GRANEL") "Stock (kg) *" else "Stock (unidades) *") },
+                            label = {
+                                Text(
+                                    if (salesChannel == "ambos")
+                                        "Stock Físico - ${if (saleType == "A_GRANEL") "kg" else "unidades"} *"
+                                    else if (saleType == "A_GRANEL") "Stock (kg) *" else "Stock (unidades) *",
+                                )
+                            },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
+                        if (salesChannel == "ambos") {
+                            OutlinedTextField(
+                                stockWeb,
+                                { value ->
+                                    val normalized = value.replace(',', '.')
+                                    val pattern = if (saleType == "A_GRANEL") Regex("^\\d*(\\.\\d{0,3})?$") else Regex("^\\d*$")
+                                    if (normalized.matches(pattern)) stockWeb = normalized
+                                },
+                                label = { Text("Stock Web - ${if (saleType == "A_GRANEL") "kg" else "unidades"} *") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                        }
                         OutlinedTextField(price, { price = it }, label = { Text("Precio público *") }, prefix = { Text("S/ ") }, modifier = Modifier.weight(1f), singleLine = true)
                         OutlinedTextField(yapePrice, { yapePrice = it }, label = { Text("Precio Yape") }, prefix = { Text("S/ ") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
@@ -210,6 +242,7 @@ fun ProductEditDialog(
                                     yapePrice = parseDouble(yapePrice, initial.yapePrice),
                                     productTypeId = productTypeId,
                                     stock = parseDouble(stock, initial.stock),
+                                    stockWeb = parseDouble(stockWeb, initial.stockWeb),
                                     salesChannel = salesChannel,
                                     saleType = saleType,
                                 ),

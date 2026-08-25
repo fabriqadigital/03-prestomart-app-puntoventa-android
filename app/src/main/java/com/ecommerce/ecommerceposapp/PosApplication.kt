@@ -28,7 +28,7 @@ class PosApplication : Application() {
         Realm.init(this)
         val config = RealmConfiguration.Builder()
             .name("ecommerce_pos.realm")
-            .schemaVersion(20)
+            .schemaVersion(21)
             .migration(RealmMigration { realm, oldVersion, _ ->
                 if (oldVersion < 9L) {
                     realm.schema.get("ProductRealm")?.apply {
@@ -184,6 +184,11 @@ class PosApplication : Application() {
                         addField("saleType", String::class.java)
                         transform { detail -> detail.setString("saleType", "UNIDAD") }
                         setRequired("saleType", true)
+                    }
+                }
+                if (oldVersion < 21L) {
+                    realm.schema.get("ProductRealm")?.apply {
+                        addField("stockWeb", Double::class.javaPrimitiveType!!)
                     }
                 }
             })

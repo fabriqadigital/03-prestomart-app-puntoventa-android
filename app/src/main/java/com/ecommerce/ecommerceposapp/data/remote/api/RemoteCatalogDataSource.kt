@@ -20,6 +20,7 @@ data class RemoteProductSeed(
     val imageUrl: String,
     val price: Double,
     val stock: Double,
+    val stockWeb: Double = 0.0,
     val salesChannel: String,
     val saleType: String,
     val active: Boolean,
@@ -284,6 +285,7 @@ class RemoteCatalogDataSource(context: Context) {
         val nameFields = listOf("nombre", "name", "title", "producto", "descripcion")
         val priceFields = listOf("precio", "price", "pvp", "sale_price", "precio_venta")
         val stockFields = listOf("stock", "cantidad", "existencia", "stock_actual")
+        val stockWebFields = listOf("stock_web")
         val codeFields = listOf("codigo_producto_new", "codigo_producto", "code", "codigo", "sku", "barcode", "codigo_barras")
         val categoryIdFields = listOf("id_producto_categoria", "category_id", "id_categoria", "categoria_id", "id_categoria_producto")
         val subcategoryIdFields = listOf("id_producto_categoria_sub", "subcategory_id", "id_subcategoria", "subcategoria_id")
@@ -350,6 +352,7 @@ class RemoteCatalogDataSource(context: Context) {
                 imageUrl = normalizeImage(optAnyString(obj, imageFields)),
                 price = price,
                 stock = optAnyDouble(obj, stockFields),
+                stockWeb = optAnyDouble(obj, stockWebFields),
                 salesChannel = optAnyString(obj, salesChannelFields).ifBlank { "ambos" },
                 saleType = optAnyString(obj, saleTypeFields).uppercase()
                     .takeIf { it == "A_GRANEL" } ?: "UNIDAD",

@@ -83,6 +83,7 @@ class ProductApiDataSource(context: Context) {
             .addFormDataPart("precio_mayorista_old", row.wholesaleOldPrice.emptyIfZero())
             .addFormDataPart("precio_yape", row.yapePrice.emptyIfZero())
             .addFormDataPart("stock", row.stock.toString())
+            .addFormDataPart("stock_web", if (row.salesChannel == "ambos") row.stockWeb.toString() else "")
             .addFormDataPart("stock_minimo", row.minimumStock.emptyIfZero())
             .addFormDataPart("id_producto_categoria", row.categoryId.toString())
             .apply {
