@@ -82,15 +82,39 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
             remoteCatalog.fetchProductsPage(page, perPage, search, categoryId, subcategoryId).let { result ->
                 ServerPage(result.rows.map { it.toAdminRow() }, result.total, result.page, result.perPage)
             }
-        }.getOrElse {
-            val query = search.trim().lowercase()
-            val filtered = listProductsAdmin()
-                .filter { categoryId == null || it.categoryId == categoryId }
-                .filter { subcategoryId == null || it.subcategoryId == subcategoryId }
-                .filter { row -> query.isBlank() || row.name.lowercase().contains(query) || row.code.lowercase().contains(query) || row.barcode.lowercase().contains(query) }
-            val start = ((page.coerceAtLeast(1) - 1) * perPage).coerceAtMost(filtered.size)
-            ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
+        }.map { remote -> mergePendingProducts(remote, page, search, categoryId, subcategoryId) }
+            .getOrElse {
+                val query = search.trim().lowercase()
+                val filtered = listProductsAdmin()
+                    .filter { categoryId == null || it.categoryId == categoryId }
+                    .filter { subcategoryId == null || it.subcategoryId == subcategoryId }
+                    .filter { row -> query.isBlank() || row.name.lowercase().contains(query) || row.code.lowercase().contains(query) || row.barcode.lowercase().contains(query) }
+                val start = ((page.coerceAtLeast(1) - 1) * perPage).coerceAtMost(filtered.size)
+                ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
+            }
+
+    // El servidor no conoce los productos creados/editados offline (siguen
+    // pendientes hasta que se sincronizan), asi que se anteponen en la pagina 1
+    // para que no "desaparezcan" de la lista mientras esten pendientes.
+    private fun mergePendingProducts(
+        remote: ServerPage<ProductAdminRow>,
+        page: Int,
+        search: String,
+        categoryId: Long?,
+        subcategoryId: Long?,
+    ): ServerPage<ProductAdminRow> {
+        if (page != 1) return remote
+        val query = search.trim().lowercase()
+        val existingIds = remote.rows.map { it.id }.toSet()
+        val pending = listProductsAdmin().filter { row ->
+            (row.id < 0L || row.syncState == "PENDING") && row.id !in existingIds &&
+                (categoryId == null || row.categoryId == categoryId) &&
+                (subcategoryId == null || row.subcategoryId == subcategoryId) &&
+                (query.isBlank() || row.name.lowercase().contains(query) || row.code.lowercase().contains(query) || row.barcode.lowercase().contains(query))
         }
+        if (pending.isEmpty()) return remote
+        return remote.copy(rows = pending + remote.rows, total = remote.total + pending.size)
+    }
 
     override fun listProductTypes(): Result<List<ProductTypeRow>> =
         remote.listTypes()

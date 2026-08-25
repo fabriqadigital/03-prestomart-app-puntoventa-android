@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -63,6 +64,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -612,19 +614,18 @@ private fun ProductTableRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(2f)) {
-            Text(product.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(product.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (product.id < 0L || product.syncState == "PENDING") {
+                    Spacer(Modifier.width(4.dp))
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFF97316)))
+                }
+            }
             if (compact) Text(
                 "Stock: ${if (product.saleType == "A_GRANEL") java.math.BigDecimal.valueOf(product.stock).stripTrailingZeros().toPlainString() + " kg" else product.stock.toInt().toString()}",
                 color = Color(0xFF475569),
                 style = MaterialTheme.typography.labelSmall,
             )
-            if (product.syncState == "PENDING") {
-                Text(
-                    "Pendiente de sincronizar",
-                    color = Color(0xFFE11D2E),
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
         }
         if (!compact) Text(product.code.ifBlank { "-" }, modifier = Modifier.weight(1.4f), color = Color(0xFF475569))
         Text("S/ %.2f".format(product.price), modifier = Modifier.weight(1f), color = Color(0xFF0F172A))

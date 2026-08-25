@@ -16,11 +16,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -59,6 +61,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -212,7 +215,13 @@ private fun ClientTable(
             LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                 items(clients, key = { it.id }) { client ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(client.displayName(), Modifier.weight(if (compact) 1.5f else 1.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(Modifier.weight(if (compact) 1.5f else 1.8f), verticalAlignment = Alignment.CenterVertically) {
+                            Text(client.displayName(), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            if (client.id < 0L) {
+                                Spacer(Modifier.width(4.dp))
+                                Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFF97316)))
+                            }
+                        }
                         Text("${client.documentType} ${client.document}", Modifier.weight(1.1f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!compact) Text(client.email.ifBlank { "-" }, Modifier.weight(1.7f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!compact) Text(if (client.active) "Activo" else "Inactivo", Modifier.weight(.7f), color = if (client.active) Color(0xFF15803D) else ClientsMuted)

@@ -39,7 +39,7 @@ class ClientRepositoryImpl(context: Context) : ClientRepository {
             onSuccess = { remote ->
                 cacheRows(remote.rows)
                 prefs.edit().putBoolean(REAL_CLIENT_CACHE_READY, true).apply()
-                remote
+                mergePendingClients(remote, page, search)
             },
             onFailure = { error ->
                 if (!prefs.getBoolean(REAL_CLIENT_CACHE_READY, false)) throw error
@@ -129,6 +129,21 @@ class ClientRepositoryImpl(context: Context) : ClientRepository {
             })
         }
         return Result.success(Unit)
+    }
+
+    // El servidor no conoce los clientes creados offline (siguen en el outbox
+    // hasta que se sincronizan), asi que se anteponen en la pagina 1 para que no
+    // "desaparezcan" de la lista mientras esten pendientes.
+    private fun mergePendingClients(remote: ServerPage<ClientRow>, page: Int, search: String): ServerPage<ClientRow> {
+        if (page != 1) return remote
+        val existingIds = remote.rows.map { it.id }.toSet()
+        val pending = cachedClients().filter { row ->
+            row.id < 0L && row.id !in existingIds &&
+                (search.isBlank() || listOf(row.name, row.lastName, row.businessName, row.email, row.document, row.phone)
+                    .any { it.contains(search, ignoreCase = true) })
+        }
+        if (pending.isEmpty()) return remote
+        return remote.copy(rows = pending + remote.rows, total = remote.total + pending.size)
     }
 
     private fun cachedClients() = db.query { realm ->

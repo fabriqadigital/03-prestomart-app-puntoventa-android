@@ -105,6 +105,13 @@ class PosRepositoryImpl(private val context: Context) :
     private var lastCashRegisters: List<CashRegister> = emptyList()
     private val allSyncModules = SyncPlan.orderedModules
     private val genericCustomerName = "Cliente genérico"
+    private val autoSyncSuspended = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    override fun isAutoSyncSuspended(): Boolean = autoSyncSuspended.get()
+
+    override fun setAutoSyncSuspended(suspended: Boolean) {
+        autoSyncSuspended.set(suspended)
+    }
 
     override fun login(email: String, password: String): Result<UserSession> {
         if (email.isBlank() || password.isBlank()) return Result.failure(Exception("Completa usuario y contraseña."))
@@ -260,6 +267,7 @@ class PosRepositoryImpl(private val context: Context) :
     }
 
     override fun refreshCatalog(): Result<Unit> {
+        if (autoSyncSuspended.get()) return Result.success(Unit)
         val session = getSession() ?: return Result.failure(Exception("Sin sesion de usuario."))
         return syncModules(session, setOf("categorias", "subcategorias", "productos"))
     }
@@ -1308,6 +1316,7 @@ class PosRepositoryImpl(private val context: Context) :
         modules: Set<String>,
         onProgress: (SyncProgress) -> Unit,
     ): Result<Unit> {
+        autoSyncSuspended.set(false)
         val selected = SyncPlan.expand(modules)
         if (selected.isEmpty()) return Result.failure(Exception("Seleccione al menos un módulo para sincronizar."))
         realmWrite { realm ->

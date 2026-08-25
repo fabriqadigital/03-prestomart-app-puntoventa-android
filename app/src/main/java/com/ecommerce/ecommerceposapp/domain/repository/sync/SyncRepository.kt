@@ -17,4 +17,6 @@ interface SyncRepository {
         onProgress: (SyncProgress) -> Unit = {},
     ): Result<Unit>
     fun processOutbox(): Result<Int>
+    fun isAutoSyncSuspended(): Boolean
+    fun setAutoSyncSuspended(suspended: Boolean)
 }

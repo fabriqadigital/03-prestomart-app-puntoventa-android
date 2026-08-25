@@ -920,7 +920,13 @@ private fun PosScreen(
             private fun updateConnection(online: Boolean) {
                 val recovered = online && !isOnline
                 isOnline = online
-                if (recovered) showReconnectPrompt = true
+                if (recovered) {
+                    // Suspende la auto-sincronización de inmediato: el usuario
+                    // aún no decidió si quiere sincronizar y el loop de refresco
+                    // periódico (cada 5s) no debe adelantarse a esa decisión.
+                    syncRepository.setAutoSyncSuspended(true)
+                    showReconnectPrompt = true
+                }
             }
 
             override fun onAvailable(network: Network) {
@@ -1022,6 +1028,7 @@ private fun PosScreen(
 
     LaunchedEffect(session.id) {
         if (session.offlineSession && hasValidatedInternet()) {
+            syncRepository.setAutoSyncSuspended(true)
             isOnline = true
             showReconnectPrompt = true
         }
@@ -1513,7 +1520,10 @@ private fun PosScreen(
     if (showReconnectPrompt) {
         AlertDialog(
             onDismissRequest = {
-                if (!reconnectSyncing) showReconnectPrompt = false
+                if (!reconnectSyncing) {
+                    syncRepository.setAutoSyncSuspended(true)
+                    showReconnectPrompt = false
+                }
             },
             title = { Text(if (reconnectSyncing) "Sincronizando datos" else "Conexión recuperada") },
             text = {
@@ -1532,7 +1542,10 @@ private fun PosScreen(
             },
             dismissButton = {
                 if (!reconnectSyncing) {
-                    OutlinedButton(onClick = { showReconnectPrompt = false }) {
+                    OutlinedButton(onClick = {
+                        syncRepository.setAutoSyncSuspended(true)
+                        showReconnectPrompt = false
+                    }) {
                         Text("Ahora no")
                     }
                 }

@@ -25,6 +25,7 @@ class SupplierRepositoryImpl(context: Context) : SupplierRepository {
     override fun listSuppliersPage(page: Int, perPage: Int, search: String, status: String?): ServerPage<SupplierRow> {
         return runCatching { api.listPage(page, perPage, search, status) }
             .onSuccess { remote -> remote.rows.forEach(::cacheRow) }
+            .map { remote -> mergePendingSuppliers(remote, page, search, status) }
             .getOrElse {
                 val filtered = readLocalCache().filter { row ->
                     (status.isNullOrBlank() || row.estado == status) &&
@@ -114,6 +115,22 @@ class SupplierRepositoryImpl(context: Context) : SupplierRepository {
     fun pushRemote(row: SupplierRow): Result<Unit> = api.save(row)
 
     fun deleteRemote(id: Long): Result<Unit> = api.delete(id)
+
+    // El servidor no conoce los proveedores creados offline (siguen en el outbox
+    // hasta que se sincronizan), asi que se anteponen en la pagina 1 para que no
+    // "desaparezcan" de la lista mientras esten pendientes.
+    private fun mergePendingSuppliers(remote: ServerPage<SupplierRow>, page: Int, search: String, status: String?): ServerPage<SupplierRow> {
+        if (page != 1) return remote
+        val existingIds = remote.rows.map { it.id }.toSet()
+        val pending = readLocalCache().filter { row ->
+            row.id < 0L && row.id !in existingIds &&
+                (status.isNullOrBlank() || row.estado == status) &&
+                (search.isBlank() || listOf(row.businessName, row.ruc, row.codigoProveedor, row.correo, row.phone)
+                    .any { value -> value.contains(search, ignoreCase = true) })
+        }
+        if (pending.isEmpty()) return remote
+        return remote.copy(rows = pending + remote.rows, total = remote.total + pending.size)
+    }
 
     private fun cacheLocally(rows: List<SupplierRow>) {
         db.write { realm ->
