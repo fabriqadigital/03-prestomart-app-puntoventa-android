@@ -246,17 +246,22 @@ private fun ExchangeRateDialog(
 /** Formatea un monto con el símbolo correcto según la moneda activa. */
 private fun formatAmount(amount: Double, currency: CartCurrency, rate: Double): String =
     if (currency == CartCurrency.USD) {
-        "$ ${"%.2f".format(amount / rate)}"
+        val converted = java.math.BigDecimal.valueOf(amount).divide(java.math.BigDecimal.valueOf(rate), 2, java.math.RoundingMode.HALF_UP)
+        "$ ${converted.toPlainString()}"
     } else {
-        "S/ ${"%.2f".format(amount)}"
+        "S/ ${java.math.BigDecimal.valueOf(amount).setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()}"
     }
 
 /** Formatea el precio unitario mostrando también la equivalencia si aplica. */
 private fun formatUnitPrice(unitPrice: Double, quantity: Double, currency: CartCurrency, rate: Double): String =
     if (currency == CartCurrency.USD) {
-        "$ ${"%.2f".format(unitPrice / rate)} · Total $ ${"%.2f".format(unitPrice * quantity / rate)}"
+        val unit = java.math.BigDecimal.valueOf(unitPrice).divide(java.math.BigDecimal.valueOf(rate), 2, java.math.RoundingMode.HALF_UP)
+        val total = java.math.BigDecimal.valueOf(unitPrice * quantity).divide(java.math.BigDecimal.valueOf(rate), 2, java.math.RoundingMode.HALF_UP)
+        "$ ${unit.toPlainString()} · Total $ ${total.toPlainString()}"
     } else {
-        "S/ ${"%.2f".format(unitPrice)} · Total S/ ${"%.2f".format(unitPrice * quantity)}"
+        val unitValue = java.math.BigDecimal.valueOf(unitPrice).setScale(2, java.math.RoundingMode.HALF_UP)
+        val totalValue = java.math.BigDecimal.valueOf(unitPrice * quantity).setScale(2, java.math.RoundingMode.HALF_UP)
+        "S/ ${unitValue.toPlainString()} · Total S/ ${totalValue.toPlainString()}"
     }
 
 /** Formatea un porcentaje sin decimales innecesarios (20 → "20", 12.5 → "12.50"). */
@@ -643,7 +648,6 @@ internal fun CartPane(
     // Tipo de cambio — persiste mientras el carrito está activo
     var cartCurrency         by rememberSaveable { mutableStateOf(CartCurrency.PEN) }
     var exchangeRate         by rememberSaveable { mutableStateOf(DEFAULT_EXCHANGE_RATE) }
-    var showExchangeDialog   by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val compact = LocalConfiguration.current.screenWidthDp < 900
     val cartListState = rememberLazyListState()
@@ -725,17 +729,123 @@ internal fun CartPane(
                     modifier = Modifier.size(24.dp)
                 )
             }
-            // ── Tipo de cambio
-            IconButton(
-                onClick  = { showExchangeDialog = true },
-                modifier = Modifier.size(if (compact) 36.dp else 40.dp),
+            // ── Tipo de cambio (inline, sin modal)
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Radius.md))
+                    .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+                color = if (cartCurrency == CartCurrency.USD) Color(0xFFEFF6FF) else SurfaceMuted,
+                shadowElevation = 0.dp,
             ) {
-                Icon(
-                    Icons.Filled.CurrencyExchange,
-                    contentDescription = "Tipo de cambio",
-                    tint     = if (cartCurrency == CartCurrency.USD) Color(0xFF2563EB) else GrayMedium,
-                    modifier = Modifier.size(20.dp),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                    modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+                ) {
+                    Text(
+                        if (cartCurrency == CartCurrency.USD) "USD" else "PEN",
+                        fontWeight = FontWeight.Bold,
+                        color = if (cartCurrency == CartCurrency.USD) Color(0xFF2563EB) else TextSecondary,
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Icon(
+                        Icons.Filled.CurrencyExchange,
+                        contentDescription = null,
+                        tint = if (cartCurrency == CartCurrency.USD) Color(0xFF2563EB) else GrayMedium,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        }
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(Radius.lg),
+            color = SurfaceWhite,
+            shadowElevation = 0.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(Spacing.md),
+            ) {
+                Text(
+                    "Configuración de venta",
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
                 )
+
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    Text(
+                        "Moneda",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        listOf(CartCurrency.PEN to "PEN", CartCurrency.USD to "USD").forEach { (currency, label) ->
+                            val selected = cartCurrency == currency
+                            Surface(
+                                onClick = { cartCurrency = currency },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(Radius.md),
+                                color = if (selected) BrandRed else SurfaceWhite,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) BrandRed else BorderDefault),
+                            ) {
+                                Box(Modifier.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        label,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selected) Color.White else TextSecondary,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    Text(
+                        "Tasa de cambio",
+                        color = TextSecondary,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    OutlinedTextField(
+                        value = exchangeRate.toString(),
+                        onValueChange = { raw ->
+                            val normalized = raw.replace(',', '.')
+                            val parsed = normalized.toDoubleOrNull()
+                            if (parsed != null && parsed > 0.0) exchangeRate = parsed
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(Radius.md),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = BrandRed,
+                            unfocusedBorderColor = BorderDefault,
+                            focusedLabelColor = BrandRed,
+                            focusedContainerColor = SurfaceWhite,
+                            unfocusedContainerColor = SurfaceWhite,
+                        ),
+                    )
+                }
+
+                Button(
+                    onClick = { },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1EB5A6)),
+                    shape = RoundedCornerShape(Radius.md),
+                ) {
+                    Text("Actualizar", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                }
             }
         }
 
@@ -896,19 +1006,6 @@ internal fun CartPane(
         }
     }
 
-    if (showExchangeDialog) {
-        ExchangeRateDialog(
-            currentRate     = exchangeRate,
-            currentCurrency = cartCurrency,
-            onConfirm       = { rate, cur ->
-                exchangeRate   = rate
-                cartCurrency   = cur
-                showExchangeDialog = false
-            },
-            onDismiss = { showExchangeDialog = false },
-        )
-    }
-
     if (showAddClientDialog) {
         QuickAddClientDialog(
             isSaving     = clientsSaving,
@@ -961,7 +1058,15 @@ internal fun CartPane(
             },
             onPay = { payment, customerInfo, receiptType ->
                 val customerId = customerInfo.id.takeIf { it > 0L } ?: selectedCliente?.id ?: 0L
-                onPay(payment, customerId, customerInfo, receiptType)
+                val currencyCode = if (cartCurrency == CartCurrency.USD) "USD" else "PEN"
+                val normalizedPayment = payment.copy(
+                    currencyCode = currencyCode,
+                    exchangeRate = exchangeRate,
+                    totalAmountInCurrency = state.total.let {
+                        if (currencyCode == "USD") java.math.BigDecimal.valueOf(it).divide(java.math.BigDecimal.valueOf(exchangeRate), 2, java.math.RoundingMode.HALF_UP).toDouble() else it
+                    },
+                )
+                onPay(normalizedPayment, customerId, customerInfo, receiptType)
             },
         )
     }
