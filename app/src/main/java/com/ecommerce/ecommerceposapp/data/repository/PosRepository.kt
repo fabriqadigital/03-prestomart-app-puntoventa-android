@@ -322,6 +322,9 @@ class PosRepositoryImpl(private val context: Context) :
                     tipoPago = effectivePayment.tipoPago
                     montoRecibido = effectivePayment.montoRecibido
                     vuelto = effectivePayment.vuelto
+                    currencyCode = effectivePayment.currencyCode.ifBlank { "PEN" }
+                    exchangeRate = effectivePayment.exchangeRate.takeIf { it > 0.0 } ?: 1.0
+                    totalAmountInCurrency = effectivePayment.totalAmountInCurrency.takeIf { it > 0.0 } ?: total
                     estado = "A"
                     motivoAnulacion = ""
                 },
@@ -398,6 +401,9 @@ class PosRepositoryImpl(private val context: Context) :
                 clienteDocumento = customerInfo.document.filter(Char::isDigit),
                 descuento = descuentoMonto,
                 descuentoPorcentaje = pct,
+                currencyCode = effectivePayment.currencyCode.ifBlank { "PEN" },
+                exchangeRate = effectivePayment.exchangeRate.takeIf { it > 0.0 } ?: 1.0,
+                totalAmountInCurrency = effectivePayment.totalAmountInCurrency.takeIf { it > 0.0 } ?: total,
                 descuentoLineKeys = descuentoLineKeys,
             )
         }
@@ -2425,6 +2431,9 @@ class PosRepositoryImpl(private val context: Context) :
         put("client_id", clientId)
         put("cash_session_id", cashSessionId)
         put("receipt_type", receiptType.name)
+        put("currency_code", payment.currencyCode.ifBlank { "PEN" })
+        put("exchange_rate", payment.exchangeRate.takeIf { it > 0.0 } ?: 1.0)
+        put("total_amount_in_currency", payment.totalAmountInCurrency.takeIf { it > 0.0 } ?: payment.montoRecibido)
         put("descuento_porcentaje", descuentoPorcentaje)
         put("descuento_monto", descuentoMonto)
         put("payment", JSONObject().apply {
@@ -2432,6 +2441,9 @@ class PosRepositoryImpl(private val context: Context) :
             put("received", payment.montoRecibido)
             put("change", payment.vuelto)
             put("apply_rounding", payment.aplicarRedondeo)
+            put("currency_code", payment.currencyCode.ifBlank { "PEN" })
+            put("exchange_rate", payment.exchangeRate.takeIf { it > 0.0 } ?: 1.0)
+            put("total_amount_in_currency", payment.totalAmountInCurrency.takeIf { it > 0.0 } ?: payment.montoRecibido)
         })
         put("customer", JSONObject().apply {
             put("id", customerInfo.id)

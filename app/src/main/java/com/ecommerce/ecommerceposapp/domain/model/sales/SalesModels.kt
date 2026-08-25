@@ -35,7 +35,32 @@ data class SalePaymentInfo(
     val montoRecibido: Double,
     val vuelto: Double,
     val aplicarRedondeo: Boolean = false,
+    val currencyCode: String = "PEN",
+    val exchangeRate: Double = 1.0,
+    val totalAmountInCurrency: Double = 0.0,
 )
+
+object CurrencyFormatter {
+    fun formatAmount(amount: Double, currencyCode: String): String {
+        val normalized = currencyCode.uppercase()
+        val value = java.math.BigDecimal.valueOf(amount).setScale(2, java.math.RoundingMode.HALF_UP)
+        return if (normalized == "USD") {
+            "$ ${value.toPlainString()}"
+        } else {
+            "S/ ${value.toPlainString()}"
+        }
+    }
+
+    fun convertToCurrency(amount: Double, currencyCode: String, exchangeRate: Double): Double {
+        if (exchangeRate <= 0.0) return amount
+        return when (currencyCode.uppercase()) {
+            "USD" -> java.math.BigDecimal.valueOf(amount)
+                .divide(java.math.BigDecimal.valueOf(exchangeRate), 2, java.math.RoundingMode.HALF_UP)
+                .toDouble()
+            else -> java.math.BigDecimal.valueOf(amount).setScale(2, java.math.RoundingMode.HALF_UP).toDouble()
+        }
+    }
+}
 
 data class CompletedSaleReceipt(
     val ventaId: Long,
@@ -57,6 +82,9 @@ data class CompletedSaleReceipt(
     val emisorDireccion: String = "",
     val descuento: Double = 0.0,
     val descuentoPorcentaje: Double = 0.0,
+    val currencyCode: String = "PEN",
+    val exchangeRate: Double = 1.0,
+    val totalAmountInCurrency: Double = 0.0,
     /** lineKeys de las líneas del carrito que llevan el descuento activo (por línea). */
     val descuentoLineKeys: Set<String> = emptySet(),
 )

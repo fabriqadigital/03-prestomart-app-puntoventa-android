@@ -60,6 +60,9 @@ open class FinanzaVentaRealm : RealmObject() {
     var tipoPago: String = ""
     var montoRecibido: Double = 0.0
     var vuelto: Double = 0.0
+    var currencyCode: String = "PEN"
+    var exchangeRate: Double = 1.0
+    var totalAmountInCurrency: Double = 0.0
     /** A=activa, N=anulada */
     var estado: String = "A"
     var motivoAnulacion: String = ""
