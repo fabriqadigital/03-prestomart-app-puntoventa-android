@@ -406,6 +406,7 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
         imageUrl = remote.normalizedImageUrl(row.imageUrl)
         price = row.price
         stock = row.stock
+        stockWeb = row.stockWeb
         oldPrice = row.oldPrice
         costPrice = row.costPrice
         wholesalePrice = row.wholesalePrice
@@ -465,6 +466,7 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
         wholesaleOldPrice = product.wholesaleOldPrice,
         yapePrice = product.yapePrice,
         stock = product.stock,
+        stockWeb = product.stockWeb,
         minimumStock = product.minimumStock,
         productTypeId = product.productTypeId,
         salesChannel = product.canalVenta.ifBlank { "ambos" },
@@ -546,6 +548,7 @@ class ProductRepositoryImpl(context: Context) : ProductRepository {
             wholesaleOldPrice = wholesaleOldPrice,
             yapePrice = yapePrice,
             stock = stock,
+            stockWeb = stockWeb,
             minimumStock = minimumStock,
             productTypeId = productTypeId,
             salesChannel = salesChannel,

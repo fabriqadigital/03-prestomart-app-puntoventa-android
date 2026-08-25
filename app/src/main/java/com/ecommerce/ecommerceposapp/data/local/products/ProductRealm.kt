@@ -18,6 +18,7 @@ open class ProductRealm : RealmObject() {
     var imageUrl: String = ""
     var price: Double = 0.0
     var stock: Double = 0.0
+    var stockWeb: Double = 0.0
     var oldPrice: Double = 0.0
     var costPrice: Double = 0.0
     var wholesalePrice: Double = 0.0

@@ -1448,6 +1448,7 @@ class PosRepositoryImpl(private val context: Context) :
                             ?: normalizedProductImageUrl(id, rp.imageUrl)
                         price = rp.price
                         stock = rp.stock
+                        stockWeb = rp.stockWeb
                         oldPrice = rp.oldPrice
                         costPrice = rp.costPrice
                         wholesalePrice = rp.wholesalePrice

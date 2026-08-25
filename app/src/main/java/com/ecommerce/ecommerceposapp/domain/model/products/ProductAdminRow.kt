@@ -26,6 +26,7 @@ data class ProductAdminRow(
     val wholesaleOldPrice: Double = 0.0,
     val yapePrice: Double = 0.0,
     val stock: Double,
+    val stockWeb: Double = 0.0,
     val minimumStock: Double = 0.0,
     val productTypeId: Long = 0L,
     val salesChannel: String = "ambos",

@@ -693,6 +693,13 @@ private fun ProductAdvancedEditorView(
             else initial.productNumberText(initial.stock),
         )
     }
+    var stockWeb by remember(initial) {
+        mutableStateOf(
+            if (initial.saleType.equals("A_GRANEL", ignoreCase = true))
+                java.math.BigDecimal.valueOf(initial.stockWeb).stripTrailingZeros().toPlainString()
+            else initial.productNumberText(initial.stockWeb),
+        )
+    }
     var costPrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.costPrice)) }
     var oldPrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.oldPrice)) }
     var wholesalePrice by remember(initial) { mutableStateOf(initial.productNumberText(initial.wholesalePrice)) }
@@ -749,8 +756,13 @@ private fun ProductAdvancedEditorView(
     val parsedStock = parseDouble(stock, -1.0)
     val validStock = parsedStock >= 0.0 &&
         (saleType == "A_GRANEL" || kotlin.math.abs(parsedStock - parsedStock.toInt()) < 0.000001)
+    val parsedStockWeb = parseDouble(stockWeb, -1.0)
+    val validStockWeb = salesChannel != "ambos" || (
+        parsedStockWeb >= 0.0 &&
+            (saleType == "A_GRANEL" || kotlin.math.abs(parsedStockWeb - parsedStockWeb.toInt()) < 0.000001)
+        )
     val canSaveProduct = name.isNotBlank() && categoryId != 0L && parseDouble(price, 0.0) > 0.0 &&
-        validStock && duplicateBarcodeProduct == null && conversionsValid
+        validStock && validStockWeb && duplicateBarcodeProduct == null && conversionsValid
     val compactEditor = LocalConfiguration.current.screenWidthDp < 900
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) imageUrl = copyPickedProductImage(context, uri)
@@ -783,7 +795,8 @@ private fun ProductAdvancedEditorView(
             categoryId = categoryId, subcategoryId = selectedSubcategoryIds.firstOrNull() ?: 0L,
             subcategoryIds = selectedSubcategoryIds.toList(), name = name.trim(), code = code.trim(),
             barcode = barcode.trim(), imageUrl = imageUrl, price = parseDouble(price, initial.price),
-            stock = parseDouble(stock, initial.stock), costPrice = parseDouble(costPrice, initial.costPrice),
+            stock = parseDouble(stock, initial.stock), stockWeb = parseDouble(stockWeb, initial.stockWeb),
+            costPrice = parseDouble(costPrice, initial.costPrice),
             oldPrice = parseDouble(oldPrice, initial.oldPrice), wholesalePrice = parseDouble(wholesalePrice, initial.wholesalePrice),
             wholesaleOldPrice = parseDouble(wholesaleOldPrice, initial.wholesaleOldPrice), yapePrice = parseDouble(yapePrice, initial.yapePrice),
             minimumStock = parseDouble(minimumStock, initial.minimumStock), description = description, location = location,
@@ -840,6 +853,7 @@ private fun ProductAdvancedEditorView(
                         SalesChannelChip("UNIDAD", "Por unidad", saleType) {
                             saleType = it
                             parseDouble(stock, 0.0).let { value -> stock = value.toInt().toString() }
+                            parseDouble(stockWeb, 0.0).let { value -> stockWeb = value.toInt().toString() }
                         }
                         SalesChannelChip("A_GRANEL", "A granel (kg)", saleType) { saleType = it }
                     }
@@ -994,17 +1008,38 @@ private fun ProductAdvancedEditorView(
                     )
 
                     Text("Inventario y Categorías", fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        stock,
-                        { value ->
-                            val normalized = value.replace(',', '.')
-                            val pattern = if (saleType == "A_GRANEL") Regex("^\\d*(\\.\\d{0,3})?$") else Regex("^\\d*$")
-                            if (normalized.matches(pattern)) stock = normalized
-                        },
-                        label = { Text(if (saleType == "A_GRANEL") "Stock (kg) *" else "Stock (unidades) *") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            stock,
+                            { value ->
+                                val normalized = value.replace(',', '.')
+                                val pattern = if (saleType == "A_GRANEL") Regex("^\\d*(\\.\\d{0,3})?$") else Regex("^\\d*$")
+                                if (normalized.matches(pattern)) stock = normalized
+                            },
+                            label = {
+                                Text(
+                                    if (salesChannel == "ambos")
+                                        "Stock Físico (Tienda) - ${if (saleType == "A_GRANEL") "kg" else "unidades"} *"
+                                    else if (saleType == "A_GRANEL") "Stock (kg) *" else "Stock (unidades) *",
+                                )
+                            },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                        )
+                        if (salesChannel == "ambos") {
+                            OutlinedTextField(
+                                stockWeb,
+                                { value ->
+                                    val normalized = value.replace(',', '.')
+                                    val pattern = if (saleType == "A_GRANEL") Regex("^\\d*(\\.\\d{0,3})?$") else Regex("^\\d*$")
+                                    if (normalized.matches(pattern)) stockWeb = normalized
+                                },
+                                label = { Text("Stock Web (Ecommerce) - ${if (saleType == "A_GRANEL") "kg" else "unidades"} *") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                            )
+                        }
+                    }
                     FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = if (compactEditor) 1 else 2, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         ProductSelectField(
                             label = "Categoría", value = selectedCategoryName, expanded = categoryExpanded,
@@ -1085,6 +1120,7 @@ private fun ProductAdvancedEditorView(
                                         imageUrl = imageUrl,
                                         price = parseDouble(price, initial.price),
                                         stock = parseDouble(stock, initial.stock),
+                                        stockWeb = parseDouble(stockWeb, initial.stockWeb),
                                         costPrice = parseDouble(costPrice, initial.costPrice),
                                         oldPrice = parseDouble(oldPrice, initial.oldPrice),
                                         wholesalePrice = parseDouble(wholesalePrice, initial.wholesalePrice),
