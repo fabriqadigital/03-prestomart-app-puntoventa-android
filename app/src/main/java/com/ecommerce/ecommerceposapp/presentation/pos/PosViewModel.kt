@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
+import com.ecommerce.ecommerceposapp.domain.repository.auth.AuthRepository
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
@@ -48,6 +49,7 @@ data class PosUiState(
     val descuentoLineKeys: Set<String> = emptySet(),
     val catalogReady: Boolean = false,
     val cashReady: Boolean = false,
+    val offlineModeRequested: Boolean = false,
 ) {
     
     val initialLoading: Boolean get() = !catalogReady || !cashReady
@@ -79,10 +81,16 @@ data class PosUiState(
 class PosViewModel(
     private val catalogRepository: CatalogRepository,
     private val context: Context,
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(PosUiState())
     val uiState: StateFlow<PosUiState> = _uiState
     private val catalogRefreshMutex = Mutex()
+
+    private fun switchToOffline(message: String) {
+        authRepository.enterOfflineMode()
+        _uiState.update { it.copy(message = message, offlineModeRequested = true) }
+    }
 
    
     private fun saveCartDraft() {
@@ -155,6 +163,7 @@ class PosViewModel(
                         cashReady     = true,
                     )
                 }
+                switchToOffline("No se pudo consultar el servidor. El POS continuará en modo offline.")
             }
 
             
@@ -193,6 +202,7 @@ class PosViewModel(
                 _uiState.update { it.copy(cashRegisters = registers, cashSession = current, cashLoading = false, cashReady = true) }
             }.onFailure { error ->
                 _uiState.update { it.copy(cashLoading = false, cashError = error.message ?: "No se pudo consultar la caja.", cashReady = true) }
+                switchToOffline("No se pudo consultar la caja online. El POS continuará en modo offline.")
             }
         }
     }
@@ -201,7 +211,10 @@ class PosViewModel(
         _uiState.update { it.copy(cashLoading = true, cashError = null) }
         return withContext(Dispatchers.IO) { catalogRepository.openCashSession(cashRegisterId, cashierId, amount) }
             .map { opened -> _uiState.update { it.copy(cashSession = opened, cashLoading = false) } }
-            .onFailure { error -> _uiState.update { it.copy(cashLoading = false, cashError = error.message) } }
+            .onFailure { error ->
+                _uiState.update { it.copy(cashLoading = false, cashError = error.message) }
+                switchToOffline("No se pudo abrir la caja online. El POS continuará en modo offline.")
+            }
     }
 
     suspend fun loadCashSummary(): Result<CashSummary> {
@@ -479,8 +492,17 @@ class PosViewModel(
             _uiState.update {
                 it.copy(cart = emptyList(), products = products, descuentoPorcentaje = 0.0, descuentoLineKeys = emptySet())
             }
+            if (authRepository.getSession()?.offlineSession == true) {
+                _uiState.update {
+                    it.copy(
+                        message = "La venta se guardó localmente. El POS continuará en modo offline y reintentará la sincronización.",
+                        offlineModeRequested = true,
+                    )
+                }
+            }
         } else {
             _uiState.update { it.copy(products = previousProducts) }
+            switchToOffline("No se pudo completar la operación online. El POS continuará en modo offline y reintentará la sincronización.")
         }
         return result
     }

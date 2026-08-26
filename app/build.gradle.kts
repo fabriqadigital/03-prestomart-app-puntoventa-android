@@ -14,8 +14,8 @@ android {
         applicationId = "com.ecommerce.ecommerceposapp"
         minSdk = 29
         targetSdk = 35
-        versionCode = 20
-        versionName = "1.0"
+        versionCode = 21
+        versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_BASE_URL", "\"https://prestomartperu.com\"")

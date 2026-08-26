@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.CurrencyFormatter
 import java.io.ByteArrayOutputStream
 import java.text.Normalizer
 import java.text.SimpleDateFormat
@@ -18,6 +19,12 @@ import java.util.TimeZone
 import java.util.UUID
 
 class EscPosReceiptPrinter(private val context: Context) {
+    private fun receiptMoney(value: Double, receipt: CompletedSaleReceipt): String {
+        val amount = if (receipt.currencyCode.equals("USD", ignoreCase = true)) {
+            CurrencyFormatter.convertToCurrency(value, "USD", receipt.exchangeRate)
+        } else value
+        return CurrencyFormatter.formatAmount(amount, receipt.currencyCode)
+    }
     fun print(
         receipt: CompletedSaleReceipt,
         issued: ComprobanteEmitidoResult,
@@ -97,8 +104,9 @@ class EscPosReceiptPrinter(private val context: Context) {
         separator()
         receipt.lines.forEach { item ->
             wrappedLine(item.displayName)
-            val left = "${item.quantity} x S/ ${money(item.unitPrice)}"
-            line(columns(left, "S/ ${money(item.lineTotal)}"))
+            val left = "${item.quantityText} x ${receiptMoney(item.unitPrice, receipt)}"
+            line(columns(left, receiptMoney(item.lineTotal, receipt)))
+
             if (receipt.descuentoPorcentaje > 0.0 && item.lineKey in receipt.descuentoLineKeys) {
                 val discountAmount = kotlin.math.round(item.lineTotal * receipt.descuentoPorcentaje / 100.0 * 100.0) / 100.0
                 line(columns(
@@ -108,17 +116,21 @@ class EscPosReceiptPrinter(private val context: Context) {
             }
         }
         separator()
-        line(columns("OP. GRAVADAS", "S/ ${money(receipt.subtotal)}"))
-        line(columns("IGV (18%)", "S/ ${money(receipt.igv)}"))
+        line(columns("OP. GRAVADAS", receiptMoney(receipt.subtotal, receipt)))
+        line(columns("IGV (18%)", receiptMoney(receipt.igv, receipt)))
         if (receipt.descuento > 0.0) {
-            line(columns("DESC. (${formatPctLabel(receipt.descuentoPorcentaje)}%)", "-S/ ${money(receipt.descuento)}"))
+            line(columns("DESC. (${formatPctLabel(receipt.descuentoPorcentaje)}%)", "-${receiptMoney(receipt.descuento, receipt)}"))
         }
         bold(true)
-        line(columns("TOTAL", "S/ ${money(receipt.total)}"))
+        val totalInSaleCurrency = receipt.totalAmountInCurrency.takeIf { it > 0.0 }
+            ?: if (receipt.currencyCode.equals("USD", ignoreCase = true)) {
+                CurrencyFormatter.convertToCurrency(receipt.total, "USD", receipt.exchangeRate)
+            } else receipt.total
+        line(columns("TOTAL", CurrencyFormatter.formatAmount(totalInSaleCurrency, receipt.currencyCode)))
         bold(false)
         line("Pago: ${paymentLabel(receipt.tipoPago)}")
-        line(columns("Recibido", "S/ ${money(receipt.montoRecibido)}"))
-        line(columns("Vuelto", "S/ ${money(receipt.vuelto)}"))
+        line(columns("Recibido", receiptMoney(receipt.montoRecibido, receipt)))
+        line(columns("Vuelto", receiptMoney(receipt.vuelto, receipt)))
         issued.totalLetras.takeIf(String::isNotBlank)?.let { wrappedLine(it) }
         issued.qrPayload.takeIf(String::isNotBlank)?.let {
             align(1)
