@@ -47,6 +47,7 @@ class EscPosReceiptPrinter(private val context: Context) {
                 "E802" in name -> 4
                 "POS" in name -> 3
                 "PRINTER" in name -> 2
+                "BLUETOOTH" in name -> 2
                 "THERMAL" in name -> 1
                 else -> 0
             }
@@ -54,7 +55,15 @@ class EscPosReceiptPrinter(private val context: Context) {
         }.sortedByDescending { it.second }
         val printer = ranked.firstOrNull { it.second > 0 }?.first
             ?: paired.singleOrNull()
-            ?: error("Empareje únicamente la ticketera POS-E802 o asígnele un nombre que contenga E802/Printer.")
+            ?: error(
+                if (paired.isEmpty()) {
+                    "No hay dispositivos Bluetooth emparejados. Empareje primero la ticketera desde Ajustes > Bluetooth."
+                } else {
+                    val detected = paired.joinToString { it.name.orEmpty().ifBlank { "Sin nombre" } }
+                    "No se identificó la ticketera. Dispositivos emparejados: $detected. " +
+                        "Use un nombre que contenga E802, POS, Printer o Thermal."
+                }
+            )
 
         adapter.cancelDiscovery()
         val socket = printer.createRfcommSocketToServiceRecord(SPP_UUID)
