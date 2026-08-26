@@ -84,6 +84,7 @@ import com.ecommerce.ecommerceposapp.R
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
+import com.ecommerce.ecommerceposapp.domain.model.sales.CurrencyFormatter
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 import com.google.zxing.BarcodeFormat
@@ -102,6 +103,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private fun r2(x: Double) = round(x * 100) / 100
+
+private fun receiptCurrencyAmount(amount: Double, receipt: CompletedSaleReceipt): Double =
+    if (receipt.currencyCode.equals("USD", ignoreCase = true)) {
+        CurrencyFormatter.convertToCurrency(amount, "USD", receipt.exchangeRate)
+    } else amount
+
+private fun receiptMoney(amount: Double, receipt: CompletedSaleReceipt): String =
+    CurrencyFormatter.formatAmount(receiptCurrencyAmount(amount, receipt), receipt.currencyCode)
 
 /** Formatea un porcentaje sin decimales innecesarios (20 → "20", 12.5 → "12.50"). */
 private fun formatPctLabel(pct: Double): String =
@@ -176,7 +185,7 @@ internal fun buildReceiptShareText(
     appendLine()
     appendLine("${tituloComprobante(emitido.tipoSunat)} ${emitido.numeroCompleto}")
     appendLine("F. Emisión: ${formatFechaHoraPeru(receipt.fechaMillis).first}")
-    appendLine("TOTAL: S/ ${"%.2f".format(Locale.US, receipt.total)}")
+    appendLine("TOTAL: ${CurrencyFormatter.formatAmount(receipt.totalAmountInCurrency.takeIf { it > 0.0 } ?: receiptCurrencyAmount(receipt.total, receipt), receipt.currencyCode)}")
     if (customerName.isNotBlank()) appendLine("Cliente: $customerName")
     if (customerDocument.isNotBlank()) appendLine("Doc.: $customerDocument")
     if (!ticketUrl.isNullOrBlank()) {
@@ -373,12 +382,12 @@ internal fun createReceiptPdfForSharing(
 
     receipt.lines.forEachIndexed { index, line ->
         text(line.quantity.toString(), left + 10f, y, 8f, true, Paint.Align.CENTER)
-        text("S/ ${"%.2f".format(Locale.US, line.lineTotal)}", right, y, 8f, true, Paint.Align.RIGHT)
+        text(receiptMoney(line.lineTotal, receipt), right, y, 8f, true, Paint.Align.RIGHT)
         itemLines[index].forEachIndexed { nameIndex, nameLine ->
             text(nameLine, left + 32f, y + nameIndex * 10f, 8f, nameIndex == 0)
         }
         y += itemLines[index].size * 10f + 2f
-        text("${line.quantity} x S/ ${"%.2f".format(Locale.US, line.unitPrice)}", left + 32f, y, 7f)
+        text("${line.quantity} x ${receiptMoney(line.unitPrice, receipt)}", left + 32f, y, 7f)
         
         // Volume Discount (Ahorro por volumen) in PDF
         val original = line.originalPrice ?: 0.0
@@ -386,7 +395,7 @@ internal fun createReceiptPdfForSharing(
             y += 8f
             val unitDiscount = original - line.unitPrice
             val totalVolumeDiscount = unitDiscount * line.quantity
-            text("Ahorro Vol. (-S/ ${"%.2f".format(Locale.US, unitDiscount)} u.): -S/ ${"%.2f".format(Locale.US, totalVolumeDiscount)}", left + 32f, y, 6.5f)
+            text("Ahorro Vol. (-${receiptMoney(unitDiscount, receipt)} u.): -${receiptMoney(totalVolumeDiscount, receipt)}", left + 32f, y, 6.5f)
         }
 
         if (receipt.descuentoPorcentaje > 0.0 && line.lineKey in receipt.descuentoLineKeys) {
@@ -401,14 +410,14 @@ internal fun createReceiptPdfForSharing(
     }
 
     text("OP. GRAVADAS", left, y, 8f)
-    text("S/ ${"%.2f".format(Locale.US, receipt.subtotal)}", right, y, 8f, false, Paint.Align.RIGHT)
+    text(receiptMoney(receipt.subtotal, receipt), right, y, 8f, false, Paint.Align.RIGHT)
     y += 12f
     text("IGV (18%)", left, y, 8f)
-    text("S/ ${"%.2f".format(Locale.US, receipt.igv)}", right, y, 8f, false, Paint.Align.RIGHT)
+    text(receiptMoney(receipt.igv, receipt), right, y, 8f, false, Paint.Align.RIGHT)
     if (receipt.descuento > 0.0) {
         y += 12f
         text("DESCUENTO (${formatPctLabel(receipt.descuentoPorcentaje)}%)", left, y, 8f)
-        text("-S/ ${"%.2f".format(Locale.US, receipt.descuento)}", right, y, 8f, false, Paint.Align.RIGHT)
+        text("-${receiptMoney(receipt.descuento, receipt)}", right, y, 8f, false, Paint.Align.RIGHT)
     }
 
     val totalAhorroVol = receipt.lines.sumOf { line ->
@@ -418,20 +427,20 @@ internal fun createReceiptPdfForSharing(
     if (totalAhorroVol > 0.0) {
         y += 12f
         text("DESC. VOLUMEN", left, y, 8f)
-        text("-S/ ${"%.2f".format(Locale.US, totalAhorroVol)}", right, y, 8f, false, Paint.Align.RIGHT)
+        text("-${receiptMoney(totalAhorroVol, receipt)}", right, y, 8f, false, Paint.Align.RIGHT)
     }
 
     y += 15f
     text("TOTAL", left, y, 11f, true, color = brand)
-    text("S/ ${"%.2f".format(Locale.US, receipt.total)}", right, y, 11f, true, Paint.Align.RIGHT, brand)
+    text(CurrencyFormatter.formatAmount(receipt.totalAmountInCurrency.takeIf { it > 0.0 } ?: receiptCurrencyAmount(receipt.total, receipt), receipt.currencyCode), right, y, 11f, true, Paint.Align.RIGHT, brand)
     y += 13f
     wordsLines.forEach { line -> text(line, left, y, 7f); y += 9f }
     rule(y)
     y += 11f
     text("PAGO: ${mapTipoPagoEtiqueta(receipt.tipoPago)}", left, y, 8f, true)
     y += 11f
-    text("RECIBIDO: S/ ${"%.2f".format(Locale.US, receipt.montoRecibido)}", left, y, 8f)
-    text("VUELTO: S/ ${"%.2f".format(Locale.US, receipt.vuelto)}", right, y, 8f, false, Paint.Align.RIGHT)
+    text("RECIBIDO: ${receiptMoney(receipt.montoRecibido, receipt)}", left, y, 8f)
+    text("VUELTO: ${receiptMoney(receipt.vuelto, receipt)}", right, y, 8f, false, Paint.Align.RIGHT)
     y += 12f
 
     resolvedQrBitmap?.let { qr ->
@@ -547,7 +556,7 @@ private fun createLegacyA4ReceiptPdfForSharing(
         receipt.lines.forEach { item ->
         drawText("${item.quantityText} ${item.quantityUnit}", 72f, y, 10f, ink, true, Paint.Align.CENTER)
         drawText(fitText(item.displayName, 330f, 10f), 108f, y, 10f)
-        drawText("S/ ${"%.2f".format(Locale.US, item.lineTotal)}", 535f, y, 10f, ink, true, Paint.Align.RIGHT)
+        drawText(receiptMoney(item.lineTotal, receipt), 535f, y, 10f, ink, true, Paint.Align.RIGHT)
         y += 18f
         
         // Volume Discount in A4 PDF
@@ -555,7 +564,7 @@ private fun createLegacyA4ReceiptPdfForSharing(
         if (original > item.unitPrice + 0.0001) {
             val unitDiscount = original - item.unitPrice
             val totalVolumeDiscount = unitDiscount * item.quantity
-            drawText("Ahorro Vol. (-S/ ${"%.2f".format(Locale.US, unitDiscount)} u.): -S/ ${"%.2f".format(Locale.US, totalVolumeDiscount)}", 108f, y, 9f, muted)
+            drawText("Ahorro Vol. (-${receiptMoney(unitDiscount, receipt)} u.): -${receiptMoney(totalVolumeDiscount, receipt)}", 108f, y, 9f, muted)
             y += 14f
         }
 
@@ -569,14 +578,14 @@ private fun createLegacyA4ReceiptPdfForSharing(
 
     y += 4f
     drawText("OP. GRAVADAS", 390f, y, 9f, muted, false, Paint.Align.RIGHT)
-    drawText("S/ ${"%.2f".format(Locale.US, receipt.subtotal)}", 535f, y, 10f, ink, false, Paint.Align.RIGHT)
+    drawText(receiptMoney(receipt.subtotal, receipt), 535f, y, 10f, ink, false, Paint.Align.RIGHT)
     y += 18f
     drawText("IGV (18%)", 390f, y, 9f, muted, false, Paint.Align.RIGHT)
-    drawText("S/ ${"%.2f".format(Locale.US, receipt.igv)}", 535f, y, 10f, ink, false, Paint.Align.RIGHT)
+    drawText(receiptMoney(receipt.igv, receipt), 535f, y, 10f, ink, false, Paint.Align.RIGHT)
     if (receipt.descuento > 0.0) {
         y += 18f
         drawText("DESCUENTO (${formatPctLabel(receipt.descuentoPorcentaje)}%)", 390f, y, 9f, muted, false, Paint.Align.RIGHT)
-        drawText("-S/ ${"%.2f".format(Locale.US, receipt.descuento)}", 535f, y, 10f, ink, false, Paint.Align.RIGHT)
+        drawText("-${receiptMoney(receipt.descuento, receipt)}", 535f, y, 10f, ink, false, Paint.Align.RIGHT)
     }
 
     val totalAhorroVol = receipt.lines.sumOf { line ->
@@ -591,7 +600,7 @@ private fun createLegacyA4ReceiptPdfForSharing(
 
     y += 25f
     drawText("TOTAL", 390f, y, 13f, brand, true, Paint.Align.RIGHT)
-    drawText("S/ ${"%.2f".format(Locale.US, receipt.total)}", 535f, y, 16f, brand, true, Paint.Align.RIGHT)
+    drawText(CurrencyFormatter.formatAmount(receipt.totalAmountInCurrency.takeIf { it > 0.0 } ?: receiptCurrencyAmount(receipt.total, receipt), receipt.currencyCode), 535f, y, 16f, brand, true, Paint.Align.RIGHT)
     y += 24f
     drawText(fitText(emitido.totalLetras, 485f, 9f), left, y, 9f, muted)
     y += 24f
@@ -603,9 +612,9 @@ private fun createLegacyA4ReceiptPdfForSharing(
     drawText("PAGO", left + 12f, y + 18f, 8f, muted, true)
     drawText(mapTipoPagoEtiqueta(receipt.tipoPago), left + 12f, y + 38f, 10f, ink, true)
     drawText("RECIBIDO", 280f, y + 18f, 8f, muted, true)
-    drawText("S/ ${"%.2f".format(Locale.US, receipt.montoRecibido)}", 280f, y + 38f, 10f)
+    drawText(receiptMoney(receipt.montoRecibido, receipt), 280f, y + 38f, 10f)
     drawText("VUELTO", 430f, y + 18f, 8f, muted, true)
-    drawText("S/ ${"%.2f".format(Locale.US, receipt.vuelto)}", 430f, y + 38f, 11f, brand, true)
+    drawText(receiptMoney(receipt.vuelto, receipt), 430f, y + 38f, 11f, brand, true)
     y += 84f
 
     resolvedQrBitmap?.let { qr ->
@@ -1033,10 +1042,10 @@ fun VistaPreviaReciboDialog(
                                 val unitDiscount = original - line.unitPrice
                                 val totalVolumeDiscount = unitDiscount * line.quantity
                                 Text(
-                                    " Ahorro Vol. (-S/ ${"%.2f".format(Locale.US, unitDiscount)} u.): -S/ ${"%.2f".format(Locale.US, totalVolumeDiscount)}",
+                                    " Ahorro Vol. (-${receiptMoney(unitDiscount, receipt)} u.): -${receiptMoney(totalVolumeDiscount, receipt)}",
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 8.sp,
-                                    color = Color(0xFF2E7D32),
+                                    color = TextSecondary,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -1049,7 +1058,7 @@ fun VistaPreviaReciboDialog(
                                 )
                             } else {
                                 Text(
-                                    "S/ ${"%.2f".format(Locale.US, totIgv)}  (S/ ${"%.2f".format(Locale.US, puIgv)} c/u)",
+                                    "${receiptMoney(totIgv, receipt)}  (${receiptMoney(puIgv, receipt)} c/u)",
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 8.sp,
                                 )
@@ -1057,18 +1066,18 @@ fun VistaPreviaReciboDialog(
                         }
                         HorizontalDivider(Modifier.padding(vertical = 6.dp))
                         Text(
-                            "OP. GRAVADAS: S/ ${"%.2f".format(Locale.US, receipt.subtotal)}",
+                            "OP. GRAVADAS: ${receiptMoney(receipt.subtotal, receipt)}",
                             fontFamily = FontFamily.Monospace,
                             fontSize = 9.sp,
                         )
                         Text(
-                            "IGV (18%): S/ ${"%.2f".format(Locale.US, receipt.igv)}",
+                            "IGV (18%): ${receiptMoney(receipt.igv, receipt)}",
                             fontFamily = FontFamily.Monospace,
                             fontSize = 9.sp,
                         )
                         if (receipt.descuento > 0.0) {
                             Text(
-                                "DESCUENTO (${formatPctLabel(receipt.descuentoPorcentaje)}%): -S/ ${"%.2f".format(Locale.US, receipt.descuento)}",
+                                "DESCUENTO (${formatPctLabel(receipt.descuentoPorcentaje)}%): -${receiptMoney(receipt.descuento, receipt)}",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 9.sp,
                             )
@@ -1080,14 +1089,14 @@ fun VistaPreviaReciboDialog(
                         }
                         if (totalAhorroVol > 0.0) {
                             Text(
-                                "DESC. VOLUMEN: -S/ ${"%.2f".format(Locale.US, totalAhorroVol)}",
+                                "DESC. VOLUMEN: -${receiptMoney(totalAhorroVol, receipt)}",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 9.sp,
                             )
                         }
 
                         Text(
-                            "TOTAL A PAGAR: S/ ${"%.2f".format(Locale.US, receipt.total)}",
+                            "TOTAL A PAGAR: ${CurrencyFormatter.formatAmount(receipt.totalAmountInCurrency.takeIf { it > 0.0 } ?: receiptCurrencyAmount(receipt.total, receipt), receipt.currencyCode)}",
                             fontFamily = FontFamily.Monospace,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -1101,12 +1110,12 @@ fun VistaPreviaReciboDialog(
                         Spacer(Modifier.height(6.dp))
                         Text("CONDICIÓN DE PAGO: Contado", fontFamily = FontFamily.Monospace, fontSize = 9.sp)
                         Text(
-                            "PAGOS: ${mapTipoPagoEtiqueta(receipt.tipoPago)} S/ ${"%.2f".format(Locale.US, receipt.montoRecibido)}",
+                            "PAGOS: ${mapTipoPagoEtiqueta(receipt.tipoPago)} ${receiptMoney(receipt.montoRecibido, receipt)}",
                             fontFamily = FontFamily.Monospace,
                             fontSize = 9.sp,
                         )
                         Text(
-                            "VUELTO: S/ ${"%.2f".format(Locale.US, receipt.vuelto)}",
+                            "VUELTO: ${receiptMoney(receipt.vuelto, receipt)}",
                             fontFamily = FontFamily.Monospace,
                             fontSize = 9.sp,
                         )

@@ -801,7 +801,7 @@ private fun PosNavigationDrawerContent(
             ),
         )
         Text(
-            "v1.0 · PrestoMart POS",
+            "V1.2 · PrestoMart POS",
             color = Color(0xFF9CA3AF),
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(8.dp),
@@ -1024,6 +1024,13 @@ private fun PosScreen(
         if (session.offlineSession && hasValidatedInternet()) {
             isOnline = true
             showReconnectPrompt = true
+        }
+    }
+
+    LaunchedEffect(state.offlineModeRequested) {
+        if (state.offlineModeRequested && !session.offlineSession) {
+            isOnline = false
+            authRepository.enterOfflineMode()?.let(onSessionUpdated)
         }
     }
 

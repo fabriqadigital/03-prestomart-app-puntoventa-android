@@ -61,6 +61,14 @@ object CurrencyFormatter {
             else -> java.math.BigDecimal.valueOf(amount).setScale(2, java.math.RoundingMode.HALF_UP).toDouble()
         }
     }
+
+    fun convertToBaseCurrency(amount: Double, currencyCode: String, exchangeRate: Double): Double {
+        if (currencyCode.uppercase() != "USD" || exchangeRate <= 0.0) return amount
+        return java.math.BigDecimal.valueOf(amount)
+            .multiply(java.math.BigDecimal.valueOf(exchangeRate))
+            .setScale(2, java.math.RoundingMode.HALF_UP)
+            .toDouble()
+    }
 }
 
 data class CompletedSaleReceipt(
@@ -128,6 +136,9 @@ data class SalesHistoryRow(
     val estado: String,
     val idCliente: Long,
     val cancellationStatus: String = "",
+    val currencyCode: String = "PEN",
+    val exchangeRate: Double = 1.0,
+    val totalAmountInCurrency: Double = 0.0,
 )
 
 data class SalesHistoryPage(

@@ -65,6 +65,7 @@ import com.ecommerce.ecommerceposapp.data.remote.api.ReceiptDeliveryApiDataSourc
 import com.ecommerce.ecommerceposapp.data.sync.OfflineReceiptDeliveryQueue
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
+import com.ecommerce.ecommerceposapp.domain.model.sales.CurrencyFormatter
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.presentation.pos.buildReceiptShareText
 import com.ecommerce.ecommerceposapp.presentation.pos.createReceiptPdfForSharing
@@ -88,6 +89,14 @@ private fun receiptTypeLabel(type: TipoComprobanteEmision): String = when (type)
     TipoComprobanteEmision.FACTURA -> "Factura"
     TipoComprobanteEmision.SOLO_TICKET -> "Ticket"
 }
+
+private fun receiptAmount(amount: Double, receipt: CompletedSaleReceipt): Double =
+    if (receipt.currencyCode.equals("USD", ignoreCase = true)) {
+        CurrencyFormatter.convertToCurrency(amount, "USD", receipt.exchangeRate)
+    } else amount
+
+private fun receiptMoney(amount: Double, receipt: CompletedSaleReceipt): String =
+    CurrencyFormatter.formatAmount(receiptAmount(amount, receipt), receipt.currencyCode)
 
 private fun Context.hasValidatedInternet(): Boolean {
     val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -288,8 +297,8 @@ internal fun SaleCompletedDialog(
                     color = Color(0xFFF7F8FA),
                 ) {
                     Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Total S/ ${String.format(Locale.US, "%.2f", receipt.total)}", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                        Text("Vuelto S/ ${String.format(Locale.US, "%.2f", receipt.vuelto)}", color = CompletionBrand, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Total ${CurrencyFormatter.formatAmount(receipt.totalAmountInCurrency.takeIf { it > 0.0 } ?: receiptAmount(receipt.total, receipt), receipt.currencyCode)}", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text("Vuelto ${receiptMoney(receipt.vuelto, receipt)}", color = CompletionBrand, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                         
                         val totalVolumeSavings = receipt.lines.sumOf { line ->
                             val original = line.originalPrice ?: 0.0

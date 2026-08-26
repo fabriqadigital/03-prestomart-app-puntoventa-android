@@ -633,6 +633,7 @@ internal fun CartPane(
 ) {
     var message              by remember { mutableStateOf("") }
     var showCobrarVenta      by remember { mutableStateOf(false) }
+    var showCurrencyConfig   by remember { mutableStateOf(false) }
     var selectedCliente      by remember { mutableStateOf<ClientRow?>(null) }
     var showClientePicker    by remember { mutableStateOf(false) }
     var showAddClientDialog  by remember { mutableStateOf(false) }
@@ -677,6 +678,22 @@ internal fun CartPane(
         }
         previousCartQuantities = state.cart.associate { it.productId to it.quantity }
         if (changedIndex >= 0) cartListState.animateScrollToItem(changedIndex)
+    }
+
+    if (showCurrencyConfig) {
+        CurrencySettingsScreen(
+            currentCurrency = cartCurrency,
+            currentRate = exchangeRate,
+            onBack = { showCurrencyConfig = false },
+            onApply = { appliedRate ->
+                if (cartCurrency == CartCurrency.USD) exchangeRate = appliedRate
+                showCurrencyConfig = false
+            },
+            onSelectCurrency = { selected ->
+                cartCurrency = selected
+            },
+        )
+        return
     }
 
     Column(
@@ -729,123 +746,17 @@ internal fun CartPane(
                     modifier = Modifier.size(24.dp)
                 )
             }
-            // ── Tipo de cambio (inline, sin modal)
-            Surface(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(Radius.md))
-                    .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
-                color = if (cartCurrency == CartCurrency.USD) Color(0xFFEFF6FF) else SurfaceMuted,
-                shadowElevation = 0.dp,
+            // ── Abrir configuración de venta (pantalla separada) 
+            IconButton(
+                onClick = { showCurrencyConfig = true },
+                modifier = Modifier.size(if (compact) 36.dp else 40.dp),
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
-                    modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-                ) {
-                    Text(
-                        if (cartCurrency == CartCurrency.USD) "USD" else "PEN",
-                        fontWeight = FontWeight.Bold,
-                        color = if (cartCurrency == CartCurrency.USD) Color(0xFF2563EB) else TextSecondary,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                    Icon(
-                        Icons.Filled.CurrencyExchange,
-                        contentDescription = null,
-                        tint = if (cartCurrency == CartCurrency.USD) Color(0xFF2563EB) else GrayMedium,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-            }
-        }
-
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(Radius.lg),
-            color = SurfaceWhite,
-            shadowElevation = 0.dp,
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.md),
-                verticalArrangement = Arrangement.spacedBy(Spacing.md),
-            ) {
-                Text(
-                    "Configuración de venta",
-                    color = TextPrimary,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
+                Icon(
+                    Icons.Filled.CurrencyExchange,
+                    contentDescription = "Configuración de moneda",
+                    tint = if (cartCurrency == CartCurrency.USD) Color(0xFF2563EB) else GrayMedium,
+                    modifier = Modifier.size(20.dp),
                 )
-
-                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    Text(
-                        "Moneda",
-                        color = TextSecondary,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                    ) {
-                        listOf(CartCurrency.PEN to "PEN", CartCurrency.USD to "USD").forEach { (currency, label) ->
-                            val selected = cartCurrency == currency
-                            Surface(
-                                onClick = { cartCurrency = currency },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(Radius.md),
-                                color = if (selected) BrandRed else SurfaceWhite,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) BrandRed else BorderDefault),
-                            ) {
-                                Box(Modifier.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        label,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (selected) Color.White else TextSecondary,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-                    Text(
-                        "Tasa de cambio",
-                        color = TextSecondary,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    OutlinedTextField(
-                        value = exchangeRate.toString(),
-                        onValueChange = { raw ->
-                            val normalized = raw.replace(',', '.')
-                            val parsed = normalized.toDoubleOrNull()
-                            if (parsed != null && parsed > 0.0) exchangeRate = parsed
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(Radius.md),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = BrandRed,
-                            unfocusedBorderColor = BorderDefault,
-                            focusedLabelColor = BrandRed,
-                            focusedContainerColor = SurfaceWhite,
-                            unfocusedContainerColor = SurfaceWhite,
-                        ),
-                    )
-                }
-
-                Button(
-                    onClick = { },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1EB5A6)),
-                    shape = RoundedCornerShape(Radius.md),
-                ) {
-                    Text("Actualizar", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                }
             }
         }
 
@@ -1016,8 +927,11 @@ internal fun CartPane(
     }
 
     if (showCobrarVenta) {
+        val displayTotal = if (cartCurrency == CartCurrency.USD) (state.total / exchangeRate).coerceAtLeast(0.0) else state.total
         CobrarVentaDialog(
-            total        = state.total,
+            total        = displayTotal,
+            currencyCode = if (cartCurrency == CartCurrency.USD) "USD" else "PEN",
+            exchangeRate = exchangeRate,
             cashierName  = cashierName,
             clients      = clients,
             initialClient = selectedCliente,
@@ -1061,7 +975,7 @@ internal fun CartPane(
                 val currencyCode = if (cartCurrency == CartCurrency.USD) "USD" else "PEN"
                 val normalizedPayment = payment.copy(
                     currencyCode = currencyCode,
-                    exchangeRate = exchangeRate,
+                    exchangeRate = if (currencyCode == "USD") exchangeRate else 1.0,
                     totalAmountInCurrency = state.total.let {
                         if (currencyCode == "USD") java.math.BigDecimal.valueOf(it).divide(java.math.BigDecimal.valueOf(exchangeRate), 2, java.math.RoundingMode.HALF_UP).toDouble() else it
                     },
@@ -1140,6 +1054,124 @@ internal fun CartPane(
     }
 }
 
+
+@Composable
+private fun CurrencySettingsScreen(
+    currentCurrency: CartCurrency,
+    currentRate: Double,
+    onBack: () -> Unit,
+    onApply: (Double) -> Unit,
+    onSelectCurrency: (CartCurrency) -> Unit,
+) {
+    var rateInput by remember(currentCurrency) {
+        mutableStateOf(if (currentCurrency == CartCurrency.PEN) "1.00" else formatRateInput(currentRate))
+    }
+    val parsedRate = rateInput.replace(',', '.').toDoubleOrNull()
+    val validRate = parsedRate != null && parsedRate > 0.0
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = SurfaceWhite,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = Spacing.lg),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Configuración de venta",
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Filled.Close, contentDescription = "Cerrar", tint = TextSecondary)
+                }
+            }
+
+            Spacer(Modifier.height(Spacing.md))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.lg),
+                verticalArrangement = Arrangement.spacedBy(Spacing.md),
+            ) {
+                Text("Moneda", color = TextSecondary, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                ) {
+                    listOf(CartCurrency.PEN to "PEN", CartCurrency.USD to "USD").forEach { (currency, label) ->
+                        val selected = currentCurrency == currency
+                        Surface(
+                            onClick = { onSelectCurrency(currency) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(Radius.md),
+                            color = if (selected) BrandRed else SurfaceWhite,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) BrandRed else BorderDefault),
+                        ) {
+                            Box(Modifier.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    label,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selected) Color.White else TextSecondary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Text("Tasa de cambio", color = TextSecondary, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = rateInput,
+                    onValueChange = { text ->
+                        if (currentCurrency == CartCurrency.USD && text.matches(Regex("^\\d*(\\.\\d{0,6})?$"))) {
+                            rateInput = text
+                        }
+                    },
+                    enabled = currentCurrency == CartCurrency.USD,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(Radius.md),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BrandRed,
+                        unfocusedBorderColor = BorderDefault,
+                        focusedLabelColor = BrandRed,
+                        focusedContainerColor = SurfaceWhite,
+                        unfocusedContainerColor = SurfaceWhite,
+                    ),
+                    isError = currentCurrency == CartCurrency.USD && rateInput.isNotBlank() && !validRate,
+                    supportingText = if (currentCurrency == CartCurrency.PEN) {
+                        { Text("El sol peruano siempre se mantiene en 1.00", color = TextSecondary, style = MaterialTheme.typography.labelSmall) }
+                    } else if (rateInput.isNotBlank() && !validRate) {
+                        { Text("Ingresa una tasa mayor que 0", color = BrandRed, style = MaterialTheme.typography.labelSmall) }
+                    } else null,
+                )
+
+                Button(
+                    onClick = { onApply(if (currentCurrency == CartCurrency.PEN) 1.0 else parsedRate!!) },
+                    enabled = currentCurrency == CartCurrency.PEN || validRate,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                    shape = RoundedCornerShape(Radius.md),
+                ) {
+                    Text("Actualizar", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+    }
+}
+
+private fun formatRateInput(rate: Double): String =
+    java.math.BigDecimal.valueOf(rate).stripTrailingZeros().toPlainString()
 
 //  COBRAR VENTA DIALOG  — rediseñado
 

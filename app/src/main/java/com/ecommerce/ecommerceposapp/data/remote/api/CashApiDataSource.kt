@@ -149,6 +149,9 @@ class CashApiDataSource(context: Context) {
                 cajeroNombre = item.cleanString("usuario_nombre"),
                 tipoPago = item.cleanString("tipo_pago").ifBlank { item.cleanString("metodo_pago") },
                 total = item.optDoubleFlexible("total"),
+                currencyCode = item.cleanString("currency_code").ifBlank { "PEN" },
+                exchangeRate = item.optDoubleFlexible("exchange_rate").takeIf { it > 0.0 } ?: 1.0,
+                totalAmountInCurrency = item.optDoubleFlexible("total_amount_in_currency"),
                 estado = item.cleanString("estado"),
                 idCliente = item.optLong("id_cliente"),
                 cancellationStatus = item.cleanString("anulacion_estado"),
@@ -182,6 +185,11 @@ class CashApiDataSource(context: Context) {
             )
         }
         val total = sale.optDoubleFlexible("total")
+        val currencyCode = sale.cleanString("currency_code").ifBlank { sale.cleanString("moneda") }.ifBlank { "PEN" }
+        val exchangeRate = sale.optDoubleFlexible("exchange_rate").takeIf { it > 0.0 } ?: 1.0
+        val totalAmountInCurrency = sale.optDoubleFlexible("total_amount_in_currency")
+            .takeIf { it > 0.0 }
+            ?: com.ecommerce.ecommerceposapp.domain.model.sales.CurrencyFormatter.convertToCurrency(total, currencyCode, exchangeRate)
         val subtotal = total / 1.18
         val firstPayment = payments.optJSONObject(0)
         val emisorRuc = sale.emitterString("ruc", "empresa_ruc", "emisor_ruc", "tienda_ruc")
@@ -201,6 +209,9 @@ class CashApiDataSource(context: Context) {
                 ?: firstPayment?.optDoubleFlexible("monto")
                 ?: total,
             vuelto = sale.optDoubleFlexible("vuelto").coerceAtLeast(0.0),
+            currencyCode = currencyCode,
+            exchangeRate = exchangeRate,
+            totalAmountInCurrency = totalAmountInCurrency,
             fechaMillis = parseDate(sale.cleanString("fecha")),
             lines = lines,
             vendedorNombre = sale.cleanString("cajero_nombre").ifBlank { sale.cleanString("usuario_nombre") },
