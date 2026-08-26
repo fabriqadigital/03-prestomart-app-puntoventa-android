@@ -95,6 +95,7 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductConversion
 import com.ecommerce.ecommerceposapp.domain.model.catalog.ProductItem
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
+import com.ecommerce.ecommerceposapp.presentation.clients.ClientPickerDialog
 import com.ecommerce.ecommerceposapp.presentation.clients.QuickAddClientDialog
 import com.ecommerce.ecommerceposapp.presentation.pos.PosUiState
 import com.ecommerce.ecommerceposapp.presentation.pos.VistaPreviaReciboDialog
@@ -873,30 +874,6 @@ internal fun CartPane(
                     )
                     Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
                 }
-                DropdownMenu(
-                    expanded        = showClientePicker,
-                    onDismissRequest = { showClientePicker = false },
-                    modifier        = Modifier.widthIn(min = 250.dp, max = 380.dp).heightIn(max = 360.dp),
-                ) {
-                    DropdownMenuItem(
-                        text    = { Text("Cliente genérico", style = MaterialTheme.typography.bodyMedium) },
-                        onClick = { selectedCliente = null; showClientePicker = false },
-                    )
-                    HorizontalDivider()
-                    clients.filter { it.active }.forEach { client ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(client.name.ifBlank { client.businessName.ifBlank { "Cliente" } }, fontWeight = FontWeight.Medium)
-                                    if (client.document.isNotBlank()) {
-                                        Text(client.document, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-                                    }
-                                }
-                            },
-                            onClick = { selectedCliente = client; showClientePicker = false },
-                        )
-                    }
-                }
             }
             IconButton(
                 onClick  = { showAddClientDialog = true },
@@ -1005,6 +982,15 @@ internal fun CartPane(
             errorMessage = clientsSaveError,
             onDismiss    = { showAddClientDialog = false; onClearClientMessages() },
             onSave       = { client -> pendingNewClientDocument = client.document; onSaveClient(client) },
+        )
+    }
+
+    if (showClientePicker) {
+        ClientPickerDialog(
+            clients          = clients,
+            selectedClientId = selectedCliente?.id,
+            onDismiss        = { showClientePicker = false },
+            onClientSelected = { selectedCliente = it },
         )
     }
 

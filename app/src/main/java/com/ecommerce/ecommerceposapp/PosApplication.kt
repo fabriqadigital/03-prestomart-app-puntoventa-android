@@ -28,7 +28,7 @@ class PosApplication : Application() {
         Realm.init(this)
         val config = RealmConfiguration.Builder()
             .name("ecommerce_pos.realm")
-            .schemaVersion(21)
+            .schemaVersion(22)
             .migration(RealmMigration { realm, oldVersion, _ ->
                 if (oldVersion < 9L) {
                     realm.schema.get("ProductRealm")?.apply {
@@ -189,6 +189,16 @@ class PosApplication : Application() {
                 if (oldVersion < 21L) {
                     realm.schema.get("ProductRealm")?.apply {
                         addField("stockWeb", Double::class.javaPrimitiveType!!)
+                    }
+                }
+                if (oldVersion < 22L) {
+                    realm.schema.get("FinanzaVentaRealm")?.apply {
+                        addField("currencyCode", String::class.java)
+                        transform { venta -> venta.setString("currencyCode", "PEN") }
+                        setRequired("currencyCode", true)
+                        addField("exchangeRate", Double::class.javaPrimitiveType!!)
+                        transform { venta -> venta.setDouble("exchangeRate", 1.0) }
+                        addField("totalAmountInCurrency", Double::class.javaPrimitiveType!!)
                     }
                 }
             })
