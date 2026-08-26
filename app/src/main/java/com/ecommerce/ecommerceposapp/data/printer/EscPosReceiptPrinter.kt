@@ -107,18 +107,6 @@ class EscPosReceiptPrinter(private val context: Context) {
             val left = "${item.quantityText} x ${receiptMoney(item.unitPrice, receipt)}"
             line(columns(left, receiptMoney(item.lineTotal, receipt)))
 
-            // 1. Volume discount (Ahorro por volumen)
-            val original = item.originalPrice ?: 0.0
-            if (original > item.unitPrice + 0.0001) {
-                val unitDiscount = original - item.unitPrice
-                val totalVolumeDiscount = unitDiscount * item.quantity
-                line(columns(
-                    " Ahorro Vol. (-${receiptMoney(unitDiscount, receipt)} u.)",
-                    "-${receiptMoney(totalVolumeDiscount, receipt)}"
-                ))
-            }
-
-            // 2. Global/Manual discount
             if (receipt.descuentoPorcentaje > 0.0 && item.lineKey in receipt.descuentoLineKeys) {
                 val discountAmount = kotlin.math.round(item.lineTotal * receipt.descuentoPorcentaje / 100.0 * 100.0) / 100.0
                 line(columns(
@@ -133,15 +121,6 @@ class EscPosReceiptPrinter(private val context: Context) {
         if (receipt.descuento > 0.0) {
             line(columns("DESC. (${formatPctLabel(receipt.descuentoPorcentaje)}%)", "-${receiptMoney(receipt.descuento, receipt)}"))
         }
-        
-        val totalAhorroVol = receipt.lines.sumOf { line ->
-            val original = line.originalPrice ?: 0.0
-            if (original > line.unitPrice + 0.0001) (original - line.unitPrice) * line.quantity else 0.0
-        }
-        if (totalAhorroVol > 0.0) {
-            line(columns("DESC. VOLUMEN", "-${receiptMoney(totalAhorroVol, receipt)}"))
-        }
-
         bold(true)
         val totalInSaleCurrency = receipt.totalAmountInCurrency.takeIf { it > 0.0 }
             ?: if (receipt.currencyCode.equals("USD", ignoreCase = true)) {

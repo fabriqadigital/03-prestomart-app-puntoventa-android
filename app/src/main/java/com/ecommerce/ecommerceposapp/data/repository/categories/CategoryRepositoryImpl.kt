@@ -27,12 +27,29 @@ class CategoryRepositoryImpl(context: Context) : CategoryRepository {
     }
 
     override fun listCategoriesAdminPage(page: Int, perPage: Int, search: String): ServerPage<CategoryAdminRow> =
-        api.listCategoriesPage(page, perPage, search).getOrElse {
-            val query = search.trim().lowercase()
-            val filtered = listCategoriesAdmin().filter { query.isBlank() || it.name.lowercase().contains(query) }
-            val start = ((page.coerceAtLeast(1) - 1) * perPage).coerceAtMost(filtered.size)
-            ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
+        api.listCategoriesPage(page, perPage, search).fold(
+            onSuccess = { remote -> mergePendingCategories(remote, page, search) },
+            onFailure = {
+                val query = search.trim().lowercase()
+                val filtered = listCategoriesAdmin().filter { query.isBlank() || it.name.lowercase().contains(query) }
+                val start = ((page.coerceAtLeast(1) - 1) * perPage).coerceAtMost(filtered.size)
+                ServerPage(filtered.drop(start).take(perPage), filtered.size, page, perPage)
+            },
+        )
+
+    // El servidor no conoce las categorias creadas offline (siguen en el outbox
+    // hasta que se sincronizan), asi que se anteponen en la pagina 1 para que no
+    // "desaparezcan" de la lista mientras esten pendientes.
+    private fun mergePendingCategories(remote: ServerPage<CategoryAdminRow>, page: Int, search: String): ServerPage<CategoryAdminRow> {
+        if (page != 1) return remote
+        val query = search.trim().lowercase()
+        val existingIds = remote.rows.map { it.id }.toSet()
+        val pending = listCategoriesAdmin().filter {
+            it.id < 0L && it.id !in existingIds && (query.isBlank() || it.name.lowercase().contains(query))
         }
+        if (pending.isEmpty()) return remote
+        return remote.copy(rows = pending + remote.rows, total = remote.total + pending.size)
+    }
 
     override fun upsertCategory(row: CategoryAdminRow): Result<Unit> {
         if (row.name.isBlank()) return Result.failure(Exception("Nombre obligatorio."))

@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -68,6 +69,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
@@ -408,7 +410,19 @@ private fun SupplierTableRow(
     ) {
         if (fullTable) Text(supplier.codigoProveedor.ifBlank { "-" }, modifier = Modifier.weight(0.8f), color = TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Column(modifier = Modifier.weight(1.6f)) {
-            Text(supplier.businessName.ifBlank { "—" }, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    supplier.businessName.ifBlank { "—" },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (supplier.id < 0L) {
+                    Spacer(Modifier.width(4.dp))
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFF97316)))
+                }
+            }
         }
         Text(
             supplier.ruc.ifBlank { "-" },
@@ -472,13 +486,20 @@ private fun SupplierMobileCard(
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        supplier.businessName.ifBlank { "Sin razón social" },
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            supplier.businessName.ifBlank { "Sin razón social" },
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (supplier.id < 0L) {
+                            Spacer(Modifier.width(4.dp))
+                            Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFF97316)))
+                        }
+                    }
                     Text(
                         supplier.codigoProveedor.ifBlank { "Sin código" },
                         color = TextSecondary,

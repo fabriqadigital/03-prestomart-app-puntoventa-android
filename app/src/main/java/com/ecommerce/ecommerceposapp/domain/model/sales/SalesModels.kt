@@ -12,7 +12,6 @@ data class CartLine(
     val conversionName: String = "",
     val stockFactor: Double = 1.0,
     val saleType: String = "UNIDAD",
-    val originalPrice: Double? = null,
 ) {
     val lineTotal: Double get() = unitPrice * quantity
     val lineKey: String get() = "$productId:${conversionId ?: 0L}"

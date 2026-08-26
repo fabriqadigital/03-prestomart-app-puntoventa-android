@@ -299,11 +299,6 @@ internal fun SaleCompletedDialog(
                     Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Total ${CurrencyFormatter.formatAmount(receipt.totalAmountInCurrency.takeIf { it > 0.0 } ?: receiptAmount(receipt.total, receipt), receipt.currencyCode)}", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         Text("Vuelto ${receiptMoney(receipt.vuelto, receipt)}", color = CompletionBrand, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                        
-                        val totalVolumeSavings = receipt.lines.sumOf { line ->
-                            val original = line.originalPrice ?: 0.0
-                            if (original > line.unitPrice + 0.001) (original - line.unitPrice) * line.quantity else 0.0
-                        }
                     }
                 }
                 Spacer(Modifier.height(22.dp))

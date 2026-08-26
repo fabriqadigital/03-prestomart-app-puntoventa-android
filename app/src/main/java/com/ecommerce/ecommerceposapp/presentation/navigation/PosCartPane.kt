@@ -553,13 +553,6 @@ private fun CartTotalSection(
                 Text("IGV (18%)", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 Text(formatAmount(igv, currency, exchangeRate), color = TextSecondary, style = MaterialTheme.typography.bodySmall)
             }
-            if (volumeDiscountMonto > 0.0) {
-                Spacer(Modifier.height(Spacing.xs))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Descuento por volumen", color = TextSecondary, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                    Text("-${formatAmount(volumeDiscountMonto, currency, exchangeRate)}", color = TextSecondary, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                }
-            }
             if (descuentoMonto > 0.0) {
                 Spacer(Modifier.height(Spacing.xs))
                 Row(

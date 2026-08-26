@@ -106,6 +106,13 @@ class PosRepositoryImpl(private val context: Context) :
     private var lastCashRegisters: List<CashRegister> = emptyList()
     private val allSyncModules = SyncPlan.orderedModules
     private val genericCustomerName = "Cliente genérico"
+    private val autoSyncSuspended = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    override fun isAutoSyncSuspended(): Boolean = autoSyncSuspended.get()
+
+    override fun setAutoSyncSuspended(suspended: Boolean) {
+        autoSyncSuspended.set(suspended)
+    }
 
     override fun login(email: String, password: String): Result<UserSession> {
         if (email.isBlank() || password.isBlank()) return Result.failure(Exception("Completa usuario y contraseña."))
@@ -263,6 +270,7 @@ class PosRepositoryImpl(private val context: Context) :
     }
 
     override fun refreshCatalog(): Result<Unit> {
+        if (autoSyncSuspended.get()) return Result.success(Unit)
         val session = getSession() ?: return Result.failure(Exception("Sin sesion de usuario."))
         return syncModules(session, setOf("categorias", "subcategorias", "productos"))
     }
@@ -350,7 +358,6 @@ class PosRepositoryImpl(private val context: Context) :
                         saleType = line.saleType
                         cantidad = line.quantity
                         precioUnitario = line.unitPrice
-                        originalPrice = line.originalPrice ?: line.unitPrice
                         descuento = 0.0
                         this.subtotal = lineSub
                     },
@@ -903,18 +910,7 @@ class PosRepositoryImpl(private val context: Context) :
                     .equalTo("idVenta", ventaId)
                     .sort("id", io.realm.Sort.DESCENDING)
                     .findFirst()
-                val localDetails = realm.where(FinanzaVentaDetalleRealm::class.java).equalTo("idVenta", ventaId).findAll()
-                val enrichedLines = remote.lines.map { remoteLine ->
-                    val local = localDetails.firstOrNull { 
-                        it.idProducto == remoteLine.productId && 
-                        kotlin.math.abs(it.cantidad - remoteLine.quantity) < 0.0001
-                    }
-                    if (local != null && local.originalPrice > 0.0) {
-                        remoteLine.copy(originalPrice = local.originalPrice)
-                    } else remoteLine
-                }
                 remote.copy(
-                    lines = enrichedLines,
                     subtotal = localSale?.subtotal?.takeIf { it > 0.0 } ?: remote.subtotal,
                     igv = localSale?.igv?.takeIf { it > 0.0 } ?: remote.igv,
                     descuento = localSale?.descuento?.takeIf { it > 0.0 } ?: remote.descuento,
@@ -951,7 +947,6 @@ class PosRepositoryImpl(private val context: Context) :
                 saleType = it.saleType.ifBlank {
                     realm.where(ProductRealm::class.java).equalTo("id", it.idProducto).findFirst()?.saleType ?: "UNIDAD"
                 },
-                originalPrice = it.originalPrice.takeIf { p -> p > 0.0 },
             )
         }
         val localReceipt = realm.where(FinanzaComprobanteRealm::class.java)
@@ -1345,6 +1340,7 @@ class PosRepositoryImpl(private val context: Context) :
         modules: Set<String>,
         onProgress: (SyncProgress) -> Unit,
     ): Result<Unit> {
+        autoSyncSuspended.set(false)
         val selected = SyncPlan.expand(modules)
         if (selected.isEmpty()) return Result.failure(Exception("Seleccione al menos un módulo para sincronizar."))
         realmWrite { realm ->
@@ -1768,7 +1764,6 @@ class PosRepositoryImpl(private val context: Context) :
                 conversionId = item.optLong("conversion_id").takeIf { it > 0L },
                 conversionName = item.optString("conversion_name"),
                 stockFactor = item.optDouble("stock_factor", 1.0),
-                originalPrice = item.optDouble("original_price").takeIf { it > 0.0 },
             )
         }
         val paymentJson = payload.getJSONObject("payment")
@@ -2524,7 +2519,6 @@ class PosRepositoryImpl(private val context: Context) :
                     line.conversionId?.let { put("conversion_id", it) }
                     put("conversion_name", line.conversionName)
                     put("stock_factor", line.stockFactor)
-                    line.originalPrice?.let { put("original_price", it) }
                 })
             }
         })

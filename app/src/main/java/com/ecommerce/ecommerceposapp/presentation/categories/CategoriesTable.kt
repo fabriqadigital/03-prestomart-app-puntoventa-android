@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -40,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
@@ -209,7 +212,13 @@ private fun CategoryRow(
                 contentDescription = if (expanded) "Ocultar subcategorias" else "Mostrar subcategorias",
             )
         }
-        Text(category.name, modifier = Modifier.weight(2f), fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(modifier = Modifier.weight(2f), verticalAlignment = Alignment.CenterVertically) {
+            Text(category.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            if (category.id < 0L) {
+                Spacer(Modifier.width(4.dp))
+                Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFF97316)))
+            }
+        }
         if (!compact) Text(childCount.toString(), modifier = Modifier.weight(1f), color = TableMuted)
         Text(if (category.active) "Activa" else "Inactiva", modifier = Modifier.weight(1f), color = if (category.active) TableText else TableBrand)
         Box {
@@ -243,7 +252,13 @@ private fun SubcategoryRow(
         Modifier.fillMaxWidth().background(TableSubcategory).clickable(onClick = onEdit).padding(start = 58.dp, end = 8.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(subcategory.name, modifier = Modifier.weight(2f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(modifier = Modifier.weight(2f), verticalAlignment = Alignment.CenterVertically) {
+            Text(subcategory.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            if (subcategory.id < 0L) {
+                Spacer(Modifier.width(4.dp))
+                Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFF97316)))
+            }
+        }
         if (!compact) Text("Subcategoria", modifier = Modifier.weight(1f), color = TableMuted)
         Text(if (subcategory.active) "Activa" else "Inactiva", modifier = Modifier.weight(1f), color = TableMuted)
         Box {
