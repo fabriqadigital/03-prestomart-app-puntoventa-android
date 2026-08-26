@@ -39,6 +39,7 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
+import com.ecommerce.ecommerceposapp.domain.model.sales.CurrencyFormatter
 import com.ecommerce.ecommerceposapp.domain.model.sales.PosPaymentRounding
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryPage
@@ -170,6 +171,8 @@ class PosRepositoryImpl(private val context: Context) :
         )
     }
 
+    override fun enterOfflineMode(): UserSession? = getSession()?.copy(offlineSession = true)?.also(::saveSession)
+
     override fun logout() {
         prefs.edit()
             .remove("session_user_id")
@@ -295,7 +298,11 @@ class PosRepositoryImpl(private val context: Context) :
         val descuentoMonto = round((descuentoBase * pct / 100.0) * 100) / 100
         val baseFinal = round((exactTotal - descuentoMonto) * 100) / 100
         val total = PosPaymentRounding.finalTotal(baseFinal, payment.tipoPago, payment.aplicarRedondeo)
-        val effectivePayment = PosPaymentRounding.normalizedPayment(payment, baseFinal)
+        val paymentInBaseCurrency = payment.copy(
+            montoRecibido = CurrencyFormatter.convertToBaseCurrency(payment.montoRecibido, payment.currencyCode, payment.exchangeRate),
+            vuelto = CurrencyFormatter.convertToBaseCurrency(payment.vuelto, payment.currencyCode, payment.exchangeRate),
+        )
+        val effectivePayment = PosPaymentRounding.normalizedPayment(paymentInBaseCurrency, baseFinal)
         if (PosPaymentRounding.isCash(payment.tipoPago) && effectivePayment.montoRecibido < total) {
             return Result.failure(Exception("El monto recibido es menor al total redondeado de la venta."))
         }
@@ -441,6 +448,8 @@ class PosRepositoryImpl(private val context: Context) :
                 return getSaleReceipt(remoteId)
                     .map { it.copy(descuentoLineKeys = descuentoLineKeys) }
                     .recover { receipt.copy(ventaId = remoteId) }
+            }.onFailure {
+                enterOfflineMode()
             }
         }
         return Result.success(receipt)
@@ -883,6 +892,9 @@ class PosRepositoryImpl(private val context: Context) :
                     cajeroNombre = getSession()?.name.orEmpty(),
                     tipoPago = sale.tipoPago,
                     total = sale.total,
+                    currencyCode = sale.currencyCode.ifBlank { "PEN" },
+                    exchangeRate = sale.exchangeRate.takeIf { it > 0.0 } ?: 1.0,
+                    totalAmountInCurrency = sale.totalAmountInCurrency,
                     estado = if (sale.estado == "A") "Completada" else "Anulada",
                     idCliente = sale.idCliente,
                 )
@@ -905,6 +917,10 @@ class PosRepositoryImpl(private val context: Context) :
                     descuentoPorcentaje = localSale?.descuentoPorcentaje?.takeIf { it > 0.0 } ?: remote.descuentoPorcentaje,
                     montoRecibido = localSale?.montoRecibido?.takeIf { it > 0.0 } ?: remote.montoRecibido,
                     vuelto = localSale?.vuelto?.takeIf { it > 0.0 } ?: remote.vuelto,
+                    currencyCode = localSale?.currencyCode?.ifBlank { null } ?: remote.currencyCode,
+                    exchangeRate = localSale?.exchangeRate?.takeIf { it > 0.0 } ?: remote.exchangeRate,
+                    totalAmountInCurrency = localSale?.totalAmountInCurrency?.takeIf { it > 0.0 }
+                        ?: remote.totalAmountInCurrency,
                     clienteNombre = remote.clienteNombre
                         .ifBlank { localReceipt?.receptorRazonSocial.orEmpty() }
                         .takeUnless { it.isGenericCustomerName() }
@@ -961,6 +977,14 @@ class PosRepositoryImpl(private val context: Context) :
             clienteDocumento = localReceipt?.receptorNumDoc.orEmpty().ifBlank { client?.document.orEmpty() },
             descuento = sale.descuento,
             descuentoPorcentaje = sale.descuentoPorcentaje,
+            currencyCode = sale.currencyCode.ifBlank { "PEN" },
+            exchangeRate = sale.exchangeRate.takeIf { it > 0.0 } ?: 1.0,
+            totalAmountInCurrency = sale.totalAmountInCurrency.takeIf { it > 0.0 }
+                ?: com.ecommerce.ecommerceposapp.domain.model.sales.CurrencyFormatter.convertToCurrency(
+                    sale.total,
+                    sale.currencyCode,
+                    sale.exchangeRate,
+                ),
         )
     }
 
@@ -1707,6 +1731,7 @@ class PosRepositoryImpl(private val context: Context) :
             result.onSuccess {
                 processed++
             }.onFailure { error ->
+                enterOfflineMode()
                 val attempt = entry.attemptCount + 1
                 val delayMillis = (5_000L * (1L shl attempt.coerceAtMost(9)))
                     .coerceAtMost(60 * 60 * 1000L)
@@ -1743,6 +1768,16 @@ class PosRepositoryImpl(private val context: Context) :
         }
         val paymentJson = payload.getJSONObject("payment")
         val customerJson = payload.getJSONObject("customer")
+        val paymentCurrency = paymentJson.optString("currency_code", payload.optString("currency_code", "PEN"))
+        val paymentRate = paymentJson.optDouble("exchange_rate", payload.optDouble("exchange_rate", 1.0))
+        val legacyReceived = paymentJson.optString("amounts_currency").isBlank() &&
+            paymentCurrency.equals("USD", ignoreCase = true)
+        val received = paymentJson.getDouble("received").let {
+            if (legacyReceived) CurrencyFormatter.convertToCurrency(it, "USD", paymentRate) else it
+        }
+        val change = paymentJson.getDouble("change").let {
+            if (legacyReceived) CurrencyFormatter.convertToCurrency(it, "USD", paymentRate) else it
+        }
         val descuentoPorcentaje = payload.optDouble("descuento_porcentaje", 0.0)
         val descuentoMonto = payload.optDouble("descuento_monto", 0.0)
         val localClientId = payload.getLong("client_id")
@@ -1761,9 +1796,12 @@ class PosRepositoryImpl(private val context: Context) :
             lines = lines,
             payment = SalePaymentInfo(
                 tipoPago = paymentJson.getString("type"),
-                montoRecibido = paymentJson.getDouble("received"),
-                vuelto = paymentJson.getDouble("change"),
+                montoRecibido = received,
+                vuelto = change,
                 aplicarRedondeo = paymentJson.optBoolean("apply_rounding", false),
+                currencyCode = paymentCurrency,
+                exchangeRate = paymentRate,
+                totalAmountInCurrency = paymentJson.optDouble("total_amount_in_currency", 0.0),
             ),
             clientId = remoteClientId,
             cashSessionId = resolveRemoteId("cash_session", payload.getLong("cash_session_id")),
@@ -2437,19 +2475,29 @@ class PosRepositoryImpl(private val context: Context) :
         receiptType: TipoComprobanteEmision,
         descuentoPorcentaje: Double = 0.0,
         descuentoMonto: Double = 0.0,
-    ): String = JSONObject().apply {
+    ): String {
+        val saleTotalInCurrency = payment.totalAmountInCurrency.takeIf { it > 0.0 }
+            ?: CurrencyFormatter.convertToCurrency(payment.montoRecibido, payment.currencyCode, payment.exchangeRate)
+        val receivedInCurrency = if (payment.currencyCode.equals("USD", ignoreCase = true)) {
+            CurrencyFormatter.convertToCurrency(payment.montoRecibido, "USD", payment.exchangeRate)
+        } else payment.montoRecibido
+        val changeInCurrency = if (payment.currencyCode.equals("USD", ignoreCase = true)) {
+            CurrencyFormatter.convertToCurrency(payment.vuelto, "USD", payment.exchangeRate)
+        } else payment.vuelto
+        return JSONObject().apply {
         put("client_id", clientId)
         put("cash_session_id", cashSessionId)
         put("receipt_type", receiptType.name)
         put("currency_code", payment.currencyCode.ifBlank { "PEN" })
         put("exchange_rate", payment.exchangeRate.takeIf { it > 0.0 } ?: 1.0)
-        put("total_amount_in_currency", payment.totalAmountInCurrency.takeIf { it > 0.0 } ?: payment.montoRecibido)
+        put("total_amount_in_currency", saleTotalInCurrency)
         put("descuento_porcentaje", descuentoPorcentaje)
         put("descuento_monto", descuentoMonto)
         put("payment", JSONObject().apply {
             put("type", payment.tipoPago)
-            put("received", payment.montoRecibido)
-            put("change", payment.vuelto)
+            put("received", receivedInCurrency)
+            put("change", changeInCurrency)
+            put("amounts_currency", payment.currencyCode.ifBlank { "PEN" })
             put("apply_rounding", payment.aplicarRedondeo)
             put("currency_code", payment.currencyCode.ifBlank { "PEN" })
             put("exchange_rate", payment.exchangeRate.takeIf { it > 0.0 } ?: 1.0)
@@ -2474,7 +2522,8 @@ class PosRepositoryImpl(private val context: Context) :
                 })
             }
         })
-    }.toString()
+        }.toString()
+    }
 
     private fun resolveRemoteId(entityType: String, localId: Long): Long {
         if (localId >= 0L) return localId

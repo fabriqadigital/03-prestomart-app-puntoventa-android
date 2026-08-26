@@ -16,4 +16,10 @@ class CurrencyFormatterTest {
         assertEquals(12.5, CurrencyFormatter.convertToCurrency(46.25, "USD", 3.7), 0.0001)
         assertEquals(46.25, CurrencyFormatter.convertToCurrency(46.25, "PEN", 3.7), 0.0001)
     }
+
+    @Test
+    fun `converts received usd amount back to base currency`() {
+        assertEquals(3.08, CurrencyFormatter.convertToBaseCurrency(0.79, "USD", 3.90), 0.0001)
+        assertEquals(3.00, CurrencyFormatter.convertToBaseCurrency(3.00, "PEN", 3.90), 0.0001)
+    }
 }

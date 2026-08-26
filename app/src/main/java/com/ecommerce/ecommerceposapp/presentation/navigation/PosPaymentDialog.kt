@@ -89,11 +89,17 @@ private fun quickCashAmounts(total: Double): List<Double> {
     return (listOf(total, roundedTen) + denominations).distinct().take(3)
 }
 
-private fun money(value: Double): String = "S/" + String.format(Locale.US, "%.2f", value)
+private fun money(value: Double, currencyCode: String = "PEN"): String =
+    when (currencyCode.uppercase()) {
+        "USD" -> "US$ ${String.format(Locale.US, "%.2f", value)}"
+        else -> "S/ ${String.format(Locale.US, "%.2f", value)}"
+    }
 
 @Composable
 internal fun CobrarVentaDialog(
     total: Double,
+    currencyCode: String = "PEN",
+    exchangeRate: Double = 1.0,
     cashierName: String,
     clients: List<ClientRow>,
     initialClient: ClientRow?,
@@ -196,7 +202,7 @@ internal fun CobrarVentaDialog(
                 Spacer(Modifier.height(20.dp))
                 Text("TOTAL", modifier = Modifier.align(Alignment.CenterHorizontally), color = PaymentMuted, fontWeight = FontWeight.SemiBold)
                 Text(
-                    money(payableTotal),
+                    money(payableTotal, currencyCode),
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                     fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
@@ -283,6 +289,7 @@ internal fun CobrarVentaDialog(
                     PaymentDetails(
                         method = method!!,
                         total = payableTotal,
+                        currencyCode = currencyCode,
                         cashierName = cashierName,
                         receivedText = receivedText,
                         onReceivedChange = { value ->
@@ -290,6 +297,7 @@ internal fun CobrarVentaDialog(
                             errorText = ""
                         },
                         change = change,
+                        exchangeRate = exchangeRate,
                         applyCashRounding = applyCashRounding,
                         onApplyCashRoundingChange = {
                             applyCashRounding = it
@@ -541,22 +549,24 @@ private fun PaymentMethodSelection(onSelect: (PaymentMethod) -> Unit) {
 private fun PaymentDetails(
     method: PaymentMethod,
     total: Double,
+    currencyCode: String,
     cashierName: String,
     receivedText: String,
     onReceivedChange: (String) -> Unit,
     change: Double,
+    exchangeRate: Double,
     applyCashRounding: Boolean,
     onApplyCashRoundingChange: (Boolean) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (maxWidth >= 620.dp) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                PaymentAmountSection(method, total, receivedText, onReceivedChange, change, applyCashRounding, onApplyCashRoundingChange, Modifier.weight(1f))
+                PaymentAmountSection(method, total, currencyCode, receivedText, onReceivedChange, change, exchangeRate, applyCashRounding, onApplyCashRoundingChange, Modifier.weight(1f))
                 CashierSection(method, cashierName, Modifier.weight(1f))
             }
         } else {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                PaymentAmountSection(method, total, receivedText, onReceivedChange, change, applyCashRounding, onApplyCashRoundingChange, Modifier.fillMaxWidth())
+                PaymentAmountSection(method, total, currencyCode, receivedText, onReceivedChange, change, exchangeRate, applyCashRounding, onApplyCashRoundingChange, Modifier.fillMaxWidth())
                 CashierSection(method, cashierName, Modifier.fillMaxWidth())
             }
         }
@@ -567,9 +577,11 @@ private fun PaymentDetails(
 private fun PaymentAmountSection(
     method: PaymentMethod,
     total: Double,
+    currencyCode: String,
     receivedText: String,
     onReceivedChange: (String) -> Unit,
     change: Double,
+    exchangeRate: Double,
     applyCashRounding: Boolean,
     onApplyCashRoundingChange: (Boolean) -> Unit,
     modifier: Modifier,
@@ -590,7 +602,7 @@ private fun PaymentAmountSection(
                     Column(Modifier.weight(1f)) {
                         Text("Aplicar redondeo", fontWeight = FontWeight.SemiBold)
                         Text(
-                            "Opcional: sube el total al siguiente tramo de S/ 0.50.",
+                            "Opcional: sube el total al siguiente tramo de ${money(0.5, currencyCode)}.",
                             color = PaymentMuted,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -621,10 +633,10 @@ private fun PaymentAmountSection(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(8.dp),
                     border = BorderStroke(1.dp, PaymentBorder),
-                ) { Text(money(amount), color = PaymentText) }
+                ) { Text(money(amount, currencyCode), color = PaymentText) }
                 Spacer(Modifier.height(8.dp))
             }
-            Text("Vuelto: ${money(change)}", fontWeight = FontWeight.SemiBold, color = PaymentBrand)
+            Text("Vuelto: ${money(change, currencyCode)}", fontWeight = FontWeight.SemiBold, color = PaymentBrand)
         } else {
             Text("Método seleccionado", color = PaymentMuted)
             Spacer(Modifier.height(6.dp))
@@ -634,7 +646,7 @@ private fun PaymentAmountSection(
                     Spacer(Modifier.width(10.dp))
                     Text(method.label, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.weight(1f))
-                    Text(money(total), fontWeight = FontWeight.Bold)
+                    Text(money(total, currencyCode), fontWeight = FontWeight.Bold)
                 }
             }
         }
