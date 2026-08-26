@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -31,7 +32,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Business
-import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonOff
@@ -46,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,15 +57,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import android.widget.Toast
+import com.ecommerce.ecommerceposapp.R
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
+import com.ecommerce.ecommerceposapp.presentation.pos.openWhatsapp
+import com.ecommerce.ecommerceposapp.presentation.pos.sanitizePhone51
 import com.ecommerce.ecommerceposapp.ui.theme.BorderDefault
 import com.ecommerce.ecommerceposapp.ui.theme.BrandRed
-import com.ecommerce.ecommerceposapp.ui.theme.GreenSuccess
 import com.ecommerce.ecommerceposapp.ui.theme.SurfaceMuted
 import com.ecommerce.ecommerceposapp.ui.theme.SurfaceWhite
 import com.ecommerce.ecommerceposapp.ui.theme.TextPrimary
@@ -72,6 +80,16 @@ import com.ecommerce.ecommerceposapp.ui.theme.TextSecondary
 import com.ecommerce.ecommerceposapp.ui.theme.TextTertiary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/** Abre el chat de WhatsApp del cliente; si el numero no es valido, avisa en vez de fallar en silencio. */
+internal fun openClientWhatsapp(context: android.content.Context, phone: String) {
+    val phone51 = sanitizePhone51(phone)
+    if (phone51 == null) {
+        Toast.makeText(context, "Número de WhatsApp inválido.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    openWhatsapp(context, phone51, "")
+}
 
 /** Ancho de pantalla a partir del cual se considera tablet: panel lateral en vez de pantalla completa. */
 private const val TABLET_BREAKPOINT_DP = 600
@@ -114,6 +132,13 @@ fun ClientPickerDialog(
         onDismissRequest = { close() },
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
     ) {
+        val view = LocalView.current
+        SideEffect {
+            (view.parent as? DialogWindowProvider)?.window?.apply {
+                setDimAmount(0f)
+                setBackgroundDrawableResource(android.R.color.transparent)
+            }
+        }
         Box(Modifier.fillMaxSize()) {
             AnimatedVisibility(
                 visible = visible,
@@ -214,6 +239,7 @@ fun ClientPickerDialog(
                                     subtitle = if (client.document.isNotBlank()) "${client.documentType} ${client.document}" else null,
                                     selected = client.id == selectedClientId,
                                     phone = client.phone,
+                                    pendingSync = client.id < 0L,
                                     onClick = { onClientSelected(client); close() },
                                 )
                                 HorizontalDivider(color = BorderDefault)
@@ -243,6 +269,7 @@ private fun ClientPickerRow(
     subtitle: String?,
     selected: Boolean,
     phone: String,
+    pendingSync: Boolean = false,
     onClick: () -> Unit,
 ) {
     Row(
@@ -264,20 +291,40 @@ private fun ClientPickerRow(
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                fontWeight = FontWeight.Medium,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    fontWeight = FontWeight.Medium,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (pendingSync) {
+                    Spacer(Modifier.width(6.dp))
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFF97316)))
+                }
+            }
             if (subtitle != null) {
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             }
+            if (pendingSync) {
+                Text("Pendiente de sincronizar", style = MaterialTheme.typography.labelSmall, color = Color(0xFFC2410C))
+            }
         }
         if (phone.isNotBlank()) {
-            Icon(Icons.Filled.Call, contentDescription = null, tint = GreenSuccess, modifier = Modifier.size(18.dp))
+            val context = LocalContext.current
+            IconButton(
+                onClick = { openClientWhatsapp(context, phone) },
+                modifier = Modifier.size(32.dp),
+            ) {
+                Image(
+                    painterResource(R.drawable.ic_whatsapp),
+                    contentDescription = "Abrir WhatsApp",
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }
