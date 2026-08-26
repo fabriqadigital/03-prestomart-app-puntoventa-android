@@ -948,6 +948,21 @@ private fun PosScreen(
         onDispose { connectivity.unregisterNetworkCallback(callback) }
     }
 
+    LaunchedEffect(connectivity) {
+        while (isActive) {
+            val online = hasValidatedInternet()
+            if (online != isOnline) {
+                val recovered = online && !isOnline
+                isOnline = online
+                if (recovered) {
+                    syncRepository.setAutoSyncSuspended(true)
+                    showReconnectPrompt = true
+                }
+            }
+            delay(1_000)
+        }
+    }
+
     var dataWedgeSequence by remember { mutableStateOf(0) }
     var dataWedgeCode by remember { mutableStateOf("") }
     var lastDataWedgeCode by remember { mutableStateOf("") }

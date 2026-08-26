@@ -308,6 +308,10 @@ class PosRepositoryImpl(private val context: Context) :
         }
         val fechaMillis = System.currentTimeMillis()
         val outboxId = UUID.randomUUID().toString()
+        val saleCurrency = payment.currencyCode.ifBlank { "PEN" }
+        val saleRate = payment.exchangeRate.takeIf { it > 0.0 } ?: 1.0
+        val saleTotalInCurrency = payment.totalAmountInCurrency.takeIf { it > 0.0 }
+            ?: CurrencyFormatter.convertToCurrency(total, saleCurrency, saleRate)
         lateinit var receipt: CompletedSaleReceipt
         realmWrite { realm ->
             val sesionId = cashSessionId
@@ -337,9 +341,9 @@ class PosRepositoryImpl(private val context: Context) :
                     tipoPago = effectivePayment.tipoPago
                     montoRecibido = effectivePayment.montoRecibido
                     vuelto = effectivePayment.vuelto
-                    currencyCode = effectivePayment.currencyCode.ifBlank { "PEN" }
-                    exchangeRate = effectivePayment.exchangeRate.takeIf { it > 0.0 } ?: 1.0
-                    totalAmountInCurrency = effectivePayment.totalAmountInCurrency.takeIf { it > 0.0 } ?: total
+                    currencyCode = saleCurrency
+                    exchangeRate = saleRate
+                    totalAmountInCurrency = saleTotalInCurrency
                     estado = "A"
                     motivoAnulacion = ""
                 },
@@ -416,9 +420,9 @@ class PosRepositoryImpl(private val context: Context) :
                 clienteDocumento = customerInfo.document.filter(Char::isDigit),
                 descuento = descuentoMonto,
                 descuentoPorcentaje = pct,
-                currencyCode = effectivePayment.currencyCode.ifBlank { "PEN" },
-                exchangeRate = effectivePayment.exchangeRate.takeIf { it > 0.0 } ?: 1.0,
-                totalAmountInCurrency = effectivePayment.totalAmountInCurrency.takeIf { it > 0.0 } ?: total,
+                currencyCode = saleCurrency,
+                exchangeRate = saleRate,
+                totalAmountInCurrency = saleTotalInCurrency,
                 descuentoLineKeys = descuentoLineKeys,
             )
         }
@@ -804,7 +808,20 @@ class PosRepositoryImpl(private val context: Context) :
                         tipoPago = row.tipoPago.ifBlank { localRow?.tipoPago.orEmpty() },
                     )
                 }
-               
+                realmWrite { realm ->
+                    enrichedRemote.forEach { row ->
+                        val sale = realm.where(FinanzaVentaRealm::class.java)
+                            .equalTo("id", row.ventaId)
+                            .findFirst()
+                            ?: return@forEach
+                        val currency = row.currencyCode.ifBlank { "PEN" }
+                        val rate = row.exchangeRate.takeIf { it > 0.0 } ?: 1.0
+                        sale.currencyCode = currency
+                        sale.exchangeRate = rate
+                        sale.totalAmountInCurrency = row.totalAmountInCurrency.takeIf { it > 0.0 }
+                            ?: CurrencyFormatter.convertToCurrency(row.total, currency, rate)
+                    }
+                }
                 val localIds = local.map { it.ventaId }.toSet()
                 val toCache = enrichedRemote.filter { it.ventaId > 0L && it.ventaId !in localIds }
                 if (toCache.isNotEmpty()) {
@@ -822,6 +839,10 @@ class PosRepositoryImpl(private val context: Context) :
                                     fechaVenta     = row.fechaMillis
                                     total          = row.total
                                     tipoPago       = row.tipoPago
+                                    currencyCode   = row.currencyCode.ifBlank { "PEN" }
+                                    exchangeRate   = row.exchangeRate.takeIf { it > 0.0 } ?: 1.0
+                                    totalAmountInCurrency = row.totalAmountInCurrency.takeIf { it > 0.0 }
+                                        ?: CurrencyFormatter.convertToCurrency(row.total, row.currencyCode, row.exchangeRate)
                                     estado         = if (row.estado.equals("Anulada", ignoreCase = true)) "N" else "A"
                                 })
                             }
