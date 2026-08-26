@@ -75,6 +75,7 @@ import com.ecommerce.ecommerceposapp.domain.model.sales.ComprobanteEmitidoResult
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalesHistoryRow
+import com.ecommerce.ecommerceposapp.domain.model.sales.CurrencyFormatter
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import com.ecommerce.ecommerceposapp.domain.repository.catalog.CatalogRepository
 import com.ecommerce.ecommerceposapp.presentation.pos.VistaPreviaReciboDialog
@@ -123,6 +124,15 @@ private fun mapPago(code: String): String = when (code) {
     "YAP" -> "Yape"
     "PLN" -> "Plin"
     else  -> code
+}
+
+private fun historyTotal(row: SalesHistoryRow): String {
+    val amount = row.totalAmountInCurrency.takeIf { it > 0.0 } ?: CurrencyFormatter.convertToCurrency(
+        row.total,
+        row.currencyCode,
+        row.exchangeRate,
+    )
+    return CurrencyFormatter.formatAmount(amount, row.currencyCode)
 }
 
 private fun mapTipoForReissue(tipoComprobante: String): TipoComprobanteEmision = when (tipoComprobante.uppercase()) {
@@ -181,7 +191,7 @@ private fun SaleHistoryCard(
                 Spacer(Modifier.width(Spacing.sm))
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        "S/ ${"%.2f".format(row.total)}",
+                        historyTotal(row),
                         style      = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color      = if (isAnulada) GrayMedium else BrandRed,
@@ -385,7 +395,7 @@ private fun SaleHistoryTableRow(
         Text(formatVentaFecha(row.fechaMillis), Modifier.weight(1.05f), color = if (isAnulada) GrayMedium else TextSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 2, textDecoration = rowDecoration)
         Text(row.clienteNombre.ifBlank { "Cliente genérico" }, Modifier.weight(1.15f), color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
         Text(row.cajeroNombre.ifBlank { "—" }, Modifier.weight(1f), color = rowTextColor, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
-        Text("S/ ${"%.2f".format(row.total)}", Modifier.weight(.75f), color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, textDecoration = rowDecoration)
+        Text(historyTotal(row), Modifier.weight(.75f), color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, textDecoration = rowDecoration)
         Box(Modifier.weight(.9f)) { SaleStatusBadge(isAnulada, row.cancellationStatus) }
         Box(Modifier.weight(.72f)) { SaleActions(isAnulada, row.cancellationStatus, onReprint, onCancel, onWithdraw) }
     }
@@ -435,7 +445,7 @@ private fun SaleHistoryCompactRow(
             Text(row.clienteNombre.ifBlank { "Cliente genérico" }, color = if (isAnulada) GrayMedium else TextSecondary, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = rowDecoration)
         }
         Column(Modifier.weight(.8f), horizontalAlignment = Alignment.End) {
-            Text("S/ ${"%.2f".format(row.total)}", color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, textDecoration = rowDecoration)
+            Text(historyTotal(row), color = if (isAnulada) GrayMedium else BrandRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, textDecoration = rowDecoration)
             Spacer(Modifier.height(4.dp))
             SaleStatusBadge(isAnulada, row.cancellationStatus)
         }

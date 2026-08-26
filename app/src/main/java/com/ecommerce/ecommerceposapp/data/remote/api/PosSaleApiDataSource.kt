@@ -4,6 +4,7 @@ import android.content.Context
 import com.ecommerce.ecommerceposapp.domain.model.sales.CartLine
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
 import com.ecommerce.ecommerceposapp.domain.model.sales.SalePaymentInfo
+import com.ecommerce.ecommerceposapp.domain.model.sales.CurrencyFormatter
 import com.ecommerce.ecommerceposapp.domain.model.sales.PosPaymentRounding
 import com.ecommerce.ecommerceposapp.domain.model.sales.TipoComprobanteEmision
 import okhttp3.MediaType.Companion.toMediaType
@@ -42,7 +43,16 @@ class PosSaleApiDataSource(context: Context) {
             // El descuento se aplica antes de las reglas de redondeo de pago.
             val baseFinal = round((exactTotal - montoDescuento) * 100) / 100
             val total = PosPaymentRounding.finalTotal(baseFinal, payment.tipoPago, payment.aplicarRedondeo)
-            val effectivePayment = PosPaymentRounding.normalizedPayment(payment, baseFinal)
+            val paymentInBaseCurrency = payment.copy(
+                montoRecibido = CurrencyFormatter.convertToBaseCurrency(payment.montoRecibido, payment.currencyCode, payment.exchangeRate),
+                vuelto = CurrencyFormatter.convertToBaseCurrency(payment.vuelto, payment.currencyCode, payment.exchangeRate),
+            )
+            val effectivePayment = PosPaymentRounding.normalizedPayment(paymentInBaseCurrency, baseFinal)
+            val totalInSaleCurrency = CurrencyFormatter.convertToCurrency(
+                total,
+                payment.currencyCode,
+                payment.exchangeRate,
+            )
             val payload = JSONObject().apply {
                 put("id_cliente", clientId.coerceAtLeast(0L))
                 put("cliente_nombre", customerInfo.name.trim())
@@ -52,16 +62,16 @@ class PosSaleApiDataSource(context: Context) {
                 put("tipo_pago", payment.tipoPago)
                 put("currency_code", payment.currencyCode.ifBlank { "PEN" })
                 put("exchange_rate", payment.exchangeRate.takeIf { it > 0.0 } ?: 1.0)
-                put("total_amount_in_currency", payment.totalAmountInCurrency.takeIf { it > 0.0 } ?: total)
-                put("monto_recibido", effectivePayment.montoRecibido)
-                put("vuelto", effectivePayment.vuelto)
+                put("total_amount_in_currency", totalInSaleCurrency)
+                put("monto_recibido", payment.montoRecibido)
+                put("vuelto", payment.vuelto)
                 put("aplicar_redondeo", payment.aplicarRedondeo)
                 put("descuento_porcentaje", pct)
                 put("descuento_monto", montoDescuento)
                 put("total", total)
                 put("pagos", JSONArray().put(JSONObject().apply {
                     put("metodo", payment.tipoPago)
-                    put("monto", total)
+                    put("monto", totalInSaleCurrency)
                 }))
                 put("productos", JSONArray().apply {
                     lines.forEach { line ->
