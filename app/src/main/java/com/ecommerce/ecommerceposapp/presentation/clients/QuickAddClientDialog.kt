@@ -42,6 +42,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,10 +52,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -129,6 +132,13 @@ fun QuickAddClientDialog(
         onDismissRequest = { close() },
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
     ) {
+        val view = LocalView.current
+        SideEffect {
+            (view.parent as? DialogWindowProvider)?.window?.apply {
+                setDimAmount(0f)
+                setBackgroundDrawableResource(android.R.color.transparent)
+            }
+        }
         Box(Modifier.fillMaxSize()) {
             AnimatedVisibility(
                 visible = visible,

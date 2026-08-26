@@ -11,11 +11,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Payments
@@ -34,6 +37,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -42,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +58,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -60,7 +66,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
+import com.ecommerce.ecommerceposapp.presentation.clients.ClientPickerDialog
 import com.ecommerce.ecommerceposapp.domain.model.sales.CompletedSaleReceipt
 import com.ecommerce.ecommerceposapp.domain.model.sales.PosPaymentRounding
 import com.ecommerce.ecommerceposapp.domain.model.sales.ReceiptCustomerInfo
@@ -186,19 +194,30 @@ internal fun CobrarVentaDialog(
 
     Dialog(
         onDismissRequest = { if (!processing) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
     ) {
+        val view = LocalView.current
+        SideEffect {
+            (view.parent as? DialogWindowProvider)?.window?.apply {
+                setDimAmount(0f)
+                setBackgroundDrawableResource(android.R.color.transparent)
+            }
+        }
         Surface(
-            modifier = Modifier.fillMaxWidth().padding(8.dp).widthIn(max = 780.dp),
-            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxSize(),
             color = Color.White,
             contentColor = PaymentText,
-            shadowElevation = 14.dp,
         ) {
             Column(
-                Modifier.fillMaxWidth().heightIn(max = 680.dp).verticalScroll(rememberScrollState()).padding(14.dp),
+                Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp),
             ) {
-                Text("Pagar venta", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { if (!processing) onDismiss() }, enabled = !processing) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Text("Pagar venta", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                }
                 Spacer(Modifier.height(20.dp))
                 Text("TOTAL", modifier = Modifier.align(Alignment.CenterHorizontally), color = PaymentMuted, fontWeight = FontWeight.SemiBold)
                 Text(
@@ -403,8 +422,7 @@ private fun ReceiptCustomerSection(
     onNameChange: (String) -> Unit,
     onDocChange: (String) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val activeClients = remember(clients) { clients.filter { it.active } }
+    var showPicker by remember { mutableStateOf(false) }
     val isInvoice = receiptType == TipoComprobanteEmision.FACTURA
     val manualEntry = selectedClient == null && (customerName.isNotBlank() || customerDoc.isNotBlank())
     val hasCustomerData = selectedClient != null || customerName.isNotBlank() || customerDoc.isNotBlank()
@@ -423,7 +441,7 @@ private fun ReceiptCustomerSection(
     if (!manualEntry) {
         Box(Modifier.fillMaxWidth()) {
             OutlinedButton(
-                onClick = { expanded = true },
+                onClick = { showPicker = true },
                 modifier = Modifier.fillMaxWidth().height(46.dp),
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, PaymentBorder),
@@ -435,33 +453,14 @@ private fun ReceiptCustomerSection(
                     maxLines = 1,
                 )
             }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.widthIn(min = 260.dp, max = 420.dp).heightIn(max = 280.dp),
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Cliente genérico (sin datos)") },
-                    onClick = {
-                        onClientSelected(null)
-                        expanded = false
-                    },
-                )
-                activeClients.forEach { client ->
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(client.businessName.ifBlank { client.name })
-                                if (client.document.isNotBlank()) Text(client.document, color = PaymentMuted, style = MaterialTheme.typography.bodySmall)
-                            }
-                        },
-                        onClick = {
-                            onClientSelected(client)
-                            expanded = false
-                        },
-                    )
-                }
-            }
+        }
+        if (showPicker) {
+            ClientPickerDialog(
+                clients          = clients,
+                selectedClientId = selectedClient?.id,
+                onDismiss        = { showPicker = false },
+                onClientSelected = { onClientSelected(it) },
+            )
         }
         Spacer(Modifier.height(8.dp))
     } else {

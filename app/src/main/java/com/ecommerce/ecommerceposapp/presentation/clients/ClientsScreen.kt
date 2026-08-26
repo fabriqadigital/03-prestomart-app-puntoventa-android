@@ -3,6 +3,7 @@
 import com.ecommerce.ecommerceposapp.presentation.common.AppPullRefreshIndicator
 
 import android.util.Patterns
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -64,11 +65,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.ecommerce.ecommerceposapp.R
 import com.ecommerce.ecommerceposapp.domain.model.clients.ClientRow
 import com.ecommerce.ecommerceposapp.presentation.common.ConfirmDestructiveDialog
 import com.ecommerce.ecommerceposapp.presentation.common.PendingConfirm
@@ -204,17 +208,25 @@ private fun ClientTable(
     val totalPages = maxOf(1, (total + pageSize - 1) / pageSize)
     Surface(Modifier.fillMaxSize(), shape = RoundedCornerShape(8.dp), color = Color.White, shadowElevation = 1.dp) {
         Column {
-            Row(Modifier.fillMaxWidth().background(Color(0xFFF8FAFC)).padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(
+                Modifier.fillMaxWidth().background(Color(0xFFF8FAFC)).padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 Text("Nombre", Modifier.weight(if (compact) 1.5f else 1.8f), fontWeight = FontWeight.SemiBold)
                 Text("Documento", Modifier.weight(1.1f), fontWeight = FontWeight.SemiBold)
                 if (!compact) Text("Correo", Modifier.weight(1.7f), fontWeight = FontWeight.SemiBold)
                 if (!compact) Text("Estado", Modifier.weight(.7f), fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.width(if (compact) 44.dp else 56.dp))
+                Spacer(Modifier.width(40.dp))
+                Spacer(Modifier.width(48.dp))
             }
             HorizontalDivider(color = ClientsDivider)
             LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                 items(clients, key = { it.id }) { client ->
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
                         Row(Modifier.weight(if (compact) 1.5f else 1.8f), verticalAlignment = Alignment.CenterVertically) {
                             Text(client.displayName(), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                             if (client.id < 0L) {
@@ -225,6 +237,14 @@ private fun ClientTable(
                         Text("${client.documentType} ${client.document}", Modifier.weight(1.1f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!compact) Text(client.email.ifBlank { "-" }, Modifier.weight(1.7f), color = ClientsMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!compact) Text(if (client.active) "Activo" else "Inactivo", Modifier.weight(.7f), color = if (client.active) Color(0xFF15803D) else ClientsMuted)
+                        Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                            if (client.phone.isNotBlank()) {
+                                val context = LocalContext.current
+                                IconButton(onClick = { openClientWhatsapp(context, client.phone) }, modifier = Modifier.size(40.dp)) {
+                                    Image(painterResource(R.drawable.ic_whatsapp), contentDescription = "Abrir WhatsApp", modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
                         ClientRowMenu(client, onEdit, onDelete)
                     }
                     HorizontalDivider(color = ClientsDivider)
