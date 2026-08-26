@@ -870,16 +870,28 @@ fun VistaPreviaReciboDialog(
     }
 
     val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) printTicket() else whatsappNotice = "Autorice Dispositivos cercanos para imprimir."
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { permissions ->
+        if (permissions.values.all { it }) {
+            printTicket()
+        } else {
+            whatsappNotice = "Autorice Dispositivos cercanos para imprimir."
+        }
     }
 
     fun requestPrint() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
-        ) {
-            bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val bluetoothPermissions = arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN,
+            )
+            if (bluetoothPermissions.any {
+                    ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+                }) {
+                bluetoothPermissionLauncher.launch(bluetoothPermissions)
+            } else {
+                printTicket()
+            }
         } else {
             printTicket()
         }

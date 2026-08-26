@@ -32,13 +32,14 @@ class EscPosReceiptPrinter(private val context: Context) {
         customerDocument: String,
     ): Result<String> = runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+            (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED)
         ) {
             error("Autorice Dispositivos cercanos para usar la ticketera.")
         }
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
             ?: error("Este dispositivo no tiene Bluetooth.")
-        check(adapter.isEnabled) { "Active el Bluetooth del Zebra." }
+        check(adapter.isEnabled) { "Active el Bluetooth del celular." }
         val paired = adapter.bondedDevices.orEmpty()
         val ranked = paired.map { device ->
             val name = device.name.orEmpty().uppercase(Locale.ROOT)
