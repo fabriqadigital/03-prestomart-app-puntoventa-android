@@ -998,13 +998,7 @@ private fun PosScreen(
                     }
                     Log.d("BarcodeDebug", "Broadcast DataWedge procesado: [$code] (length=${code.length})")
                     Log.d("DataWedge", "Barcode recibido desde DataWedge: $code")
-                    val now = SystemClock.elapsedRealtime()
-                    if (code == lastDataWedgeCode && now - lastDataWedgeTime < DataWedgeScanner.DATAWEDGE_DEDUP_MS) {
-                        Log.d("DataWedge", "Escaneo duplicado ignorado (ventana 2s): $code")
-                        return
-                    }
-                    lastDataWedgeCode = code
-                    lastDataWedgeTime = now
+
                     dataWedgeCode = code
                     dataWedgeSequence += 1
                 }
