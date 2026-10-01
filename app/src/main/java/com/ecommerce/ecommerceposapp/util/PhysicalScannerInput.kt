@@ -13,8 +13,6 @@ object PhysicalScannerInput {
     private const val TAG = "PhysicalScanner"
     private const val MAX_CODE_LENGTH = 32
     private const val BURST_GAP_MS = 250L
-    private const val DEDUP_MS = 500L
-
     private val SCANNER_VENDOR_IDS = setOf(
         0x05E0, // Symbol / Zebra
         0x064D,
@@ -35,8 +33,6 @@ object PhysicalScannerInput {
 
     private val buffer = StringBuilder()
     private var lastKeyTime = 0L
-    private var lastEmittedCode = ""
-    private var lastEmitTime = 0L
 
     private val _scans = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val scans: SharedFlow<String> = _scans
@@ -94,6 +90,10 @@ object PhysicalScannerInput {
             SCANNER_NAME_MARKERS.any(deviceName::contains)
     }
 
+    fun testScan(code: String) {
+        Log.d(TAG, "SCANNER TEST: $code")
+        _scans.tryEmit(code)
+    }
     private fun clearExpiredBuffer() {
         if (buffer.isNotEmpty() && SystemClock.uptimeMillis() - lastKeyTime > BURST_GAP_MS) {
             buffer.clear()
@@ -102,10 +102,6 @@ object PhysicalScannerInput {
     }
 
     private fun emit(code: String) {
-        val now = SystemClock.uptimeMillis()
-        if (code == lastEmittedCode && now - lastEmitTime < DEDUP_MS) return
-        lastEmittedCode = code
-        lastEmitTime = now
         Log.d(TAG, "SCANNER RAW: $code")
         _scans.tryEmit(code)
     }
